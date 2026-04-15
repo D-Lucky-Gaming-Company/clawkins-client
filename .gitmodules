@@ -1,3 +1,4 @@
 [submodule "assets"]
 	path = assets
 	url = https://github.com/D-Lucky-Gaming-Company/clawkins-assets
+	branch = main
