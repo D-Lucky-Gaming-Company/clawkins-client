@@ -61,8 +61,6 @@ www-test/
 *.ipr
 *.iws
 *.iml
-.vscode/
-.cursor/
 
 ## Eclipse:
 .classpath
@@ -149,13 +147,11 @@ nb-configuration.xml
 ## OS-Specific:
 .DS_Store
 Thumbs.db
-Desktop.ini
 
 ## Miscellaneous:
 *~
 *.*#
 *#*#
-*.log
 /.kotlin/
 /assets/assets.txt
 
