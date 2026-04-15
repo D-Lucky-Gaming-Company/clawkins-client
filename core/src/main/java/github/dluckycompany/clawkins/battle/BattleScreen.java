@@ -35,10 +35,10 @@ public class BattleScreen extends ScreenAdapter {
     // -----------------------------------------------------------------------
 
     /** Path to the player placeholder (or final) sprite. */
-    private static final String PLAYER_TEXTURE_PATH = "maps/characters/player_placeholder.png";
+    private static final String PLAYER_TEXTURE_PATH = "characters/player_placeholder.png";
 
     /** Path to the boss placeholder (or final) sprite. */
-    private static final String BOSS_TEXTURE_PATH = "maps/characters/boss_placeholder.png";
+    private static final String BOSS_TEXTURE_PATH = "characters/boss_placeholder.png";
 
     // -----------------------------------------------------------------------
     // Desired display sizes (pixels at screen resolution)

@@ -81,8 +81,8 @@ public class BattleHud implements Disposable {
     // Placeholder combatant sprites (replace with real ones later)
     // -----------------------------------------------------------------------
 
-    private static final String PLAYER_PLACEHOLDER_PATH = "maps/characters/Clawkin_01.png";
-    private static final String BOSS_PLACEHOLDER_PATH   = "maps/characters/Clawkin_02.png";
+    private static final String PLAYER_PLACEHOLDER_PATH = "characters/Clawkin_01.png";
+    private static final String BOSS_PLACEHOLDER_PATH   = "characters/Clawkin_02.png";
 
     private static final float PLAYER_PLACEHOLDER_W = 96f;
     private static final float PLAYER_PLACEHOLDER_H = 96f;
@@ -388,28 +388,28 @@ public class BattleHud implements Disposable {
         if (name.contains("ginger") || id.contains("ginger")) {
             return new String[] {
                     "ui/Clawkin_01.png",
-                    "maps/entities/clawkins/Clawkin_01.png",
-                    "maps/characters/Clawkin_01.png"
+                    "entities/clawkins/Clawkin_01.png",
+                    "characters/Clawkin_01.png"
             };
         }
         if (name.contains("swee") || name.contains("swea") || id.contains("swee") || id.contains("swea")) {
             return new String[] {
                     "ui/Clawkin_02.png",
-                    "maps/entities/clawkins/Clawkin_02.png",
-                    "maps/characters/Clawkin_02.png"
+                    "entities/clawkins/Clawkin_02.png",
+                    "characters/Clawkin_02.png"
             };
         }
         if (name.contains("dart") || id.contains("dart")) {
             return new String[] {
                     "ui/Clawkin_03.png",
-                    "maps/entities/clawkins/Clawkin_03.png",
-                    "maps/characters/Clawkin_03.png"
+                    "entities/clawkins/Clawkin_03.png",
+                    "characters/Clawkin_03.png"
             };
         }
         return new String[] {
                 "ui/Clawkin_01.png",
-                "maps/entities/clawkins/Clawkin_01.png",
-                "maps/characters/Clawkin_01.png"
+                "entities/clawkins/Clawkin_01.png",
+                "characters/Clawkin_01.png"
         };
     }
 
@@ -426,29 +426,29 @@ public class BattleHud implements Disposable {
         if (name.contains("ginger") || id.contains("ginger")) {
             return new String[] {
                     "ui/Clawkin_01.png",
-                    "maps/entities/clawkins/Clawkin_01.png",
-                    "maps/characters/Clawkin_01.png"
+                    "entities/clawkins/Clawkin_01.png",
+                    "characters/Clawkin_01.png"
             };
         }
         if (name.contains("swee") || name.contains("swea") || id.contains("swee") || id.contains("swea")) {
             return new String[] {
                     "ui/Clawkin_02.png",
-                    "maps/entities/clawkins/Clawkin_02.png",
-                    "maps/characters/Clawkin_02.png"
+                    "entities/clawkins/Clawkin_02.png",
+                    "characters/Clawkin_02.png"
             };
         }
         if (name.contains("dart") || id.contains("dart")) {
             return new String[] {
                     "ui/Clawkin_03.png",
-                    "maps/entities/clawkins/Clawkin_03.png",
-                    "maps/characters/Clawkin_03.png"
+                    "entities/clawkins/Clawkin_03.png",
+                    "characters/Clawkin_03.png"
             };
         }
         return new String[] {
                 BOSS_PLACEHOLDER_PATH,
                 "ui/Clawkin_02.png",
-                "maps/entities/clawkins/Clawkin_02.png",
-                "maps/characters/Clawkin_02.png"
+                "entities/clawkins/Clawkin_02.png",
+                "characters/Clawkin_02.png"
         };
     }
 

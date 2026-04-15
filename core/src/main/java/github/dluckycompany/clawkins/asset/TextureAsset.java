@@ -23,7 +23,7 @@ public enum TextureAsset implements Asset<Texture> {
      *   Row 2 – walk east  (right)
      *   Row 3 – walk north (up)
      */
-    PLAYER("maps/characters/player.png"),
+    PLAYER("characters/player.png"),
 
     /**
      * Battle UI icon spritesheet.
