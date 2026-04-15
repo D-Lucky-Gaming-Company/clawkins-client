@@ -1,0 +1,32 @@
+#!/usr/bin/env sh
+# TestGame - Quick Play Script (macOS/Linux)
+
+set -eu
+
+SCRIPT_PATH=$0
+while [ -L "$SCRIPT_PATH" ]; do
+  LINK_TARGET=$(readlink "$SCRIPT_PATH")
+  case "$LINK_TARGET" in
+    /*) SCRIPT_PATH="$LINK_TARGET" ;;
+    *) SCRIPT_PATH="$(dirname "$SCRIPT_PATH")/$LINK_TARGET" ;;
+  esac
+done
+
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$SCRIPT_PATH")" && pwd)
+
+echo
+echo "========================================"
+echo "    TestGame - Launching Game"
+echo "========================================"
+echo
+
+if ! "$SCRIPT_DIR/gradlew" lwjgl3:run; then
+  echo
+  echo "ERROR: Game launch failed"
+  echo
+  exit 1
+fi
+
+echo
+echo "Game closed successfully"
+echo

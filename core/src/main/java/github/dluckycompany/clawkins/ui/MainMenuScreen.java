@@ -1,0 +1,342 @@
+package github.dluckycompany.clawkins.ui;
+
+import com.badlogic.gdx.Gdx;
+import com.badlogic.gdx.Input.Keys;
+import com.badlogic.gdx.Screen;
+import com.badlogic.gdx.graphics.Color;
+import com.badlogic.gdx.graphics.GL20;
+import com.badlogic.gdx.graphics.Pixmap;
+import com.badlogic.gdx.graphics.Texture;
+import com.badlogic.gdx.graphics.g2d.Batch;
+import com.badlogic.gdx.graphics.g2d.BitmapFont;
+import com.badlogic.gdx.graphics.g2d.NinePatch;
+import com.badlogic.gdx.graphics.g2d.freetype.FreeTypeFontGenerator;
+import com.badlogic.gdx.scenes.scene2d.InputEvent;
+import com.badlogic.gdx.scenes.scene2d.Stage;
+import com.badlogic.gdx.scenes.scene2d.ui.Table;
+import com.badlogic.gdx.scenes.scene2d.ui.TextButton;
+import com.badlogic.gdx.scenes.scene2d.ui.TextButton.TextButtonStyle;
+import com.badlogic.gdx.scenes.scene2d.utils.ClickListener;
+import com.badlogic.gdx.scenes.scene2d.utils.NinePatchDrawable;
+import com.badlogic.gdx.utils.viewport.ScreenViewport;
+
+/**
+ * Dark fantasy-themed main menu screen.
+ *
+ * <h3>Features</h3>
+ * <ul>
+ *   <li>Centered title "CLAWKINS" with subtitle "- DAWN OF THE PRIMAL -"</li>
+ *   <li>Three vertically stacked buttons: NEW GAME, CONTINUE, EXIT GAME</li>
+ *   <li>Gold/orange styled buttons with hover effects</li>
+ *   <li>Dark gradient background with vignette</li>
+ *   <li>Fade-in animation on load</li>
+ * </ul>
+ *
+ * <p>Call {@link #show()} when transitioning to this screen, and ensure
+ * {@link #dispose()} is called when exiting.
+ */
+public class MainMenuScreen implements Screen {
+
+    // -----------------------------------------------------------------------
+    // Graphics
+    // -----------------------------------------------------------------------
+
+    private final Batch batch;
+    private final Stage stage;
+
+    // -----------------------------------------------------------------------
+    // Fonts
+    // -----------------------------------------------------------------------
+
+    private BitmapFont titleFont;
+    private BitmapFont subtitleFont;
+    private BitmapFont buttonFont;
+
+    // -----------------------------------------------------------------------
+    // Background & Title Image
+    // -----------------------------------------------------------------------
+
+    private Texture backgroundTexture;
+    private Texture menuBackgroundTexture;
+
+    // -----------------------------------------------------------------------
+    // Callbacks
+    // -----------------------------------------------------------------------
+
+    private final Runnable onNewGame;
+    private final Runnable onContinue;
+    private final Runnable onExit;
+
+    // -----------------------------------------------------------------------
+    // Constructor
+    // -----------------------------------------------------------------------
+
+    /**
+     * Creates the main menu screen.
+     *
+     * @param batch shared SpriteBatch from the main Game class
+     * @param onNewGame called when "NEW GAME" button is clicked
+     * @param onContinue called when "CONTINUE" button is clicked
+     * @param onExit called when "EXIT GAME" button is clicked
+     */
+    public MainMenuScreen(Batch batch, Runnable onNewGame, Runnable onContinue, Runnable onExit) {
+        this.batch = batch;
+        this.stage = new Stage(new ScreenViewport());
+
+        this.onNewGame = onNewGame;
+        this.onContinue = onContinue;
+        this.onExit = onExit;
+
+        Gdx.input.setInputProcessor(stage);
+    }
+
+    // -----------------------------------------------------------------------
+    // Screen lifecycle
+    // -----------------------------------------------------------------------
+
+    @Override
+    public void show() {
+        buildUI();
+    }
+
+    @Override
+    public void render(float delta) {
+        // Clear screen
+        Gdx.gl.glClearColor(0.129f, 0.129f, 0.137f, 1f);
+        Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
+
+        // Set batch projection to match screen dimensions (responsive)
+        batch.setProjectionMatrix(batch.getProjectionMatrix()
+                .setToOrtho2D(0, 0, Gdx.graphics.getWidth(), Gdx.graphics.getHeight()));
+
+        // Draw background (automatically scales to screen size)
+        batch.begin();
+        drawBackground();
+        batch.end();
+
+        // Draw Stage UI (already handles viewport updates)
+        stage.act(delta);
+        stage.draw();
+
+        // Handle keyboard shortcuts
+        if (Gdx.input.isKeyJustPressed(Keys.ESCAPE)) {
+            onExit.run();
+        }
+    }
+
+    @Override
+    public void resize(int width, int height) {
+        stage.getViewport().update(width, height, true);
+        
+        // Rebuild UI to re-layout buttons and text at new resolution
+        stage.clear();
+        buildUI();
+    }
+
+    @Override
+    public void pause() {
+    }
+
+    @Override
+    public void resume() {
+    }
+
+    @Override
+    public void hide() {
+    }
+
+    @Override
+    public void dispose() {
+        stage.dispose();
+        if (titleFont != null) titleFont.dispose();
+        if (subtitleFont != null) subtitleFont.dispose();
+        if (buttonFont != null) buttonFont.dispose();
+        if (backgroundTexture != null) backgroundTexture.dispose();
+        if (menuBackgroundTexture != null) menuBackgroundTexture.dispose();
+    }
+
+    // -----------------------------------------------------------------------
+    // UI building
+    // -----------------------------------------------------------------------
+
+    /**
+     * Builds the main menu UI table and adds it to the Stage.
+     * Uses responsive Table layout that scales to any screen size.
+     */
+    private void buildUI() {
+        // Load fonts
+        loadFonts();
+
+        // Root table — fills the entire viewport
+        Table root = new Table();
+        root.setFillParent(true);
+        // root.debug();  // Uncomment to visualize table layout
+
+        // ── Buttons section ──────────────────────────
+        Table buttonTable = new Table();
+
+        TextButtonStyle buttonStyle = createButtonStyle();
+
+        TextButton newGameBtn = new TextButton("NEW GAME", buttonStyle);
+        newGameBtn.addListener(new ClickListener() {
+            @Override
+            public void clicked(InputEvent event, float x, float y) {
+                Gdx.app.log("MainMenu", "NEW GAME clicked");
+                onNewGame.run();
+            }
+        });
+
+        TextButton continueBtn = new TextButton("CONTINUE", buttonStyle);
+        continueBtn.addListener(new ClickListener() {
+            @Override
+            public void clicked(InputEvent event, float x, float y) {
+                Gdx.app.log("MainMenu", "CONTINUE clicked");
+                onContinue.run();
+            }
+        });
+
+        TextButton exitBtn = new TextButton("EXIT GAME", buttonStyle);
+        exitBtn.addListener(new ClickListener() {
+            @Override
+            public void clicked(InputEvent event, float x, float y) {
+                Gdx.app.log("MainMenu", "EXIT GAME clicked");
+                onExit.run();
+            }
+        });
+
+        // Responsive button sizing: scale based on screen dimensions
+        float btnWidth = Math.min(Gdx.graphics.getWidth() * 0.25f, 250f);  // 25% of width, max 250px
+        float btnHeight = Math.min(Gdx.graphics.getHeight() * 0.08f, 60f);  // 8% of height, max 60px
+        float btnSpacing = Math.max(Gdx.graphics.getHeight() * 0.03f, 15f); // 3% of height, min 15px
+
+        buttonTable.add(newGameBtn).width(btnWidth).height(btnHeight).row();
+        buttonTable.add(continueBtn).width(btnWidth).height(btnHeight).padTop(btnSpacing).row();
+        buttonTable.add(exitBtn).width(btnWidth).height(btnHeight).padTop(btnSpacing);
+
+        root.add(buttonTable).center();
+
+        stage.addActor(root);
+    }
+
+    /**
+     * Creates a gold/orange styled button with rounded appearance.
+     */
+    private TextButtonStyle createButtonStyle() {
+        // Create button background textures (up, over, down)
+        Pixmap upPixmap = createRoundedRectangle(200, 50, Color.valueOf("#C58A2B"));
+        Pixmap overPixmap = createRoundedRectangle(200, 50, Color.valueOf("#D4A035"));
+        Pixmap downPixmap = createRoundedRectangle(200, 50, Color.valueOf("#A66F1F"));
+
+        Texture upTexture = new Texture(upPixmap);
+        Texture overTexture = new Texture(overPixmap);
+        Texture downTexture = new Texture(downPixmap);
+
+        upPixmap.dispose();
+        overPixmap.dispose();
+        downPixmap.dispose();
+
+        // Create 9-patch for stretching
+        NinePatch upPatch = new NinePatch(upTexture, 10, 10, 10, 10);
+        NinePatch overPatch = new NinePatch(overTexture, 10, 10, 10, 10);
+        NinePatch downPatch = new NinePatch(downTexture, 10, 10, 10, 10);
+
+        TextButtonStyle style = new TextButtonStyle();
+        style.up = new NinePatchDrawable(upPatch);
+        style.over = new NinePatchDrawable(overPatch);
+        style.down = new NinePatchDrawable(downPatch);
+        style.font = buttonFont;
+        style.fontColor = Color.BLACK;
+        style.downFontColor = Color.valueOf("#2B2B2B");
+        style.overFontColor = Color.BLACK;
+
+        return style;
+    }
+
+    /**
+     * Creates a rounded rectangle pixmap (solid color with border).
+     */
+    private Pixmap createRoundedRectangle(int width, int height, Color color) {
+        Pixmap pixmap = new Pixmap(width, height, Pixmap.Format.RGBA8888);
+        pixmap.setColor(color);
+        pixmap.fillRectangle(0, 0, width, height);
+
+        // Border
+        pixmap.setColor(Color.BLACK);
+        pixmap.drawRectangle(0, 0, width, height);
+        pixmap.drawRectangle(1, 1, width - 2, height - 2);
+
+        pixmap.setColor(Color.valueOf("#F4A460"));  // Light border highlight
+        pixmap.drawLine(2, 2, width - 3, 2);
+        pixmap.drawLine(2, 2, 2, height - 3);
+
+        return pixmap;
+    }
+
+    /**
+     * Loads all fonts used on the menu.
+     */
+    private void loadFonts() {
+        FreeTypeFontGenerator generator = new FreeTypeFontGenerator(
+                Gdx.files.internal("font/earthbound-dialogue-gold.otf"));
+
+        // Title font — large
+        FreeTypeFontGenerator.FreeTypeFontParameter titleParam = new FreeTypeFontGenerator.FreeTypeFontParameter();
+        titleParam.size = 72;
+        titleParam.borderWidth = 2.0f;
+        titleParam.borderColor = Color.BLACK;
+        titleFont = generator.generateFont(titleParam);
+
+        // Subtitle font — medium
+        FreeTypeFontGenerator.FreeTypeFontParameter subtitleParam = new FreeTypeFontGenerator.FreeTypeFontParameter();
+        subtitleParam.size = 24;
+        subtitleParam.borderWidth = 1.0f;
+        subtitleParam.borderColor = Color.BLACK;
+        subtitleFont = generator.generateFont(subtitleParam);
+
+        // Button font — medium
+        FreeTypeFontGenerator.FreeTypeFontParameter buttonParam = new FreeTypeFontGenerator.FreeTypeFontParameter();
+        buttonParam.size = 28;
+        buttonParam.borderWidth = 1.0f;
+        buttonParam.borderColor = Color.BLACK;
+        buttonFont = generator.generateFont(buttonParam);
+
+        generator.dispose();
+    }
+
+    /**
+     * Draws the dark gradient background that automatically resizes to screen dimensions.
+     */
+    private void drawBackground() {
+        float w = Gdx.graphics.getWidth();
+        float h = Gdx.graphics.getHeight();
+
+        if (menuBackgroundTexture == null) {
+            menuBackgroundTexture = new Texture(Gdx.files.internal("ui/MenuUI_Background.png"));
+        }
+
+        // Keep menu background visible at full opacity.
+        batch.setColor(1f, 1f, 1f, 1f);
+        batch.draw(menuBackgroundTexture, 0, 0, w, h);
+
+        // Light tint keeps button text readable without hiding the image.
+        batch.setColor(0.10f, 0.10f, 0.12f, 0.22f);
+        batch.draw(getWhitePixel(), 0, 0, w, h);
+
+        // Reset color to white for other batch operations
+        batch.setColor(Color.WHITE);
+    }
+
+    /**
+     * Returns a 1×1 white texture for background fills.
+     */
+    private Texture getWhitePixel() {
+        if (backgroundTexture == null) {
+            Pixmap pixmap = new Pixmap(1, 1, Pixmap.Format.RGBA8888);
+            pixmap.setColor(Color.WHITE);
+            pixmap.fill();
+            backgroundTexture = new Texture(pixmap);
+            pixmap.dispose();
+        }
+        return backgroundTexture;
+    }
+}

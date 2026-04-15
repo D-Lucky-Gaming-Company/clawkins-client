@@ -1,0 +1,542 @@
+package github.dluckycompany.clawkins.battle;
+
+import com.badlogic.gdx.Gdx;
+import com.badlogic.gdx.Input.Keys;
+import com.badlogic.gdx.graphics.Color;
+import com.badlogic.gdx.graphics.Pixmap;
+import com.badlogic.gdx.graphics.Texture;
+import com.badlogic.gdx.graphics.g2d.Batch;
+import com.badlogic.gdx.graphics.g2d.BitmapFont;
+import com.badlogic.gdx.graphics.g2d.freetype.FreeTypeFontGenerator;
+import com.badlogic.gdx.math.Matrix4;
+import com.badlogic.gdx.scenes.scene2d.ui.Button.ButtonStyle;
+import com.badlogic.gdx.scenes.scene2d.ui.Label;
+import com.badlogic.gdx.scenes.scene2d.ui.Label.LabelStyle;
+import com.badlogic.gdx.scenes.scene2d.ui.List.ListStyle;
+import com.badlogic.gdx.scenes.scene2d.ui.ScrollPane.ScrollPaneStyle;
+import com.badlogic.gdx.scenes.scene2d.ui.Skin;
+import com.badlogic.gdx.scenes.scene2d.ui.Slider.SliderStyle;
+import com.badlogic.gdx.scenes.scene2d.ui.TextButton;
+import com.badlogic.gdx.scenes.scene2d.ui.TextButton.TextButtonStyle;
+import com.badlogic.gdx.scenes.scene2d.ui.Window;
+import com.badlogic.gdx.scenes.scene2d.ui.Window.WindowStyle;
+import com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable;
+import com.badlogic.gdx.utils.Disposable;
+
+import java.util.List;
+
+import github.dluckycompany.clawkins.asset.AssetService;
+import github.dluckycompany.clawkins.character.Clawkin;
+import github.dluckycompany.clawkins.component.Interactible;
+import github.dluckycompany.clawkins.ui.DialogueBoxRenderer;
+
+/**
+ * Coordinates the full battle presentation layer:
+ *
+ * <pre>
+ *   checkCollision()           – EncounterDetectionSystem (Rectangle.contains)
+ *       ↓ collision detected
+ *   startTransition()          – BattleOverlay.update() detects new session,
+ *                                freezes exploration, starts BattleTransition
+ *       ↓ screen fades to black
+ *   playTransitionAnimation()  – BattleTransition.update() / render() each frame
+ *       ↓ screen fully black  (isHudReadyToShow() fires once)
+ *   startBattle()              – showBattleHud() called behind the black overlay
+ *       ↓ overlay fades out
+ *   Scene2D battle HUD visible – BattleHud drawn every frame
+ * </pre>
+ *
+ * <h3>Render order per frame (battle active)</h3>
+ * <ol>
+ *   <li>BattleHud (Stage) — background image + icon buttons</li>
+ *   <li>SpriteBatch text — HP / phase / log</li>
+ *   <li>BattleTransition — black fade overlay (on top of everything)</li>
+ * </ol>
+ */
+public class BattleOverlay implements Disposable {
+
+    private enum DialogueFlowPhase {
+        NONE,
+        PLAYER_RESULT,
+        ENEMY_RESULT
+    }
+
+    private static final int SKIN_FONT_SIZE = 12;
+
+    private final DialogueBoxRenderer dialogueBoxRenderer;
+    private final BitmapFont skinFont;
+    private final Matrix4 uiProjection;
+    private final BattleTransition transition;
+
+    /** Scene2D HUD — null until {@link #init} is called. */
+    private BattleHud battleHud;
+
+    /** Stored from init — used during HP sync to access active clawkin. */
+    private PlayerBattleState playerBattleState;
+
+    /** Scene2D Skin for UI widgets */
+    private Skin skin;
+
+    /** True once the HUD has been shown (transition finished or skipped). */
+    private boolean inBattle = false;
+
+    /**
+     * True while we are waiting for a session to start so we can fire the
+     * transition exactly once per encounter.
+     */
+    private boolean transitionPending = false;
+
+    private DialogueFlowPhase dialogueFlowPhase = DialogueFlowPhase.NONE;
+    private boolean dialogueVisible = false;
+    private String dialogueSpeakerName = "";
+    private String dialogueFullText = "";
+    private List<BattleTextSpan> dialogueSpans = List.of();
+    private float dialogueVisibleChars = 0f;
+    private static final float DIALOGUE_TYPEWRITER_CHARS_PER_SECOND = 44f;
+
+    // -----------------------------------------------------------------------
+    // Construction
+    // -----------------------------------------------------------------------
+
+    public BattleOverlay(DialogueBoxRenderer dialogueBoxRenderer) {
+        this.dialogueBoxRenderer = dialogueBoxRenderer;
+        FreeTypeFontGenerator generator =
+                new FreeTypeFontGenerator(Gdx.files.internal(DialogueBoxRenderer.DIALOGUE_FONT_PATH));
+        FreeTypeFontGenerator.FreeTypeFontParameter parameter =
+                new FreeTypeFontGenerator.FreeTypeFontParameter();
+        DialogueBoxRenderer.applyEarthboundStyle(parameter, SKIN_FONT_SIZE);
+        this.skinFont = generator.generateFont(parameter);
+        generator.dispose();
+
+        this.uiProjection = new Matrix4();
+        this.transition   = new BattleTransition();
+    }
+
+    // -----------------------------------------------------------------------
+    // Initialisation
+    // -----------------------------------------------------------------------
+
+    /**
+     * Builds the {@link BattleHud} and wires button callbacks.
+     * Call once from {@code GameScreen} after the engine and assets are ready.
+     */
+    public void init(AssetService assetService, BattleService battleService, PlayerBattleState playerBattleStateArg) {
+        this.playerBattleState = playerBattleStateArg;
+        // Create a minimal Skin with default styles for UI components
+        this.skin = new Skin();
+        BitmapFont defaultFont = new BitmapFont(); // Use default LibGDX bitmap font
+        
+        // Add font to skin
+        skin.add("default-font", defaultFont);
+        
+        // Create basic drawable for backgrounds
+        Pixmap pixmap = new Pixmap(1, 1, Pixmap.Format.RGBA8888);
+        pixmap.setColor(Color.DARK_GRAY);
+        pixmap.fill();
+        Texture texture = new Texture(pixmap);
+        pixmap.dispose();
+        
+        TextureRegionDrawable drawable = new TextureRegionDrawable(texture);
+        skin.add("default", drawable);
+        
+        // Create lighter drawable for knobs/scrollbars
+        Pixmap pixmap2 = new Pixmap(1, 1, Pixmap.Format.RGBA8888);
+        pixmap2.setColor(Color.GRAY);
+        pixmap2.fill();
+        Texture texture2 = new Texture(pixmap2);
+        pixmap2.dispose();
+        TextureRegionDrawable knobDrawable = new TextureRegionDrawable(texture2);
+        skin.add("knob", knobDrawable);
+        
+        // Add Window.WindowStyle
+        WindowStyle windowStyle = new WindowStyle(skinFont, Color.WHITE, drawable);
+        skin.add("default", windowStyle, Window.WindowStyle.class);
+        
+        // Add TextButton.TextButtonStyle
+        TextButtonStyle buttonStyle = new TextButtonStyle(drawable, drawable, drawable, skinFont);
+        buttonStyle.fontColor = Color.WHITE;
+        skin.add("default", buttonStyle, TextButton.TextButtonStyle.class);
+        
+        // Add Button.ButtonStyle
+        ButtonStyle bStyle = new ButtonStyle(drawable, drawable, drawable);
+        skin.add("default", bStyle, ButtonStyle.class);
+        
+        // Add Label.LabelStyle
+        LabelStyle labelStyle = new LabelStyle(skinFont, Color.WHITE);
+        skin.add("default", labelStyle, Label.LabelStyle.class);
+        
+        // Add Slider.SliderStyle
+        SliderStyle sliderStyle = new SliderStyle(drawable, knobDrawable);
+        skin.add("default-horizontal", sliderStyle, SliderStyle.class);
+        
+        // Add List.ListStyle
+        ListStyle listStyle = new ListStyle(skinFont, Color.WHITE, Color.GRAY, drawable);
+        skin.add("default", listStyle, ListStyle.class);
+        
+        // Add ScrollPane.ScrollPaneStyle
+        ScrollPaneStyle scrollPaneStyle = new ScrollPaneStyle(drawable, knobDrawable, knobDrawable, drawable, drawable);
+        skin.add("default", scrollPaneStyle, ScrollPaneStyle.class);
+        
+        this.battleHud = new BattleHud(assetService);
+
+        // Optional initial value sync (if you have real values available)
+        // battleHud.setBossHp(100f, 100f);
+
+        // Button1 -> Basic Attack
+        battleHud.setOnAttack(() -> submitPlayerSkillAndOpenDialogue(battleService, 1));
+
+        // Button2 -> Strong Attack
+        battleHud.setOnDefend(() -> submitPlayerSkillAndOpenDialogue(battleService, 2));
+
+        // Button3 -> Utility / Heal effect
+        battleHud.setOnSpecial(() -> submitPlayerSkillAndOpenDialogue(battleService, 3));
+
+        // Button4 -> Special Attack
+        battleHud.setOnItem(() -> submitPlayerSkillAndOpenDialogue(battleService, 3));
+    }
+
+    /** Forward resize events so the Stage viewport stays correct. */
+    public void resize(int width, int height) {
+        if (battleHud != null) battleHud.resize(width, height);
+    }
+
+    /**
+     * Get the UI Skin for creating inventory and other UI overlays.
+     *
+     * @return the Skin
+     */
+    public Skin getSkin() {
+        return skin;
+    }
+
+    // -----------------------------------------------------------------------
+    // Per-frame update  (call BEFORE BattleService.update)
+    // -----------------------------------------------------------------------
+
+    /**
+     * Drives the transition state machine and handles keyboard battle input.
+     *
+     * <p>State flow:
+     * <ol>
+     *   <li>No session → reset everything.</li>
+     *   <li>New session detected → {@link #startTransition()}.</li>
+     *   <li>Transition playing → {@link #updateTransition}; when the screen
+     *       goes fully black, {@link #startBattle()} is called.</li>
+     *   <li>Transition finished + HUD visible → normal battle input.</li>
+     * </ol>
+     */
+    public void update(BattleService battleService, float delta) {
+        if (!battleService.hasBattleSession()) {
+            // Session ended — tear everything down
+            if (inBattle || transitionPending || transition.isTransitioning()) {
+                hideBattleHud();
+                transitionPending = false;
+                resetDialogueFlow();
+            }
+            return;
+        }
+
+        // ── New session just started ────────────────────────────────────────
+        if (!inBattle && !transitionPending && !transition.isTransitioning()) {
+            startTransition();
+            return;
+        }
+
+        // ── Transition in progress ─────────────────────────────────────────
+        if (transition.isTransitioning()) {
+            updateTransition(delta);
+            // At the black-screen moment: show the HUD behind the overlay
+            if (transition.isHudReadyToShow()) {
+                startBattle(battleService);
+            }
+            return;
+        }
+
+        // ── Transition finished — handle battle input ──────────────────────
+        if (!inBattle) return;
+
+        BattleStateMachine battle = battleService.getBattleStateMachine();
+        syncHudHpFromBattleState(battle);
+
+        if (dialogueVisible) {
+            updateTypewriter(delta);
+            if (isInteractionPressed()) {
+                handleDialogueAdvance(battleService);
+            }
+            return;
+        }
+
+        if (battle.canAcceptPlayerAction()) {
+            if (Gdx.input.isKeyJustPressed(Keys.NUM_1)) {
+                battleHud.triggerAttack();
+            } else if (Gdx.input.isKeyJustPressed(Keys.NUM_2)) {
+                battleHud.triggerDefend();
+            } else if (Gdx.input.isKeyJustPressed(Keys.NUM_3)) {
+                battleHud.triggerSpecial();
+            } else if (Gdx.input.isKeyJustPressed(Keys.NUM_4)) {
+                battleHud.triggerItem();
+            } else if (isInteractionPressed()) {
+                battleHud.triggerAttack();
+            } else if (Gdx.input.isKeyJustPressed(Keys.R)) {
+                battleService.submitEscapeAction();
+                openDialogue(null, battle.getLastLog(), battle.getLastLogSpans(), DialogueFlowPhase.PLAYER_RESULT);
+            }
+            return;
+        }
+
+        if (!battleService.isBattleActive() && isInteractionPressed()) {
+            battleService.closeBattleSession();
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Transition helpers
+    // -----------------------------------------------------------------------
+
+    /**
+     * Step 1 — called the frame a new battle session is detected.
+     * Marks a transition as pending and starts the fade-to-black.
+     */
+    private void startTransition() {
+        transitionPending = true;
+        transition.start();
+    }
+
+    /**
+     * Step 2 — called every frame while the transition overlay is playing.
+     *
+     * @param delta seconds since last frame
+     */
+    private void updateTransition(float delta) {
+        transition.update(delta);
+    }
+
+    /**
+     * Step 3 — called exactly once when the screen is fully black.
+     * Shows the battle HUD behind the opaque overlay so it is ready when
+     * the overlay fades out.
+     */
+    private void startBattle(BattleService battleService) {
+        transitionPending = false;
+        resetDialogueFlow();
+        showBattleHud();
+        if (battleService != null) {
+            syncHudHpFromBattleState(battleService.getBattleStateMachine());
+        }
+    }
+
+    private void syncHudHpFromBattleState(BattleStateMachine battle) {
+        if (battleHud == null || battle == null) return;
+
+        BattleContext ctx = battle.getContext();
+
+        BattleUnit ally = battle.firstAlly();
+        if (ally != null && playerBattleState != null) {
+            Clawkin activeClawkin = playerBattleState.getActiveClawkin();
+            battleHud.updateActiveClawkin(activeClawkin);
+            float maxHp = activeClawkin != null ? activeClawkin.getMaxHp() : 100f;
+            battleHud.setPlayerHp(ally.getHp(), maxHp);
+        }
+
+        BattleUnit enemy = battle.firstEnemy();
+        if (enemy != null) {
+            battleHud.setBossHp(enemy.getHp(), enemy.getMaxHp());
+            if (ctx != null) {
+                battleHud.updateEnemyCombatant(
+                        ctx.getEncounterId(),
+                        ctx.getEnemyDisplayName(),
+                        ctx.getEnemyPortraitPath());
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Rendering  (call AFTER engine.update)
+    // -----------------------------------------------------------------------
+
+    /**
+     * Full render pass for one frame.
+     *
+     * <p>Draw order:
+     * <ol>
+     *   <li>{@link #renderBattleHUD()} — Stage (background + buttons) at the bottom.</li>
+     *   <li>SpriteBatch text — HP / phase / log on top of the background.</li>
+     *   <li>{@link #renderTransition(Batch)} — black fade overlay on top of everything.</li>
+     * </ol>
+     */
+    public void render(Batch batch, BattleService battleService) {
+        boolean hasSession  = battleService.hasBattleSession();
+        boolean transitioning = transition.isTransitioning();
+
+        if (!hasSession && !transitioning) return;
+
+        // 1. Battle HUD (drawn only once the HUD has been initialised)
+        if (inBattle) {
+            renderBattleHUD();
+        }
+
+        // 2. Stat text — disabled; stats now shown via UI icons in BattleHud
+        if (inBattle && hasSession && dialogueVisible) {
+            renderDialogueBox(batch);
+        }
+
+        // 3. Transition overlay — always on top
+        if (transitioning) {
+            renderTransition(batch);
+        }
+    }
+
+
+
+    /**
+     * Draws the Scene2D Stage (battle background image + icon buttons).
+     */
+    private void renderBattleHUD() {
+        if (battleHud != null) {
+            battleHud.render();
+        }
+    }
+
+    /**
+     * Draws the full-screen black fade overlay.
+     * Called every frame while {@link BattleTransition#isTransitioning()} is true.
+     */
+    private void renderTransition(Batch batch) {
+        uiProjection.setToOrtho2D(0f, 0f,
+                Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
+        batch.setProjectionMatrix(uiProjection);
+        transition.render(batch);
+    }
+
+    private void renderDialogueBox(Batch batch) {
+        dialogueBoxRenderer.renderBattleLog(
+                batch,
+                dialogueSpeakerName,
+                dialogueFullText,
+                dialogueSpans,
+                (int) dialogueVisibleChars,
+                Interactible.DialoguePosition.BOTTOM);
+    }
+
+    private void submitPlayerSkillAndOpenDialogue(BattleService battleService, int skillSlot) {
+        if (battleService == null) {
+            return;
+        }
+
+        BattleStateMachine machine = battleService.getBattleStateMachine();
+        if (machine == null || !machine.canAcceptPlayerAction() || dialogueVisible) {
+            return;
+        }
+
+        battleService.submitPlayerSkill(skillSlot);
+        openDialogue(null, machine.getLastLog(), machine.getLastLogSpans(), DialogueFlowPhase.PLAYER_RESULT);
+    }
+
+    private void handleDialogueAdvance(BattleService battleService) {
+        if (!isDialogueFullyRevealed()) {
+            dialogueVisibleChars = dialogueFullText.length();
+            return;
+        }
+
+        BattleStateMachine machine = battleService.getBattleStateMachine();
+        if (machine == null) {
+            resetDialogueFlow();
+            return;
+        }
+
+        if (dialogueFlowPhase == DialogueFlowPhase.PLAYER_RESULT) {
+            if (machine.canExecuteEnemyAction()) {
+                battleService.resolveEnemyTurn();
+                openDialogue(null, machine.getLastLog(), machine.getLastLogSpans(), DialogueFlowPhase.ENEMY_RESULT);
+                return;
+            }
+            resetDialogueFlow();
+            if (!battleService.isBattleActive()) {
+                battleService.closeBattleSession();
+            }
+            return;
+        }
+
+        if (dialogueFlowPhase == DialogueFlowPhase.ENEMY_RESULT) {
+            resetDialogueFlow();
+            if (!battleService.isBattleActive()) {
+                battleService.closeBattleSession();
+            }
+            return;
+        }
+
+        resetDialogueFlow();
+        if (!battleService.isBattleActive()) {
+            battleService.closeBattleSession();
+        }
+    }
+
+    private void openDialogue(String speakerName, String text, List<BattleTextSpan> spans, DialogueFlowPhase phase) {
+        dialogueFlowPhase = phase;
+        dialogueVisible = true;
+        dialogueSpeakerName = speakerName == null ? "" : speakerName;
+        dialogueFullText = text == null ? "" : text;
+        dialogueSpans = spans == null ? List.of() : List.copyOf(spans);
+        dialogueVisibleChars = 0f;
+    }
+
+    private void updateTypewriter(float delta) {
+        if (!dialogueVisible || dialogueFullText.isEmpty()) {
+            return;
+        }
+        dialogueVisibleChars = Math.min(
+                dialogueFullText.length(),
+                dialogueVisibleChars + (DIALOGUE_TYPEWRITER_CHARS_PER_SECOND * delta)
+        );
+    }
+
+    private boolean isDialogueFullyRevealed() {
+        return dialogueVisibleChars >= dialogueFullText.length();
+    }
+
+    private void resetDialogueFlow() {
+        dialogueFlowPhase = DialogueFlowPhase.NONE;
+        dialogueVisible = false;
+        dialogueSpeakerName = "";
+        dialogueFullText = "";
+        dialogueSpans = List.of();
+        dialogueVisibleChars = 0f;
+    }
+
+    // -----------------------------------------------------------------------
+    // HUD show / hide
+    // -----------------------------------------------------------------------
+
+    private void showBattleHud() {
+        inBattle = true;
+        if (battleHud != null) battleHud.show();
+    }
+
+    private void hideBattleHud() {
+        inBattle = false;
+        if (battleHud != null) battleHud.hide();
+    }
+
+    // -----------------------------------------------------------------------
+    // Disposable
+    // -----------------------------------------------------------------------
+
+    @Override
+    public void dispose() {
+        skinFont.dispose();
+        transition.dispose();
+        if (battleHud != null) battleHud.dispose();
+        if (skin != null) skin.dispose();
+    }
+
+    // -----------------------------------------------------------------------
+    // Static helpers
+    // -----------------------------------------------------------------------
+
+    private static boolean isInteractionPressed() {
+        return Gdx.input.isKeyJustPressed(Keys.Z)
+                || Gdx.input.isKeyJustPressed(Keys.SPACE)
+                || Gdx.input.isKeyJustPressed(Keys.ENTER);
+    }
+
+}
