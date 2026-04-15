@@ -24,6 +24,9 @@ git clone --recurse-submodules https://github.com/D-Lucky-Gaming-Company/clawkin
 
 # Option B — if you already cloned without submodules
 git submodule update --init --recursive
+
+# To force-refresh the assets submodule to the expected commit
+git submodule update --checkout --force
 ```
 
 ### Running the Game
@@ -63,11 +66,11 @@ The output JAR will be located at `lwjgl3/build/libs/`.
 
 ## Project Structure
 
-| Module  | Description |
-|---------|-------------|
-| `core`  | Main application logic and game code (shared across platforms) |
-| `lwjgl3`| Desktop platform launcher using LWJGL3 |
-| `assets`| Game assets submodule ([clawkins-assets](https://github.com/D-Lucky-Gaming-Company/clawkins-assets)) |
+| Module   | Description                                                                                          |
+| -------- | ---------------------------------------------------------------------------------------------------- |
+| `core`   | Main application logic and game code (shared across platforms)                                       |
+| `lwjgl3` | Desktop platform launcher using LWJGL3                                                               |
+| `assets` | Game assets submodule ([clawkins-assets](https://github.com/D-Lucky-Gaming-Company/clawkins-assets)) |
 
 ## Platforms
 
