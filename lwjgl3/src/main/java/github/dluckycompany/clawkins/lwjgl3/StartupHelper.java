@@ -15,19 +15,20 @@
 // Note, the above license and copyright applies to this file only.
 package github.dluckycompany.clawkins.lwjgl3;
 
-import com.badlogic.gdx.Version;
-import com.badlogic.gdx.backends.lwjgl3.Lwjgl3NativesLoader;
+import java.io.File;
+import java.io.IOException;
+import java.lang.management.ManagementFactory;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
 
 import org.lwjgl.system.JNI;
 import org.lwjgl.system.linux.UNISTD;
 import org.lwjgl.system.macosx.LibC;
 import org.lwjgl.system.macosx.ObjCRuntime;
 
-import java.io.File;
-import java.lang.management.ManagementFactory;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Locale;
+import com.badlogic.gdx.Version;
+import com.badlogic.gdx.backends.lwjgl3.Lwjgl3NativesLoader;
 
 /**
  * A helper object for game startup, featuring three utilities related to LWJGL3 on various operating systems.
@@ -206,10 +207,11 @@ public class StartupHelper {
 
 			if (!inheritIO) processBuilder.start();
 			else processBuilder.inheritIO().start().waitFor();
-		} catch (Exception e) {
-			System.err.println("There was a problem restarting the JVM.");
-			// noinspection CallToPrintStackTrace
-			e.printStackTrace();
+		} catch (IOException | SecurityException e) {
+			System.err.println("There was a problem restarting the JVM: " + e.getMessage());
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			System.err.println("JVM restart was interrupted: " + e.getMessage());
 		}
 
 		return true;

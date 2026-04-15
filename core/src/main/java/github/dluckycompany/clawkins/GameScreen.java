@@ -167,7 +167,7 @@ public class GameScreen extends ScreenAdapter {
     private boolean summaryVisible = false;
     
     // Shape renderer for UI overlays (black background dimming)
-    private ShapeRenderer shapeRenderer;
+    private final ShapeRenderer shapeRenderer;
     
     // Track if initial setup has been done (to prevent re-initialization on return from overlay)
     private boolean hasBeenInitialized = false;
