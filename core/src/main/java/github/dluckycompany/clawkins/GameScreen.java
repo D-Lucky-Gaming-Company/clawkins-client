@@ -11,7 +11,7 @@ import com.badlogic.ashley.utils.ImmutableArray;
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input;
 import com.badlogic.gdx.ScreenAdapter;
-import com.badlogic.gdx.graphics.Color;
+import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.OrthographicCamera;
 import com.badlogic.gdx.graphics.g2d.Batch;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
@@ -40,7 +40,6 @@ import github.dluckycompany.clawkins.component.Player;
 import github.dluckycompany.clawkins.component.Transform;
 import github.dluckycompany.clawkins.encounter.EncounterDetectionSystem;
 import github.dluckycompany.clawkins.encounter.EncounterEventBus;
-import github.dluckycompany.clawkins.inventory.InventoryController;
 import github.dluckycompany.clawkins.item.ItemFactory;
 import github.dluckycompany.clawkins.system.AnimationSystem;
 import github.dluckycompany.clawkins.system.CameraSystem;
@@ -55,8 +54,8 @@ import github.dluckycompany.clawkins.tiled.TiledService;
 import github.dluckycompany.clawkins.ui.DialogueBoxRenderer;
 import github.dluckycompany.clawkins.ui.DialogueOverlay;
 import github.dluckycompany.clawkins.ui.HudWallet;
-import github.dluckycompany.clawkins.ui.InventoryOverlay;
 import github.dluckycompany.clawkins.ui.InventoryScreen;
+import github.dluckycompany.clawkins.ui.MainSideMenuOverlay;
 import github.dluckycompany.clawkins.ui.MerchantShopUI;
 import github.dluckycompany.clawkins.ui.SummaryScreen;
 import github.dluckycompany.clawkins.ui.TeamViewerScreen;
@@ -146,8 +145,6 @@ public class GameScreen extends ScreenAdapter {
     private final Stage hudStage;
     private final HudWallet hudWallet;
     private final BitmapFont uiFont;
-    private InventoryOverlay inventoryOverlay;
-    private boolean inventoryVisible = false;
     private final PlayerBattleState playerBattleState;
     
     // Merchant system
@@ -165,6 +162,7 @@ public class GameScreen extends ScreenAdapter {
     private boolean teamViewerVisible = false;
     private SummaryScreen summaryScreen;
     private boolean summaryVisible = false;
+    private final MainSideMenuOverlay sideMenuOverlay;
     
     // Shape renderer for UI overlays (black background dimming)
     private final ShapeRenderer shapeRenderer;
@@ -238,6 +236,7 @@ public class GameScreen extends ScreenAdapter {
         this.hudStage = new Stage(new FitViewport(VIRTUAL_UI_WIDTH, VIRTUAL_UI_HEIGHT));
         this.shapeRenderer = new ShapeRenderer();
         this.uiFont = new BitmapFont();
+        this.sideMenuOverlay = new MainSideMenuOverlay(inventoryStage, battleOverlay.getSkin(), uiFont, audioService);
         this.hudWallet = new HudWallet(playerBattleState.getWallet(), uiFont);
         this.hudWallet.setPosition(10, 10);
         this.hudWallet.pack(); // Size the label to fit its content
@@ -277,7 +276,10 @@ public class GameScreen extends ScreenAdapter {
             Gdx.input.setInputProcessor(null);  // Restore normal world input
             isPaused = false;  // Make sure we're not paused
             teamViewerVisible = false;  // Clear team viewer state
+            summaryVisible = false;
             inventoryStage.clear();  // Clear any lingering UI
+            sideMenuOverlay.resetAfterScreenReturn();
+            ensurePlayerEntityPresentAfterReturn();
             return;
         }
         hasBeenInitialized = true;
@@ -295,22 +297,6 @@ public class GameScreen extends ScreenAdapter {
         if (playerBattleState.getWallet().getMoney() == 0) {
             playerBattleState.getWallet().addMoney(500);
         }
-        
-        // Create the inventory controller (Command Pattern) for decoupled item actions
-        InventoryController inventoryController = new InventoryController(playerBattleState.getInventory());
-        
-        // Create the inventory UI with the party, inventory, and controller
-        this.inventoryOverlay = new InventoryOverlay(
-            playerBattleState.getInventory(),
-            inventoryController,
-            playerBattleState.getParty(),
-            battleOverlay.getSkin(),
-            new BitmapFont()
-        );
-        inventoryOverlay.setOnCloseCallback(() -> toggleInventory());
-        inventoryOverlay.setOnItemUsedCallback(action -> {
-            hudWallet.updateDisplay();
-        });
         
         // Create the merchant shop UI (fixed virtual resolution)
         this.merchantShopUI = new MerchantShopUI(
@@ -344,21 +330,60 @@ public class GameScreen extends ScreenAdapter {
         // Center camera immediately on the spawned player so first frame matches Tiled placement.
         Entity startupPlayer = findPlayerEntity();
         if (startupPlayer != null) {
-            Transform t = Transform.MAPPER.get(startupPlayer);
-            if (t != null) {
-                OrthographicCamera camera = game.getCamera();
-                Vector2 pos = t.getPosition();
-                Vector2 size = t.getSize();
-                camera.position.set(pos.x + size.x / 2f, pos.y + size.y / 2f + 1f, camera.position.z);
-                camera.update();
-            }
+            centerCameraOnPlayer(startupPlayer);
         }
         audioService.setMap(startMap);
         audioService.onEvent(AudioEventType.MAP_CHANGED);
     }
 
+    private void ensurePlayerEntityPresentAfterReturn() {
+        Entity existingPlayer = findPlayerEntity();
+        if (existingPlayer != null) {
+            centerCameraOnPlayer(existingPlayer);
+            return;
+        }
+
+        Gdx.app.log("GameScreen", "Player entity missing after returning to GameScreen. Rebuilding map entities.");
+
+        engine.removeAllEntities();
+
+        TiledMap currentMap = tiledService.getCurrentMap();
+        if (currentMap == null) {
+            currentMap = tiledService.loadMap(MapAsset.COTTAGE);
+        }
+
+        tiledService.setMap(currentMap);
+        mapTransitionSystem.setCooldown(0.2f);
+
+        Entity restoredPlayer = findPlayerEntity();
+        if (restoredPlayer != null) {
+            centerCameraOnPlayer(restoredPlayer);
+        } else {
+            Gdx.app.error("GameScreen", "Failed to restore player entity after map rebuild.");
+        }
+    }
+
+    private void centerCameraOnPlayer(Entity playerEntity) {
+        Transform t = Transform.MAPPER.get(playerEntity);
+        if (t == null) {
+            return;
+        }
+
+        OrthographicCamera camera = game.getCamera();
+        Vector2 pos = t.getPosition();
+        Vector2 size = t.getSize();
+        camera.position.set(pos.x + size.x / 2f, pos.y + size.y / 2f + 1f, camera.position.z);
+        camera.update();
+    }
+
     @Override
     public void render(float delta) {
+        float uiDelta = Math.min(1 / 30f, delta);
+
+        // Keep pause state derived from live UI state so movement reliably resumes
+        // after exiting CLAWKINS/SETTINGS and closing the sidebar.
+        isPaused = shouldPauseForUi();
+
         // Don't update game state when paused (inventory or other overlays using isPaused flag)
         if (isPaused) {
             delta = 0f; // Skip time advancement
@@ -367,14 +392,17 @@ public class GameScreen extends ScreenAdapter {
         // Cap delta to avoid spiral-of-death on lag spikes
         delta = Math.min(1 / 30f, delta);
 
-        // Handle inventory toggle (E key) - but NOT while inventory is open (paused)
-        if (!battleService.hasBattleSession() && !interactionSystem.isDialogueVisible() && !isPaused
+        // Handle side-menu and submenu navigation while in exploration.
+        if (!battleService.hasBattleSession() && !interactionSystem.isDialogueVisible() && !merchantShopVisible
                 && !mapTransitionFade.isTransitioning()) {
-            if (Gdx.input.isKeyJustPressed(Input.Keys.E)) {
-                toggleInventory();
-            }
-            if (Gdx.input.isKeyJustPressed(Input.Keys.P)) {
-                toggleTeamViewer();
+            MainSideMenuOverlay.Action menuAction = sideMenuOverlay.handleInput();
+            switch (menuAction) {
+                case OPEN_CLAWKINS -> openTeamViewerSubmenu();
+                case OPEN_INVENTORY -> openInventoryScreen();
+                case EXIT_GAME -> Gdx.app.exit();
+                case RETURN_TO_SIDEBAR -> returnToSidebarFromSubmenu();
+                case NONE -> {
+                }
             }
         }
 
@@ -388,29 +416,7 @@ public class GameScreen extends ScreenAdapter {
         // This ensures the UI is hidden before any battle rendering occurs
         boolean hasBattle = battleService.hasBattleSession();
         if (hasBattle && !wasBattleSessionPresent) {
-            if (inventoryVisible) {
-                System.out.println("[GameScreen] Battle started - closing inventory UI");
-                inventoryVisible = false;
-                if (inventoryOverlay != null) {
-                    inventoryOverlay.getDialogStage().clear();
-                }
-            }
-            if (teamViewerVisible) {
-                System.out.println("[GameScreen] Battle started - closing team viewer");
-                teamViewerVisible = false;
-                if (summaryVisible) {
-                    summaryVisible = false;
-                }
-                if (summaryScreen != null) {
-                    summaryScreen.dispose();
-                    summaryScreen = null;
-                }
-            }
-            if (inventoryVisible || teamViewerVisible) {
-                inventoryStage.clear();
-                Gdx.input.setInputProcessor(null);
-                isPaused = false;
-            }
+            closeAllMenuUi();
         }
 
         if (pendingTransitionMap != null && !mapTransitionFade.isTransitioning()) {
@@ -447,42 +453,17 @@ public class GameScreen extends ScreenAdapter {
         // UI Rendering with Proper Viewport Coordinate Management
         // ============================================================
         
-        // CRITICAL: Block ALL inventory UI rendering when a battle is active
-        // This prevents any UI lockup or visual conflicts with battle overlay
         boolean isBattleActive = battleService.hasBattleSession();
-        
-        // Render target selection overlay if active (takes priority over inventory)
-        if (!isBattleActive && inventoryVisible && inventoryOverlay != null && inventoryOverlay.isSelectingTarget()) {
-            Stage targetStage = inventoryOverlay.getTargetSelectionStage();
-            if (targetStage != null) {
-                renderUIWithViewport(targetStage, delta);
-            }
-        }
-        // Render team viewer if visible (takes priority)
-        else if (teamViewerVisible && teamViewerScreen != null && !isBattleActive) {
+
+        if (!isBattleActive && teamViewerVisible && teamViewerScreen != null) {
             renderDimmingOverlay();
-            renderUIWithViewport(inventoryStage, delta);
-        }
-        // Render merchant shop if visible
-        else if (merchantShopVisible && merchantShopUI != null && !isBattleActive) {
+            renderUIWithViewport(inventoryStage, uiDelta);
+        } else if (!isBattleActive && (sideMenuOverlay.isSettingsVisible() || sideMenuOverlay.isSidebarVisible())) {
             renderDimmingOverlay();
-            renderUIWithViewport(inventoryStage, delta);
-        } 
-        // Render inventory and HUD if visible (only when NOT in battle)
-        else if (inventoryVisible && inventoryOverlay != null && !isBattleActive) {
+            renderUIWithViewport(inventoryStage, uiDelta);
+        } else if (!isBattleActive && merchantShopVisible && merchantShopUI != null) {
             renderDimmingOverlay();
-            renderUIWithViewport(inventoryStage, delta);
-        }
-        
-        // CRITICAL: Render drop quantity dialog LAST so it appears on top of everything
-        // This ensures the dialog is visible and not covered by inventory or any other UI
-        // BUT: Only render if NOT in a battle (battles have their own overlay)
-        if (!isBattleActive && inventoryVisible && inventoryOverlay != null) {
-            Stage dialogStage = inventoryOverlay.getDialogStage();
-            if (dialogStage != null && dialogStage.getActors().size > 0) {
-                System.out.println("[GameScreen] Rendering dialogStage with " + dialogStage.getActors().size + " actors");
-                renderUIWithViewport(dialogStage, delta);
-            }
+            renderUIWithViewport(inventoryStage, uiDelta);
         }
 
         if (mapTransitionFade.isTransitioning()) {
@@ -496,16 +477,20 @@ public class GameScreen extends ScreenAdapter {
      * Used when inventory, team viewer, or merchant shop UIs are open.
      */
     private void renderDimmingOverlay() {
+        Gdx.gl.glEnable(GL20.GL_BLEND);
+        Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
+
         // Configure ShapeRenderer to use filled rectangle mode
         shapeRenderer.setProjectionMatrix(inventoryStage.getCamera().combined);
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
-        shapeRenderer.setColor(Color.BLACK);
+        shapeRenderer.setColor(0f, 0f, 0f, 0.45f);
         
         // Draw black rectangle covering entire virtual UI space (800x600)
         shapeRenderer.rect(0, 0, VIRTUAL_UI_WIDTH, VIRTUAL_UI_HEIGHT);
         
         // End rendering
         shapeRenderer.end();
+        Gdx.gl.glDisable(GL20.GL_BLEND);
     }
 
     /**
@@ -560,22 +545,6 @@ public class GameScreen extends ScreenAdapter {
         // HUD stage: maps physical screen to virtual 800x600 coordinate space  
         hudStage.getViewport().update(width, height, true);
         
-        // Target selection stage: maps physical screen to virtual 800x600 coordinate space
-        if (inventoryOverlay != null) {
-            Stage targetStage = inventoryOverlay.getTargetSelectionStage();
-            if (targetStage != null) {
-                targetStage.getViewport().update(width, height, true);
-                targetStage.getCamera().update();
-            }
-            
-            // Dialog stage: maps physical screen to virtual 800x600 coordinate space
-            Stage dialogStage = inventoryOverlay.getDialogStage();
-            if (dialogStage != null) {
-                dialogStage.getViewport().update(width, height, true);
-                dialogStage.getCamera().update();
-            }
-        }
-        
         // Force camera update to recalculate projection matrix
         inventoryStage.getCamera().update();
         hudStage.getCamera().update();
@@ -605,16 +574,6 @@ public class GameScreen extends ScreenAdapter {
         if (shapeRenderer != null) {
             shapeRenderer.dispose();
         }
-        if (inventoryOverlay != null) {
-            Stage targetStage = inventoryOverlay.getTargetSelectionStage();
-            if (targetStage != null) {
-                targetStage.dispose();
-            }
-            Stage dialogStage = inventoryOverlay.getDialogStage();
-            if (dialogStage != null) {
-                dialogStage.dispose();
-            }
-        }
     }
 
     private void syncSystemStates() {
@@ -622,15 +581,16 @@ public class GameScreen extends ScreenAdapter {
         boolean dialogueLocked = interactionSystem.isDialogueVisible();
         boolean merchantLocked = merchantShopVisible;
         boolean mapTransitionLocked = mapTransitionFade.isTransitioning();
-        boolean shouldEnableExploration = !battleLocked && !dialogueLocked && !merchantLocked && !mapTransitionLocked;
+        boolean menuLocked = sideMenuOverlay.isBlockingGameplay() || teamViewerVisible;
+        boolean shouldEnableExploration = !battleLocked && !dialogueLocked && !merchantLocked && !mapTransitionLocked && !menuLocked;
         if (shouldEnableExploration == explorationSystemsEnabled) {
-            interactionSystem.setProcessing(!battleLocked && !merchantLocked);
+            interactionSystem.setProcessing(!battleLocked && !merchantLocked && !menuLocked);
             return;
         }
 
         explorationSystemsEnabled = shouldEnableExploration;
         engine.getSystem(PlayerInputSystem.class).setProcessing(shouldEnableExploration);
-        interactionSystem.setProcessing(!battleLocked && !merchantLocked);
+        interactionSystem.setProcessing(!battleLocked && !merchantLocked && !menuLocked);
         engine.getSystem(MoveSystem.class).setProcessing(shouldEnableExploration);
         engine.getSystem(EncounterDetectionSystem.class).setProcessing(shouldEnableExploration);
         mapTransitionSystem.setProcessing(shouldEnableExploration);
@@ -676,12 +636,7 @@ public class GameScreen extends ScreenAdapter {
             // CRITICAL: Clean up inventory state after battle ends
             // This ensures no UI lockup or lingering inventory state
             System.out.println("[GameScreen] Battle ended - cleaning up inventory state");
-            inventoryVisible = false;
-            if (inventoryOverlay != null) {
-                inventoryOverlay.getDialogStage().clear();
-            }
-            inventoryStage.clear();
-            Gdx.input.setInputProcessor(null);
+            closeAllMenuUi();
             System.out.println("[GameScreen] Inventory cleanup complete, ready for exploration");
         }
 
@@ -851,64 +806,64 @@ public class GameScreen extends ScreenAdapter {
         return best;
     }
 
-    private void toggleInventory() {
-        // CRITICAL: Prevent inventory from opening during battle
-        if (battleService.hasBattleSession()) {
-            System.out.println("[GameScreen] Inventory toggle blocked - battle active");
-            return;
+    private void openTeamViewerSubmenu() {
+        summaryVisible = false;
+        inventoryStage.clear();
+
+        List<Clawkin> party = playerBattleState.getParty();
+        teamViewerScreen = new TeamViewerScreen(inventoryStage, party, uiFont);
+        teamViewerScreen.setOnBackPressed(this::returnToSidebarFromSubmenu);
+        teamViewerScreen.setActiveFighterIndex(playerBattleState.getActiveClawkinIndex());
+        teamViewerScreen.setOnActiveFighterSet(idx -> playerBattleState.setActiveClawkinIndex(idx));
+        teamViewerScreen.setOnSummaryRequested(this::openSummaryFromTeamViewer);
+        inventoryStage.addActor(teamViewerScreen.getRootTable());
+        Gdx.input.setInputProcessor(teamViewerScreen.getInputMultiplexer());
+
+        teamViewerVisible = true;
+        isPaused = true;
+    }
+
+    private void closeTeamViewerSubmenu(boolean returnToSidebar) {
+        if (summaryScreen != null) {
+            summaryScreen.dispose();
+            summaryScreen = null;
         }
-        
-        // Switch to the full-screen inventory screen
-        if (inventoryScreen != null) {
-            System.out.println("[GameScreen] Opening full-screen inventory");
-            game.setScreen(InventoryScreen.class);
+        summaryVisible = false;
+        teamViewerVisible = false;
+        teamViewerScreen = null;
+        inventoryStage.clear();
+        if (returnToSidebar) {
+            sideMenuOverlay.returnToSidebarFromSubmenu();
         }
     }
 
-    private void toggleTeamViewer() {
-        // CRITICAL: Prevent team viewer from opening during battle
-        if (battleService.hasBattleSession()) {
-            System.out.println("[GameScreen] Team Viewer toggle blocked - battle active");
+    private void returnToSidebarFromSubmenu() {
+        if (teamViewerVisible) {
+            closeTeamViewerSubmenu(true);
             return;
         }
-        
-        // Toggle team viewer visibility
-        if (!teamViewerVisible) {
-            // Show team viewer
-            System.out.println("[GameScreen] Opening Team Viewer");
-            List<Clawkin> party = playerBattleState.getParty();
-            teamViewerScreen = new TeamViewerScreen(inventoryStage, party, uiFont);
-            teamViewerScreen.setOnBackPressed(this::toggleTeamViewer);
-            // Show which clawkin is currently the active fighter (gold highlight)
-            teamViewerScreen.setActiveFighterIndex(playerBattleState.getActiveClawkinIndex());
-            // Persist any active-fighter changes the player makes back to battle state
-            teamViewerScreen.setOnActiveFighterSet(idx -> playerBattleState.setActiveClawkinIndex(idx));
-            // Open standalone summary when SUMMARY action is confirmed.
-            teamViewerScreen.setOnSummaryRequested(this::openSummaryFromTeamViewer);
-            inventoryStage.clear();
-            inventoryStage.addActor(teamViewerScreen.getRootTable());
-            
-            // CRITICAL FIX: Use the InputMultiplexer created by TeamViewerScreen
-            // Do NOT override with just inventoryStage - this breaks keyboard input
-            Gdx.input.setInputProcessor(teamViewerScreen.getInputMultiplexer());
-            System.out.println("[GameScreen] Set input processor to TeamViewer's InputMultiplexer");
-            
-            teamViewerVisible = true;
-            summaryVisible = false;
-            isPaused = true;
-        } else {
-            // Close team viewer
-            System.out.println("[GameScreen] Closing Team Viewer");
-            if (summaryScreen != null) {
-                summaryScreen.dispose();
-                summaryScreen = null;
-            }
-            summaryVisible = false;
-            inventoryStage.clear();
-            Gdx.input.setInputProcessor(null);
-            teamViewerVisible = false;
-            isPaused = false;
+
+        sideMenuOverlay.returnToSidebarFromSubmenu();
+        isPaused = sideMenuOverlay.isBlockingGameplay();
+    }
+
+    private void closeAllMenuUi() {
+        closeTeamViewerSubmenu(false);
+
+        if (summaryScreen != null) {
+            summaryScreen.dispose();
+            summaryScreen = null;
         }
+
+        summaryVisible = false;
+        sideMenuOverlay.closeAll();
+        isPaused = false;
+    }
+
+    private void openInventoryScreen() {
+        isPaused = false;
+        sideMenuOverlay.resetAfterScreenReturn();
+        game.setScreen(InventoryScreen.class);
     }
 
     private void openSummaryFromTeamViewer() {
@@ -975,6 +930,10 @@ public class GameScreen extends ScreenAdapter {
         interactionSystem.closeMerchant();
         // Restore world input processor when closing merchant shop
         Gdx.input.setInputProcessor(null);
+    }
+
+    private boolean shouldPauseForUi() {
+        return sideMenuOverlay.isBlockingGameplay() || teamViewerVisible || merchantShopVisible;
     }
 
     // ============================================================
