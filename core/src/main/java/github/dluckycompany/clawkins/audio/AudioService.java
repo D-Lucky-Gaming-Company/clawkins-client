@@ -1,13 +1,13 @@
 package github.dluckycompany.clawkins.audio;
 
+import java.util.EnumMap;
+import java.util.Map;
+
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.audio.Music;
 import com.badlogic.gdx.audio.Sound;
 import com.badlogic.gdx.maps.tiled.TiledMap;
 import com.badlogic.gdx.utils.Disposable;
-
-import java.util.EnumMap;
-import java.util.Map;
 
 /**
  * Centralized audio manager. Safe to use before audio assets exist:
@@ -23,6 +23,7 @@ public class AudioService implements Disposable {
     private Music currentMusic;
     private float musicVolume = 0.6f;
     private float soundVolume = 0.8f;
+    private boolean muted;
     private TiledMap currentMap;
 
     public void registerMusic(MusicTrack track, String internalPath) {
@@ -36,12 +37,31 @@ public class AudioService implements Disposable {
     public void setMusicVolume(float musicVolume) {
         this.musicVolume = Math.max(0f, Math.min(1f, musicVolume));
         if (currentMusic != null) {
-            currentMusic.setVolume(this.musicVolume);
+            currentMusic.setVolume(effectiveMusicVolume());
         }
     }
 
     public void setSoundVolume(float soundVolume) {
         this.soundVolume = Math.max(0f, Math.min(1f, soundVolume));
+    }
+
+    public float getMusicVolume() {
+        return musicVolume;
+    }
+
+    public float getSoundVolume() {
+        return soundVolume;
+    }
+
+    public boolean isMuted() {
+        return muted;
+    }
+
+    public void setMuted(boolean muted) {
+        this.muted = muted;
+        if (currentMusic != null) {
+            currentMusic.setVolume(effectiveMusicVolume());
+        }
     }
 
     public void setMap(TiledMap tiledMap) {
@@ -106,7 +126,7 @@ public class AudioService implements Disposable {
         currentTrack = track;
         currentMusic = nextMusic;
         currentMusic.setLooping(looping);
-        currentMusic.setVolume(musicVolume);
+        currentMusic.setVolume(effectiveMusicVolume());
         currentMusic.play();
     }
 
@@ -115,7 +135,15 @@ public class AudioService implements Disposable {
         if (sound == null) {
             return;
         }
-        sound.play(soundVolume);
+        sound.play(effectiveSoundVolume());
+    }
+
+    private float effectiveMusicVolume() {
+        return muted ? 0f : musicVolume;
+    }
+
+    private float effectiveSoundVolume() {
+        return muted ? 0f : soundVolume;
     }
 
     private Music resolveMusic(MusicTrack track) {
