@@ -278,7 +278,8 @@ public class GameScreen extends ScreenAdapter {
             teamViewerVisible = false;  // Clear team viewer state
             summaryVisible = false;
             inventoryStage.clear();  // Clear any lingering UI
-            sideMenuOverlay.resetAfterScreenReturn();
+            sideMenuOverlay.restoreSidebarAfterExternalScreenReturn();
+            isPaused = shouldPauseForUi();
             ensurePlayerEntityPresentAfterReturn();
             return;
         }
@@ -862,7 +863,6 @@ public class GameScreen extends ScreenAdapter {
 
     private void openInventoryScreen() {
         isPaused = false;
-        sideMenuOverlay.resetAfterScreenReturn();
         game.setScreen(InventoryScreen.class);
     }
 

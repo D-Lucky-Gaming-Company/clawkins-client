@@ -68,8 +68,7 @@ public class MainSideMenuOverlay {
     private Label[] optionLabels;
 
     private Table settingsPanel;
-    private Slider musicSlider;
-    private Slider sfxSlider;
+    private Slider masterVolumeSlider;
     private TextButton muteButton;
 
     public MainSideMenuOverlay(Stage stage, Skin skin, BitmapFont font, AudioService audioService) {
@@ -152,6 +151,16 @@ public class MainSideMenuOverlay {
         sideMenuVisible = false;
         sideMenuAnimating = false;
         stage.clear();
+    }
+
+    public void restoreSidebarAfterExternalScreenReturn() {
+        if (activeSubmenu == Submenu.NONE) {
+            resetAfterScreenReturn();
+            return;
+        }
+
+        activeSubmenu = Submenu.NONE;
+        openSidebar();
     }
 
     public boolean isBlockingGameplay() {
@@ -320,25 +329,15 @@ public class MainSideMenuOverlay {
         title.setFontScale(SETTINGS_TITLE_SCALE);
         settingsPanel.add(title).left().row();
 
-        Label musicLabel = new Label("Music Volume", new Label.LabelStyle(font, Color.valueOf("#3B342A")));
-        musicLabel.setFontScale(SETTINGS_LABEL_SCALE);
-        settingsPanel.add(musicLabel).left().row();
-        musicSlider = new Slider(0f, 1f, 0.01f, false, skin);
-        musicSlider.addListener(event -> {
-            audioService.setMusicVolume(musicSlider.getValue());
+        Label audioLabel = new Label("Audio Volume", new Label.LabelStyle(font, Color.valueOf("#3B342A")));
+        audioLabel.setFontScale(SETTINGS_LABEL_SCALE);
+        settingsPanel.add(audioLabel).left().row();
+        masterVolumeSlider = new Slider(0f, 1f, 0.01f, false, skin);
+        masterVolumeSlider.addListener(event -> {
+            audioService.setMasterVolume(masterVolumeSlider.getValue());
             return false;
         });
-        settingsPanel.add(musicSlider).width(400f).height(28f).left().row();
-
-        Label sfxLabel = new Label("SFX Volume", new Label.LabelStyle(font, Color.valueOf("#3B342A")));
-        sfxLabel.setFontScale(SETTINGS_LABEL_SCALE);
-        settingsPanel.add(sfxLabel).left().row();
-        sfxSlider = new Slider(0f, 1f, 0.01f, false, skin);
-        sfxSlider.addListener(event -> {
-            audioService.setSoundVolume(sfxSlider.getValue());
-            return false;
-        });
-        settingsPanel.add(sfxSlider).width(400f).height(28f).left().row();
+        settingsPanel.add(masterVolumeSlider).width(410f).height(34f).left().row();
 
         Table actions = new Table();
         actions.left();
@@ -368,11 +367,8 @@ public class MainSideMenuOverlay {
     }
 
     private void refreshSettingsValues() {
-        if (musicSlider != null) {
-            musicSlider.setValue(audioService.getMusicVolume());
-        }
-        if (sfxSlider != null) {
-            sfxSlider.setValue(audioService.getSoundVolume());
+        if (masterVolumeSlider != null) {
+            masterVolumeSlider.setValue(audioService.getMasterVolume());
         }
         if (muteButton != null) {
             muteButton.setText(audioService.isMuted() ? "Mute: ON" : "Mute: OFF");
