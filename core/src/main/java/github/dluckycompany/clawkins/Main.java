@@ -54,7 +54,7 @@ public class Main extends Game {
         audioService.registerMusic(MusicTrack.EXPLORATION_2, "audio/music/exploration2.mp3");
         audioService.registerMusic(MusicTrack.FLINTLOCK, "audio/music/Flintlock.mp3");
         audioService.registerMusic(MusicTrack.BATTLE, "audio/music/battle.mp3");
-        audioService.registerMusic(MusicTrack.MENU, "audio/music/menu.ogg");
+        audioService.registerMusic(MusicTrack.MENU, "audio/music/menu.mp3");
         audioService.registerMusic(MusicTrack.VICTORY, "audio/music/victory.mp3");
         audioService.registerMusic(MusicTrack.DEFEAT, "audio/music/defeat.mp3");
         audioService.registerSound(SoundEffect.CONFIRM, "audio/sfx/confirm.wav");

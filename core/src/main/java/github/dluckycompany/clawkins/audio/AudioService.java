@@ -45,6 +45,16 @@ public class AudioService implements Disposable {
         this.soundVolume = Math.max(0f, Math.min(1f, soundVolume));
     }
 
+    public void setMasterVolume(float volume) {
+        float clamped = Math.max(0f, Math.min(1f, volume));
+        setMusicVolume(clamped);
+        setSoundVolume(clamped);
+    }
+
+    public float getMasterVolume() {
+        return musicVolume;
+    }
+
     public float getMusicVolume() {
         return musicVolume;
     }
@@ -74,7 +84,7 @@ public class AudioService implements Disposable {
 
     public void onEvent(AudioEventType eventType) {
         switch (eventType) {
-            case MAP_CHANGED -> playCurrentMapMusic(false);
+            case MAP_CHANGED -> playCurrentMapMusic(true);
             case ENCOUNTER_STARTED -> playSound(SoundEffect.ENCOUNTER);
             case BATTLE_STARTED -> playMusic(MusicTrack.BATTLE, true);
             case BATTLE_VICTORY -> playMusic(MusicTrack.VICTORY, false);
@@ -109,7 +119,7 @@ public class AudioService implements Disposable {
         }
         if (currentTrack == track && currentMusic != null) {
             currentMusic.setLooping(looping);
-            currentMusic.setVolume(musicVolume);
+            currentMusic.setVolume(effectiveMusicVolume());
             if (!currentMusic.isPlaying()) {
                 currentMusic.play();
             }
@@ -152,7 +162,12 @@ public class AudioService implements Disposable {
             return cached;
         }
         String path = musicPaths.get(track);
-        if (path == null || path.isBlank() || !Gdx.files.internal(path).exists()) {
+        if (path == null || path.isBlank()) {
+            Gdx.app.log("AudioService", "No path registered for music track: " + track);
+            return null;
+        }
+        if (!Gdx.files.internal(path).exists()) {
+            Gdx.app.log("AudioService", "Music file not found: " + path + " for track " + track);
             return null;
         }
         Music music = Gdx.audio.newMusic(Gdx.files.internal(path));
