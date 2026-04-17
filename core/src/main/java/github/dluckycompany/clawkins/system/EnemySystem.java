@@ -11,8 +11,10 @@ import com.badlogic.ashley.utils.ImmutableArray;
 import com.badlogic.gdx.maps.MapLayer;
 import com.badlogic.gdx.maps.MapObject;
 import com.badlogic.gdx.maps.MapObjects;
+import com.badlogic.gdx.maps.objects.PolygonMapObject;
 import com.badlogic.gdx.maps.objects.RectangleMapObject;
 import com.badlogic.gdx.maps.tiled.TiledMap;
+import com.badlogic.gdx.maps.tiled.TiledMapTile;
 import com.badlogic.gdx.maps.tiled.TiledMapTileLayer;
 import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Rectangle;
@@ -31,9 +33,9 @@ public class EnemySystem extends IteratingSystem {
     private static final float MAX_IDLE_DURATION = 1.6f;
     private static final float CHASE_MEMORY_DURATION = 1.2f;
     private static final int ROAM_DIRECTION_ATTEMPTS = 12;
-    private static final float[] CHASE_STEER_ANGLES = {0f, 25f, -25f, 45f, -45f, 70f, -70f};
+    private static final float[] CHASE_STEER_ANGLES = { 0f, 25f, -25f, 45f, -45f, 70f, -70f };
     private static final float ENEMY_HITBOX_WIDTH_FACTOR = 0.32f;
-    private static final float ENEMY_HITBOX_HEIGHT_FACTOR = 0.30f;
+    private static final float ENEMY_HITBOX_HEIGHT_FACTOR = 0.33f;
     private static final float PLAYER_FEET_PROBE_Y_FACTOR = 0.08f;
 
     private ImmutableArray<Entity> players;
@@ -45,7 +47,10 @@ public class EnemySystem extends IteratingSystem {
     private final Rectangle tmpSolidRect = new Rectangle();
     private final Vector2 tmpVec = new Vector2();
     private final Vector2 tmpDir = new Vector2();
-    
+
+    private float mapWidth;
+    private float mapHeight;
+
     // Using simple hitboxes for raycasting validation mirroring the MoveSystem
     private static final float TILE_HITBOX_WIDTH_FACTOR = 0.80f;
     private static final float TILE_HITBOX_HEIGHT_FACTOR = 0.45f;
@@ -68,14 +73,27 @@ public class EnemySystem extends IteratingSystem {
 
     public void setMap(TiledMap tiledMap) {
         this.collisionLayers.clear();
+        int width = tiledMap.getProperties().get("width", 0, Integer.class);
+        int tileW = tiledMap.getProperties().get("tilewidth", 0, Integer.class);
+        int height = tiledMap.getProperties().get("height", 0, Integer.class);
+        int tileH = tiledMap.getProperties().get("tileheight", 0, Integer.class);
+        this.mapWidth = width * tileW * Main.UNIT_SCALE;
+        this.mapHeight = height * tileH * Main.UNIT_SCALE;
+
         boolean reachedObjectsLayer = false;
         for (MapLayer layer : tiledMap.getLayers()) {
             if ("objects".equals(layer.getName())) {
                 reachedObjectsLayer = true;
                 continue;
             }
-            if (reachedObjectsLayer) continue;
-            
+            if (reachedObjectsLayer) {
+                // Keep layer selection aligned with MoveSystem collision behavior.
+                if ("elements".equalsIgnoreCase(layer.getName()) && layer instanceof TiledMapTileLayer tileLayer) {
+                    this.collisionLayers.add(tileLayer);
+                }
+                continue;
+            }
+
             if (layer instanceof TiledMapTileLayer tileLayer) {
                 this.collisionLayers.add(tileLayer);
             }
@@ -117,7 +135,8 @@ public class EnemySystem extends IteratingSystem {
             enemy.setIdlingBetweenRoams(false);
             enemy.setIdleTimer(0f);
             move.setMaxSpeed(enemy.getChasingSpeed());
-            // Null-safe: targetPlayer is checked to be non-null in the condition, but getComponent can return null
+            // Null-safe: targetPlayer is checked to be non-null in the condition, but
+            // getComponent can return null
             Transform targetTransform = targetPlayer != null ? targetPlayer.getComponent(Transform.class) : null;
             if (targetTransform != null) {
                 updateChaseDirection(enemy, move, transform, targetTransform, entity);
@@ -206,7 +225,8 @@ public class EnemySystem extends IteratingSystem {
         enemy.getFacingDirection().set(tmpDir);
     }
 
-    private void updateChaseDirection(Enemy enemy, Move move, Transform enemyTransform, Transform playerTransform, Entity self) {
+    private void updateChaseDirection(Enemy enemy, Move move, Transform enemyTransform, Transform playerTransform,
+            Entity self) {
         Vector2 enemyCenter = centerOf(enemyTransform);
         Vector2 encounterTarget = playerEncounterTarget(enemyCenter, playerTransform);
         tmpDir.set(encounterTarget).sub(enemyCenter);
@@ -279,6 +299,9 @@ public class EnemySystem extends IteratingSystem {
         float testX = transform.getPosition().x + direction.x * distance;
         float testY = transform.getPosition().y + direction.y * distance;
         Rectangle hitbox = buildEnemyHitbox(testX, testY, transform.getSize().x, transform.getSize().y, tmpRect);
+        if (isOutOfMapBounds(hitbox)) {
+            return false;
+        }
         return !isPointObstructed(hitbox, self);
     }
 
@@ -309,11 +332,11 @@ public class EnemySystem extends IteratingSystem {
 
         // 3. Raycast for collisions
         // Step along the vector from enemy to player
-        int steps = (int)(distance / RAYCAST_STEP);
+        int steps = Math.max(1, (int) Math.ceil(distance / RAYCAST_STEP));
         for (int i = 1; i <= steps; i++) {
             float t = (float) i / steps;
             tmpVec.set(enemyPos).lerp(playerPos, t);
-            
+
             // Create a small bounding box at the test point
             tmpRect.set(tmpVec.x - 0.2f, tmpVec.y - 0.2f, 0.4f, 0.4f);
 
@@ -327,49 +350,69 @@ public class EnemySystem extends IteratingSystem {
 
     private Vector2 centerOf(Transform transform) {
         return new Vector2(
-            transform.getPosition().x + transform.getSize().x * 0.5f,
-            transform.getPosition().y + transform.getSize().y * 0.5f
-        );
+                transform.getPosition().x + transform.getSize().x * 0.5f,
+                transform.getPosition().y + transform.getSize().y * 0.5f);
     }
 
     private boolean isPointObstructed(Rectangle rayRect, Entity self) {
+        if (isOutOfMapBounds(rayRect)) {
+            return true;
+        }
+
         // 1. Check Map layers
         for (TiledMapTileLayer layer : collisionLayers) {
             float tileWorldW = layer.getTileWidth() * Main.UNIT_SCALE;
             float tileWorldH = layer.getTileHeight() * Main.UNIT_SCALE;
-            if (tileWorldW <= 0f || tileWorldH <= 0f) continue;
+            if (tileWorldW <= 0f || tileWorldH <= 0f)
+                continue;
 
-            int minCol = (int) Math.floor(rayRect.x / tileWorldW);
-            int maxCol = (int) Math.floor((rayRect.x + rayRect.width) / tileWorldW);
-            int minRow = (int) Math.floor(rayRect.y / tileWorldH);
-            int maxRow = (int) Math.floor((rayRect.y + rayRect.height) / tileWorldH);
+            float layerOffsetX = layer.getOffsetX() * Main.UNIT_SCALE;
+            float layerOffsetY = layer.getOffsetY() * Main.UNIT_SCALE;
+
+            int minCol = (int) Math.floor((rayRect.x - layerOffsetX) / tileWorldW) - 1;
+            int maxCol = (int) Math.floor((rayRect.x + rayRect.width - layerOffsetX - 0.0001f) / tileWorldW) + 1;
+            int minRow = (int) Math.floor((rayRect.y - layerOffsetY) / tileWorldH) - 1;
+            int maxRow = (int) Math.floor((rayRect.y + rayRect.height - layerOffsetY - 0.0001f) / tileWorldH) + 1;
 
             for (int row = minRow; row <= maxRow; row++) {
                 for (int col = minCol; col <= maxCol; col++) {
                     TiledMapTileLayer.Cell cell = layer.getCell(col, row);
-                    if (cell == null || cell.getTile() == null) continue;
+                    if (cell == null || cell.getTile() == null)
+                        continue;
 
-                    MapObjects objects = cell.getTile().getObjects();
-                    if (objects == null || objects.getCount() == 0) continue;
+                    TiledMapTile tile = cell.getTile();
+                    MapObjects objects = tile.getObjects();
+                    if (objects == null || objects.getCount() == 0)
+                        continue;
 
                     for (MapObject mapObject : objects) {
+                        Rectangle rect = null;
                         if (mapObject instanceof RectangleMapObject rectMapObject) {
-                            Rectangle rect = rectMapObject.getRectangle();
-                            float rectX = col * tileWorldW + rect.x * Main.UNIT_SCALE;
-                            float rectY = row * tileWorldH + rect.y * Main.UNIT_SCALE;
-                            float rectW = rect.width * Main.UNIT_SCALE;
-                            float rectH = rect.height * Main.UNIT_SCALE;
+                            rect = rectMapObject.getRectangle();
+                        } else if (mapObject instanceof PolygonMapObject polygonMapObject) {
+                            rect = polygonMapObject.getPolygon().getBoundingRectangle();
+                        }
+                        if (rect == null) {
+                            continue;
+                        }
 
-                            float tileHitboxW = rectW * TILE_HITBOX_WIDTH_FACTOR;
-                            float tileHitboxH = rectH * TILE_HITBOX_HEIGHT_FACTOR;
-                            float tileHitboxX = rectX + (rectW - tileHitboxW) * 0.5f;
-                            float tileHitboxY = rectY;
+                        float tileOffsetX = tile.getOffsetX() * Main.UNIT_SCALE;
+                        float tileOffsetY = tile.getOffsetY() * Main.UNIT_SCALE;
 
-                            tmpTileRect.set(tileHitboxX, tileHitboxY, tileHitboxW, tileHitboxH);
+                        float rectX = col * tileWorldW + layerOffsetX + tileOffsetX + rect.x * Main.UNIT_SCALE;
+                        float rectY = row * tileWorldH + layerOffsetY + tileOffsetY + rect.y * Main.UNIT_SCALE;
+                        float rectW = rect.width * Main.UNIT_SCALE;
+                        float rectH = rect.height * Main.UNIT_SCALE;
 
-                            if (rayRect.overlaps(tmpTileRect)) {
-                                return true;
-                            }
+                        float tileHitboxW = rectW * TILE_HITBOX_WIDTH_FACTOR;
+                        float tileHitboxH = rectH * TILE_HITBOX_HEIGHT_FACTOR;
+                        float tileHitboxX = rectX + (rectW - tileHitboxW) * 0.5f;
+                        float tileHitboxY = rectY;
+
+                        tmpTileRect.set(tileHitboxX, tileHitboxY, tileHitboxW, tileHitboxH);
+
+                        if (rayRect.overlaps(tmpTileRect)) {
+                            return true;
                         }
                     }
                 }
@@ -377,8 +420,13 @@ public class EnemySystem extends IteratingSystem {
         }
 
         // 2. Check Solid entities
+        if (solidEntities == null || solidEntities.size() == 0) {
+            return false;
+        }
+
         for (Entity solidEntity : solidEntities) {
-            if (solidEntity == self) continue;
+            if (solidEntity == self)
+                continue;
 
             Interactible interactible = solidEntity.getComponent(Interactible.class);
             if (interactible != null && interactible.hasCollision()) {
@@ -399,5 +447,15 @@ public class EnemySystem extends IteratingSystem {
         }
 
         return false;
+    }
+
+    private boolean isOutOfMapBounds(Rectangle rect) {
+        if (mapWidth <= 0f || mapHeight <= 0f) {
+            return false;
+        }
+        return rect.x < 0f
+                || rect.y < 0f
+                || rect.x + rect.width > mapWidth
+                || rect.y + rect.height > mapHeight;
     }
 }
