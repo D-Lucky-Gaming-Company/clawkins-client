@@ -111,6 +111,10 @@ public class MoveSystem extends IteratingSystem {
             }
             if (reachedObjectsLayer) {
                 // Foreground/overlay layers render above entities and should not block movement.
+                // However, the "elements" layer used for Y-sorting may appear after objects.
+                if ("elements".equalsIgnoreCase(layer.getName()) && layer instanceof TiledMapTileLayer tileLayer) {
+                    this.collisionLayers.add(tileLayer);
+                }
                 continue;
             }
             if (layer instanceof TiledMapTileLayer tileLayer) {
@@ -148,10 +152,13 @@ public class MoveSystem extends IteratingSystem {
                 continue;
             }
 
-            int minCol = (int) Math.floor(entityHitbox.x / tileWorldW);
-            int maxCol = (int) Math.floor((entityHitbox.x + entityHitbox.width - 0.0001f) / tileWorldW);
-            int minRow = (int) Math.floor(entityHitbox.y / tileWorldH);
-            int maxRow = (int) Math.floor((entityHitbox.y + entityHitbox.height - 0.0001f) / tileWorldH);
+            float layerOffsetX = layer.getOffsetX() * Main.UNIT_SCALE;
+            float layerOffsetY = layer.getOffsetY() * Main.UNIT_SCALE;
+
+            int minCol = (int) Math.floor((entityHitbox.x - layerOffsetX) / tileWorldW) - 1;
+            int maxCol = (int) Math.floor((entityHitbox.x + entityHitbox.width - layerOffsetX - 0.0001f) / tileWorldW) + 1;
+            int minRow = (int) Math.floor((entityHitbox.y - layerOffsetY) / tileWorldH) - 1;
+            int maxRow = (int) Math.floor((entityHitbox.y + entityHitbox.height - layerOffsetY - 0.0001f) / tileWorldH) + 1;
 
             for (int row = minRow; row <= maxRow; row++) {
                 for (int col = minCol; col <= maxCol; col++) {
@@ -180,8 +187,11 @@ public class MoveSystem extends IteratingSystem {
                             continue;
                         }
 
-                        float rectX = col * tileWorldW + rect.x * Main.UNIT_SCALE;
-                        float rectY = row * tileWorldH + rect.y * Main.UNIT_SCALE;
+                        float tileOffsetX = tile.getOffsetX() * Main.UNIT_SCALE;
+                        float tileOffsetY = tile.getOffsetY() * Main.UNIT_SCALE;
+
+                        float rectX = col * tileWorldW + layerOffsetX + tileOffsetX + rect.x * Main.UNIT_SCALE;
+                        float rectY = row * tileWorldH + layerOffsetY + tileOffsetY + rect.y * Main.UNIT_SCALE;
                         float rectW = rect.width * Main.UNIT_SCALE;
                         float rectH = rect.height * Main.UNIT_SCALE;
                         float tileHitboxW = rectW * TILE_HITBOX_WIDTH_FACTOR;
