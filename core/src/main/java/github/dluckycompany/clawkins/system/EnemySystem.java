@@ -80,21 +80,9 @@ public class EnemySystem extends IteratingSystem {
         this.mapWidth = width * tileW * Main.UNIT_SCALE;
         this.mapHeight = height * tileH * Main.UNIT_SCALE;
 
-        boolean reachedObjectsLayer = false;
         for (MapLayer layer : tiledMap.getLayers()) {
-            if ("objects".equals(layer.getName())) {
-                reachedObjectsLayer = true;
-                continue;
-            }
-            if (reachedObjectsLayer) {
-                // Keep layer selection aligned with MoveSystem collision behavior.
-                if ("elements".equalsIgnoreCase(layer.getName()) && layer instanceof TiledMapTileLayer tileLayer) {
-                    this.collisionLayers.add(tileLayer);
-                }
-                continue;
-            }
-
             if (layer instanceof TiledMapTileLayer tileLayer) {
+                // Tile collision objects should block regardless of visual layer placement.
                 this.collisionLayers.add(tileLayer);
             }
         }
