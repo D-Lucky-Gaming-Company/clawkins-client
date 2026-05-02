@@ -59,7 +59,8 @@ public class BattleOverlay implements Disposable {
     private enum DialogueFlowPhase {
         NONE,
         PLAYER_RESULT,
-        ENEMY_RESULT
+        ENEMY_RESULT,
+        RUN_CONFIRMATION
     }
 
     private static final int SKIN_FONT_SIZE = 12;
@@ -95,6 +96,9 @@ public class BattleOverlay implements Disposable {
     private List<BattleTextSpan> dialogueSpans = List.of();
     private float dialogueVisibleChars = 0f;
     private static final float DIALOGUE_TYPEWRITER_CHARS_PER_SECOND = 44f;
+
+    /** True when inventory is open from battle. */
+    private boolean inventoryOpen = false;
 
     // -----------------------------------------------------------------------
     // Construction
@@ -284,6 +288,7 @@ public class BattleOverlay implements Disposable {
         }
 
         if (battle.canAcceptPlayerAction()) {
+            // Keyboard input for battle actions
             if (Gdx.input.isKeyJustPressed(Keys.NUM_1)) {
                 battleHud.triggerAttack();
             } else if (Gdx.input.isKeyJustPressed(Keys.NUM_2)) {
@@ -294,9 +299,14 @@ public class BattleOverlay implements Disposable {
                 battleHud.triggerItem();
             } else if (isInteractionPressed()) {
                 battleHud.triggerAttack();
-            } else if (Gdx.input.isKeyJustPressed(Keys.R)) {
-                battleService.submitEscapeAction();
-                openDialogue(null, battle.getLastLog(), battle.getLastLogSpans(), DialogueFlowPhase.PLAYER_RESULT);
+            } else if (Gdx.input.isKeyJustPressed(Keys.E)) {
+                // Toggle inventory
+                toggleInventory();
+            } else if (Gdx.input.isKeyJustPressed(Keys.X)) {
+                // Show run confirmation prompt
+                if (battleHud.isWildBattle()) {
+                    showRunConfirmation();
+                }
             }
             return;
         }
@@ -362,7 +372,14 @@ public class BattleOverlay implements Disposable {
             battleHud.setPlayerHp(ally.getHp(), maxHp);
             
             // Update Clawkin container with party data
-            battleHud.updateClawkinContainer(playerBattleState.getParty());
+            List<Clawkin> party = playerBattleState.getParty();
+            battleHud.updateClawkinContainer(party);
+            
+            // Set selected Clawkin index based on active Clawkin
+            if (activeClawkin != null && party != null) {
+                int selectedIndex = findClawkinIndex(activeClawkin, party);
+                battleHud.setSelectedClawkinIndex(selectedIndex);
+            }
         }
 
         BattleUnit enemy = battle.firstEnemy();
@@ -375,6 +392,31 @@ public class BattleOverlay implements Disposable {
                         ctx.getEnemyPortraitPath());
             }
         }
+    }
+
+    /**
+     * Finds the index of a Clawkin in the party based on name/ID matching.
+     * Returns the slot index (0=Ginger/top, 1=Swee'pea/middle, 2=Dart/bottom).
+     */
+    private int findClawkinIndex(Clawkin activeClawkin, List<Clawkin> party) {
+        if (activeClawkin == null || party == null) {
+            return 0;
+        }
+
+        String activeName = activeClawkin.getName() != null ? activeClawkin.getName().toLowerCase() : "";
+        String activeId = activeClawkin.getId() != null ? activeClawkin.getId().toLowerCase() : "";
+
+        // Determine slot based on Clawkin identity
+        if (activeName.contains("ginger") || activeId.contains("ginger")) {
+            return 0; // Top slot
+        } else if (activeName.contains("swee") || activeName.contains("swea") || activeId.contains("swee") || activeId.contains("swea")) {
+            return 1; // Middle slot
+        } else if (activeName.contains("dart") || activeId.contains("dart")) {
+            return 2; // Bottom slot
+        }
+
+        // Default to first slot
+        return 0;
     }
 
     // -----------------------------------------------------------------------
@@ -471,6 +513,20 @@ public class BattleOverlay implements Disposable {
             return;
         }
 
+        // Handle run confirmation
+        if (dialogueFlowPhase == DialogueFlowPhase.RUN_CONFIRMATION) {
+            // Check for Yes (Z/Space/Enter) or No (X/Escape)
+            if (isInteractionPressed()) {
+                // Confirmed - attempt to run
+                battleService.submitEscapeAction();
+                openDialogue(null, machine.getLastLog(), machine.getLastLogSpans(), DialogueFlowPhase.PLAYER_RESULT);
+            } else if (Gdx.input.isKeyJustPressed(Keys.X) || Gdx.input.isKeyJustPressed(Keys.ESCAPE)) {
+                // Cancelled - return to battle
+                resetDialogueFlow();
+            }
+            return;
+        }
+
         if (dialogueFlowPhase == DialogueFlowPhase.PLAYER_RESULT) {
             if (machine.canExecuteEnemyAction()) {
                 battleService.resolveEnemyTurn();
@@ -563,8 +619,34 @@ public class BattleOverlay implements Disposable {
         // The inventory screen will handle its own input
         Gdx.app.log("BattleOverlay", "Opening inventory screen from battle");
         
+        inventoryOpen = true;
+        
         // Switch to inventory screen (uses cached screen from Main)
         game.setScreen(github.dluckycompany.clawkins.ui.InventoryScreen.class);
+    }
+
+    /**
+     * Toggles the inventory screen open/closed.
+     * Press E to open, press E again to close.
+     */
+    private void toggleInventory() {
+        if (inventoryOpen) {
+            // Close inventory - return to battle
+            resumeFromInventory();
+            inventoryOpen = false;
+        } else {
+            // Open inventory
+            openInventoryScreen();
+        }
+    }
+
+    /**
+     * Shows a confirmation prompt before running from battle.
+     * Player must confirm with Z/Space/Enter or cancel with X/Escape.
+     */
+    private void showRunConfirmation() {
+        String confirmText = "Are you sure you want to run?\n[Z] Yes  [X] No";
+        openDialogue(null, confirmText, List.of(), DialogueFlowPhase.RUN_CONFIRMATION);
     }
 
     /**

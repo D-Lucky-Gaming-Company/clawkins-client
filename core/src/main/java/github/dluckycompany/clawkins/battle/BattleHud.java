@@ -206,6 +206,9 @@ public class BattleHud implements Disposable {
     /** True if this is a wild battle (allows fleeing). */
     private boolean isWildBattle = false;
 
+    /** Currently selected Clawkin index (for visual indicator). */
+    private int selectedClawkinIndex = 0;
+
     /** Callback slots â€” set by GameScreen / BattleOverlay. */
     private Runnable onAttack = () -> {};
     private Runnable onDefend = () -> {};
@@ -236,10 +239,11 @@ public class BattleHud implements Disposable {
     // Public API
     // -----------------------------------------------------------------------
 
-    /** Makes the HUD visible and routes input through the Stage. */
+    /** Makes the HUD visible but does NOT set input processor (keyboard-only control). */
     public void show() {
         visible = true;
-        Gdx.input.setInputProcessor(stage);
+        // Do NOT set input processor - we use keyboard input only
+        // Gdx.input.setInputProcessor(stage);
     }
 
     /** Hides the HUD and removes the Stage as input processor. */
@@ -314,15 +318,8 @@ public class BattleHud implements Disposable {
     /** Invoke current Flee action callback (only if wild battle). */
     public void triggerFlee() { 
         if (isWildBattle) {
-            attemptFlee();
+            onFlee.run();
         }
-    }
-
-    /** Attempts to flee from battle (stub method - implement flee logic here). */
-    private void attemptFlee() {
-        onFlee.run();
-        // TODO: Implement flee logic (success rate, animations, etc.)
-        System.out.println("Attempting to flee from battle...");
     }
 
     // -----------------------------------------------------------------------
@@ -664,9 +661,9 @@ public class BattleHud implements Disposable {
         specialBtn.getImage().setScaling(Scaling.fit);
         itemBtn.getImage().setScaling(Scaling.fit);
 
-        // Create corner buttons with hover/click feedback
-        inventoryBtn = loadButtonWithFeedback(inventoryButtonTex, () -> this.onInventory.run());
-        fleeBtn = loadButtonWithFeedback(fleeButtonTex, () -> this.triggerFlee());
+        // Create corner buttons (visual only - no mouse interaction)
+        inventoryBtn = loadButtonVisualOnly(inventoryButtonTex);
+        fleeBtn = loadButtonVisualOnly(fleeButtonTex);
         inventoryBtn.getImage().setScaling(Scaling.fit);
         fleeBtn.getImage().setScaling(Scaling.fit);
 
@@ -953,66 +950,21 @@ public class BattleHud implements Disposable {
     }
 
     /**
-     * Creates an {@link ImageButton} with enhanced hover and click feedback.
-     * Includes scale animation on hover and click for better visual feedback.
+     * Creates an {@link ImageButton} for visual display only (no mouse interaction).
+     * Used for buttons that are controlled via keyboard input.
      */
-    private static ImageButton loadButtonWithFeedback(Texture buttonTex, Runnable onClick) {
+    private static ImageButton loadButtonVisualOnly(Texture buttonTex) {
         TextureRegion region = new TextureRegion(buttonTex);
         TextureRegionDrawable upDrawable = new TextureRegionDrawable(region);
-        TextureRegionDrawable downDrawable = new TextureRegionDrawable(region);
 
         ImageButton.ImageButtonStyle style = new ImageButton.ImageButtonStyle();
         style.imageUp   = upDrawable;
         style.imageOver = upDrawable;
-        style.imageDown = downDrawable;
+        style.imageDown = upDrawable;
 
         ImageButton btn = new ImageButton(style);
-        
-        // Add hover and click feedback
-        btn.addListener(new ClickListener() {
-            @Override
-            public void enter(InputEvent event, float x, float y, int pointer, com.badlogic.gdx.scenes.scene2d.Actor fromActor) {
-                super.enter(event, x, y, pointer, fromActor);
-                if (!btn.isDisabled()) {
-                    // Scale up slightly on hover
-                    btn.setScale(1.1f);
-                }
-            }
-
-            @Override
-            public void exit(InputEvent event, float x, float y, int pointer, com.badlogic.gdx.scenes.scene2d.Actor toActor) {
-                super.exit(event, x, y, pointer, toActor);
-                // Return to normal scale
-                btn.setScale(1.0f);
-            }
-
-            @Override
-            public boolean touchDown(InputEvent event, float x, float y, int pointer, int button) {
-                if (!btn.isDisabled()) {
-                    // Scale down on click
-                    btn.setScale(0.95f);
-                    // Slightly reduce alpha for visual feedback
-                    btn.setColor(1f, 1f, 1f, 0.8f);
-                }
-                return super.touchDown(event, x, y, pointer, button);
-            }
-
-            @Override
-            public void touchUp(InputEvent event, float x, float y, int pointer, int button) {
-                super.touchUp(event, x, y, pointer, button);
-                // Return to hover scale
-                btn.setScale(1.1f);
-                // Restore full alpha
-                btn.setColor(1f, 1f, 1f, 1f);
-            }
-
-            @Override
-            public void clicked(InputEvent e, float x, float y) {
-                if (!btn.isDisabled()) {
-                    onClick.run();
-                }
-            }
-        });
+        // Disable touch/click interaction - keyboard only
+        btn.setTouchable(com.badlogic.gdx.scenes.scene2d.Touchable.disabled);
         
         return btn;
     }
@@ -1134,6 +1086,26 @@ public class BattleHud implements Disposable {
     }
 
     /**
+     * Sets the currently selected Clawkin index for visual highlighting.
+     * @param index The index of the selected Clawkin (0-2)
+     */
+    public void setSelectedClawkinIndex(int index) {
+        if (index >= 0 && index < 3) {
+            this.selectedClawkinIndex = index;
+            // Refresh container to update visual indicator
+            positionClawkinContainer();
+        }
+    }
+
+    /**
+     * Gets the currently selected Clawkin index.
+     * @return The index of the selected Clawkin (0-2)
+     */
+    public int getSelectedClawkinIndex() {
+        return selectedClawkinIndex;
+    }
+
+    /**
      * Positions and sizes the Clawkin container on the left side of the screen.
      * Ensures icons are properly centered within container slots.
      * Uses precise slot-based positioning for perfect alignment.
@@ -1173,8 +1145,8 @@ public class BattleHud implements Disposable {
 
             // Icon sizing within slot
             // Use 95% of slot dimensions to leave padding
-            float iconWidth = slotWidth * 0.95f;
-            float iconHeight = slotHeight * 0.95f;
+            float iconWidth = slotWidth * 0.92f;
+            float iconHeight = slotHeight * 0.92f;
             
             // Use the smaller dimension to maintain aspect ratio
             float iconSize = Math.min(iconWidth, iconHeight);
@@ -1215,7 +1187,19 @@ public class BattleHud implements Disposable {
             for (int i = 0; i < numSlots; i++) {
                 Image icon = slotIcons[i];
                 
+                // Check if this slot is selected
+                boolean isSelected = (i == selectedClawkinIndex);
+                
                 if (icon != null) {
+                    // Apply visual highlight to selected icon
+                    if (isSelected) {
+                        // Brighter and slightly scaled for selection indicator
+                        icon.setColor(1.2f, 1.2f, 1.0f, 1.0f); // Slight yellow tint
+                    } else {
+                        // Normal appearance
+                        icon.setColor(1.0f, 1.0f, 1.0f, 1.0f);
+                    }
+                    
                     // Add icon with exact slot dimensions
                     clawkinIconTable.add(icon)
                         .size(iconSize, iconSize)
