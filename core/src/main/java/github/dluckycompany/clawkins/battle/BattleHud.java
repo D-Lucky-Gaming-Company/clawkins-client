@@ -1175,6 +1175,7 @@ public class BattleHud implements Disposable {
         }
         
         highlightedClawkinIndex = newIndex;
+        Gdx.app.log("BattleHud", "Move UP: highlightedIndex = " + highlightedClawkinIndex);
         updateSelectionHighlight();
     }
 
@@ -1190,6 +1191,7 @@ public class BattleHud implements Disposable {
         }
         
         highlightedClawkinIndex = newIndex;
+        Gdx.app.log("BattleHud", "Move DOWN: highlightedIndex = " + highlightedClawkinIndex);
         updateSelectionHighlight();
     }
 
@@ -1381,6 +1383,7 @@ public class BattleHud implements Disposable {
      */
     private void updateSelectionHighlight() {
         if (selectionHighlight == null || clawkinWrapper == null) {
+            Gdx.app.log("BattleHud", "updateSelectionHighlight: highlight or wrapper is null");
             return;
         }
 
@@ -1411,10 +1414,19 @@ public class BattleHud implements Disposable {
         float highlightX = containerX + (slotWidth - highlightW) / 2f;
         float highlightY = slotY - (highlightH / 2f);
 
+        Gdx.app.log("BattleHud", String.format("Highlight position: index=%d, x=%.1f, y=%.1f, w=%.1f, h=%.1f", 
+            highlightedClawkinIndex, highlightX, highlightY, highlightW, highlightH));
+
         selectionHighlight.setSize(highlightW, highlightH);
         selectionHighlight.setPosition(highlightX, highlightY);
+        
+        // Bring to front to ensure it's visible above container
+        selectionHighlight.toFront();
 
         // Make highlight visible
         selectionHighlight.setVisible(true);
+        
+        Gdx.app.log("BattleHud", "Highlight updated - visible: " + selectionHighlight.isVisible() + 
+            ", actual pos: " + selectionHighlight.getX() + "," + selectionHighlight.getY());
     }
 }
