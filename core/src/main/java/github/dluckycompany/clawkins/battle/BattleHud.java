@@ -1049,10 +1049,9 @@ public class BattleHud implements Disposable {
         }
 
         // Create wrapper table for positioning on screen
+        // DON'T use setFillParent - we'll position it manually
         if (clawkinWrapper == null) {
             clawkinWrapper = new Table();
-            clawkinWrapper.setFillParent(true);
-            clawkinWrapper.left().center(); // Left side, vertically centered
             clawkinWrapper.add(clawkinStack); // Add the stack to the wrapper
         }
 
@@ -1152,11 +1151,13 @@ public class BattleHud implements Disposable {
 
         // Update wrapper table
         clawkinWrapper.clearChildren();
-        clawkinWrapper.left().center();
-        clawkinWrapper.pad(10f, 10f, 0f, 0f); // 10px from left edge and top
-
-        // Set stack size to match container
         clawkinWrapper.add(clawkinStack).size(containerW, containerH);
+
+        // Position wrapper manually at LEFT EDGE, vertically centered
+        float wrapperX = 0f; // Flush against left edge
+        float wrapperY = (h / 2f) - (containerH / 2f); // Vertically centered
+        clawkinWrapper.setPosition(wrapperX, wrapperY);
+        clawkinWrapper.setSize(containerW, containerH);
 
         // Rebuild icon table with proper sizing
         clawkinIconTable.clearChildren();
@@ -1167,7 +1168,12 @@ public class BattleHud implements Disposable {
             int partySize = currentParty.size();
             float availableHeight = containerH * 0.85f; // Use 85% of container height
             float iconSlotHeight = availableHeight / partySize;
-            float iconSize = Math.min(iconSlotHeight * 0.8f, containerW * 0.65f); // 80% of slot height or 65% of width
+            
+            // Make icons larger - use 90% of container width and 75% of slot height
+            float iconSize = Math.min(
+                iconSlotHeight * 0.75f,  // 75% of slot height
+                containerW * 0.90f       // 90% of container width (larger icons)
+            );
 
             // Add icons with proper spacing
             for (int i = 0; i < currentParty.size(); i++) {
@@ -1179,7 +1185,7 @@ public class BattleHud implements Disposable {
                     // Add icon with size and padding
                     clawkinIconTable.add(icon)
                         .size(iconSize, iconSize)
-                        .pad(iconSlotHeight * 0.1f) // 10% padding
+                        .pad(iconSlotHeight * 0.08f) // 8% padding (tighter spacing)
                         .center()
                         .row();
                 }
