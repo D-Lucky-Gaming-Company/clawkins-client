@@ -1136,6 +1136,7 @@ public class BattleHud implements Disposable {
     /**
      * Positions and sizes the Clawkin container on the left side of the screen.
      * Ensures icons are properly centered within container slots.
+     * Uses precise slot-based positioning for perfect alignment.
      */
     private void positionClawkinContainer() {
         if (clawkinWrapper == null || clawkinStack == null || clawkinIconTable == null) {
@@ -1159,35 +1160,74 @@ public class BattleHud implements Disposable {
         clawkinWrapper.setPosition(wrapperX, wrapperY);
         clawkinWrapper.setSize(containerW, containerH);
 
-        // Rebuild icon table with proper sizing
+        // Rebuild icon table with SLOT-BASED sizing
         clawkinIconTable.clearChildren();
-        clawkinIconTable.center();
+        clawkinIconTable.top(); // Align from top
 
         if (currentParty != null && !currentParty.isEmpty()) {
-            // Calculate icon size based on container and number of party members
-            int partySize = currentParty.size();
-            float availableHeight = containerH * 0.85f; // Use 85% of container height
-            float iconSlotHeight = availableHeight / partySize;
+            // SLOT CALCULATION
+            // Container has 3 equal vertical slots
+            int numSlots = 3; // Always 3 slots (top, middle, bottom)
+            float slotHeight = containerH / numSlots; // Each slot is 1/3 of container
+            float slotWidth = containerW; // Slot width = container width
+
+            // Icon sizing within slot
+            // Use 95% of slot dimensions to leave padding
+            float iconWidth = slotWidth * 0.95f;
+            float iconHeight = slotHeight * 0.95f;
             
-            // Make icons larger - use 90% of container width and 75% of slot height
-            float iconSize = Math.min(
-                iconSlotHeight * 0.75f,  // 75% of slot height
-                containerW * 0.90f       // 90% of container width (larger icons)
-            );
+            // Use the smaller dimension to maintain aspect ratio
+            float iconSize = Math.min(iconWidth, iconHeight);
 
-            // Add icons with proper spacing
-            for (int i = 0; i < currentParty.size(); i++) {
-                Clawkin clawkin = currentParty.get(i);
+            // Padding to center icon within slot
+            float verticalPadding = (slotHeight - iconSize) / 2f;
+            float horizontalPadding = (slotWidth - iconSize) / 2f;
+
+            // SLOT ASSIGNMENT
+            // Top slot → Ginger (index 0)
+            // Middle slot → Swee'pea (index 1)  
+            // Bottom slot → Dart (index 2)
+            
+            // Create array to hold icons in slot order
+            Image[] slotIcons = new Image[numSlots];
+            
+            // Assign icons to slots based on Clawkin name/ID
+            for (Clawkin clawkin : currentParty) {
                 if (clawkin == null) continue;
-
+                
+                String name = clawkin.getName() != null ? clawkin.getName().toLowerCase() : "";
+                String id = clawkin.getId() != null ? clawkin.getId().toLowerCase() : "";
+                
                 Image icon = createClawkinIcon(clawkin);
+                if (icon == null) continue;
+                
+                // Assign to specific slot based on Clawkin
+                if (name.contains("ginger") || id.contains("ginger")) {
+                    slotIcons[0] = icon; // Top slot
+                } else if (name.contains("swee") || name.contains("swea") || id.contains("swee") || id.contains("swea")) {
+                    slotIcons[1] = icon; // Middle slot
+                } else if (name.contains("dart") || id.contains("dart")) {
+                    slotIcons[2] = icon; // Bottom slot
+                }
+            }
+
+            // Add icons to table in slot order (top to bottom)
+            for (int i = 0; i < numSlots; i++) {
+                Image icon = slotIcons[i];
+                
                 if (icon != null) {
-                    // Add icon with size and padding
+                    // Add icon with exact slot dimensions
                     clawkinIconTable.add(icon)
                         .size(iconSize, iconSize)
-                        .pad(iconSlotHeight * 0.08f) // 8% padding (tighter spacing)
+                        .padTop(i == 0 ? verticalPadding : 0f) // Top padding for first slot
+                        .padBottom(verticalPadding)
+                        .padLeft(horizontalPadding)
+                        .padRight(horizontalPadding)
                         .center()
                         .row();
+                } else {
+                    // Empty slot - add spacer to maintain layout
+                    clawkinIconTable.add().size(slotWidth, slotHeight).row();
                 }
             }
         }
