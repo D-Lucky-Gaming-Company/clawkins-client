@@ -161,12 +161,22 @@ public class InventoryScreen implements Screen {
             previousGameScreen.setPaused(false);
         }
 
-        // Restore the previous input processor
-        if (previousInputProcessor != null) {
-            Gdx.input.setInputProcessor(previousInputProcessor);
-        } else {
-            Gdx.input.setInputProcessor(null);
+        // DON'T restore input processor here if we're in battle
+        // The battle HUD will handle its own input restoration via resumeFromInventory()
+        // Only restore if we're NOT in a battle (i.e., opened from exploration)
+        boolean inBattle = previousGameScreen != null 
+                && previousGameScreen.getBattleOverlay() != null 
+                && previousGameScreen.getBattleOverlay().isInBattle();
+        
+        if (!inBattle) {
+            // Restore the previous input processor (exploration mode)
+            if (previousInputProcessor != null) {
+                Gdx.input.setInputProcessor(previousInputProcessor);
+            } else {
+                Gdx.input.setInputProcessor(null);
+            }
         }
+        // If in battle, the input processor is already set by resumeFromInventory()
 
         // Clear the stage
         if (stage != null) {
@@ -195,6 +205,11 @@ public class InventoryScreen implements Screen {
         // Resume the game
         if (previousGameScreen != null) {
             previousGameScreen.setPaused(false);
+            
+            // If we're in a battle, restore the battle HUD input
+            if (previousGameScreen.getBattleOverlay() != null) {
+                previousGameScreen.getBattleOverlay().resumeFromInventory();
+            }
         }
         
         // Return to the cached GameScreen
