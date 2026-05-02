@@ -81,8 +81,8 @@ public class BattleHud implements Disposable {
     // Placeholder combatant sprites (replace with real ones later)
     // -----------------------------------------------------------------------
 
-    private static final String PLAYER_PLACEHOLDER_PATH = "characters/Clawkin_01.png";
-    private static final String BOSS_PLACEHOLDER_PATH   = "characters/Clawkin_02.png";
+    private static final String PLAYER_PLACEHOLDER_PATH = "entities/clawkins/Clawkin_01_Ginger.png";
+    private static final String BOSS_PLACEHOLDER_PATH   = "entities/clawkins/Clawkin_04_Bert_Jr.png";
 
     private static final float PLAYER_PLACEHOLDER_W = 96f;
     private static final float PLAYER_PLACEHOLDER_H = 96f;
@@ -97,6 +97,10 @@ public class BattleHud implements Disposable {
     private static final String BUTTON2_PATH = "ui/button2.png";
     private static final String BUTTON3_PATH = "ui/button3.png";
     private static final String BUTTON4_PATH = "ui/button4.png";
+
+    // Corner button asset paths
+    private static final String INVENTORY_BUTTON_PATH = "ui/battle_ui/Sprites/Inventory_Button.png";
+    private static final String FLEE_BUTTON_PATH = "ui/battle_ui/Sprites/Flee_Button.png";
 
     // -----------------------------------------------------------------------
     // State
@@ -117,6 +121,8 @@ public class BattleHud implements Disposable {
     private Texture button2Tex;
     private Texture button3Tex;
     private Texture button4Tex;
+    private Texture inventoryButtonTex;
+    private Texture fleeButtonTex;
 
     // â”€â”€â”€ HP Bar UI Elements â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     private Label playerNameLabel;
@@ -133,6 +139,8 @@ public class BattleHud implements Disposable {
     private ImageButton defendBtn;
     private ImageButton specialBtn;
     private ImageButton itemBtn;
+    private ImageButton inventoryBtn;
+    private ImageButton fleeBtn;
     private Label attackLbl;
     private Label defendLbl;
     private Label specialLbl;
@@ -141,6 +149,8 @@ public class BattleHud implements Disposable {
     private Table bossHpTable;
     private Table playerHpCorner;
     private Table bossHpCorner;
+    private Table inventoryCorner;
+    private Table fleeCorner;
     private Table root;
 
     // HP tracking (updated externally via setters)
@@ -160,11 +170,16 @@ public class BattleHud implements Disposable {
     /** True while the HUD should be drawn and receive input. */
     private boolean visible = false;
 
+    /** True if this is a wild battle (allows fleeing). */
+    private boolean isWildBattle = false;
+
     /** Callback slots â€” set by GameScreen / BattleOverlay. */
     private Runnable onAttack = () -> {};
     private Runnable onDefend = () -> {};
     private Runnable onSpecial = () -> {};
     private Runnable onItem   = () -> {};
+    private Runnable onInventory = () -> {};
+    private Runnable onFlee = () -> {};
 
     // -----------------------------------------------------------------------
     // Construction
@@ -233,6 +248,20 @@ public class BattleHud implements Disposable {
     public void setOnDefend(Runnable onDefend) { this.onDefend = onDefend != null ? onDefend : () -> {}; }
     public void setOnSpecial(Runnable onSpecial) { this.onSpecial = onSpecial != null ? onSpecial : () -> {}; }
     public void setOnItem(Runnable onItem) { this.onItem = onItem != null ? onItem : () -> {}; }
+    public void setOnInventory(Runnable onInventory) { this.onInventory = onInventory != null ? onInventory : () -> {}; }
+    public void setOnFlee(Runnable onFlee) { this.onFlee = onFlee != null ? onFlee : () -> {}; }
+
+    /** Sets whether this is a wild battle (enables/disables flee button). */
+    public void setWildBattle(boolean isWildBattle) { 
+        this.isWildBattle = isWildBattle;
+        if (fleeBtn != null) {
+            fleeBtn.setDisabled(!isWildBattle);
+            fleeBtn.setColor(isWildBattle ? Color.WHITE : Color.GRAY);
+        }
+    }
+
+    /** Returns true if this is a wild battle. */
+    public boolean isWildBattle() { return isWildBattle; }
 
     /** Invoke current Attack action callback. */
     public void triggerAttack() { onAttack.run(); }
@@ -245,6 +274,23 @@ public class BattleHud implements Disposable {
 
     /** Invoke current Item action callback. */
     public void triggerItem() { onItem.run(); }
+
+    /** Invoke current Inventory action callback. */
+    public void triggerInventory() { onInventory.run(); }
+
+    /** Invoke current Flee action callback (only if wild battle). */
+    public void triggerFlee() { 
+        if (isWildBattle) {
+            attemptFlee();
+        }
+    }
+
+    /** Attempts to flee from battle (stub method - implement flee logic here). */
+    private void attemptFlee() {
+        onFlee.run();
+        // TODO: Implement flee logic (success rate, animations, etc.)
+        System.out.println("Attempting to flee from battle...");
+    }
 
     // -----------------------------------------------------------------------
     // Active Clawkin
@@ -326,7 +372,7 @@ public class BattleHud implements Disposable {
                 activeEnemyTex = null;
             }
             activeEnemyTex = new Texture(Gdx.files.internal(path));
-            applyLeftFlippedTextureToBossImage(activeEnemyTex);
+           // applyLeftFlippedTextureToBossImage(activeEnemyTex);
             return;
         }
         restoreBossPlaceholderPortrait();
@@ -362,14 +408,14 @@ public class BattleHud implements Disposable {
         }
     }
 
-    private void applyLeftFlippedTextureToBossImage(Texture tex) {
-        if (bossImage == null || tex == null) {
-            return;
-        }
-        TextureRegion region = new TextureRegion(tex);
-        region.flip(true, false);
-        bossImage.setDrawable(new TextureRegionDrawable(region));
-    }
+    // private void applyLeftFlippedTextureToBossImage(Texture tex) {
+    //     if (bossImage == null || tex == null) {
+    //         return;
+    //     }
+    //     TextureRegion region = new TextureRegion(tex);
+    //     region.flip(true, false);
+    //     bossImage.setDrawable(new TextureRegionDrawable(region));
+    // }
 
     /** Same resolution order as ClawkinCard portrait loading. */
     private static String[] resolvePlayerPortraitCandidates(Clawkin clawkin) {
@@ -534,6 +580,8 @@ public class BattleHud implements Disposable {
         if (button2Tex != null) button2Tex.dispose();
         if (button3Tex != null) button3Tex.dispose();
         if (button4Tex != null) button4Tex.dispose();
+        if (inventoryButtonTex != null) inventoryButtonTex.dispose();
+        if (fleeButtonTex != null) fleeButtonTex.dispose();
         if (activeClawkinTex != null) activeClawkinTex.dispose();
         if (activeEnemyTex != null) activeEnemyTex.dispose();
         // battleBg is owned by AssetService â€” do NOT dispose it here
@@ -551,6 +599,8 @@ public class BattleHud implements Disposable {
         if (button2Tex == null) button2Tex = new Texture(Gdx.files.internal(BUTTON2_PATH));
         if (button3Tex == null) button3Tex = new Texture(Gdx.files.internal(BUTTON3_PATH));
         if (button4Tex == null) button4Tex = new Texture(Gdx.files.internal(BUTTON4_PATH));
+        if (inventoryButtonTex == null) inventoryButtonTex = new Texture(Gdx.files.internal(INVENTORY_BUTTON_PATH));
+        if (fleeButtonTex == null) fleeButtonTex = new Texture(Gdx.files.internal(FLEE_BUTTON_PATH));
 
         bg = new Image(new TextureRegionDrawable(new TextureRegion(battleBg)));
         bg.setFillParent(true);
@@ -579,6 +629,12 @@ public class BattleHud implements Disposable {
         specialBtn.getImage().setScaling(Scaling.fit);
         itemBtn.getImage().setScaling(Scaling.fit);
 
+        // Create corner buttons with hover/click feedback
+        inventoryBtn = loadButtonWithFeedback(inventoryButtonTex, () -> this.onInventory.run());
+        fleeBtn = loadButtonWithFeedback(fleeButtonTex, () -> this.triggerFlee());
+        inventoryBtn.getImage().setScaling(Scaling.fit);
+        fleeBtn.getImage().setScaling(Scaling.fit);
+
         attackLbl = new Label("[1] Attack", labelStyle);
         defendLbl = new Label("[2] Defend", labelStyle);
         specialLbl = new Label("[3] Special", labelStyle);
@@ -595,6 +651,15 @@ public class BattleHud implements Disposable {
         bossHpCorner.setFillParent(true);
         bossHpCorner.top().right();
 
+        // Create corner tables for inventory and flee buttons
+        inventoryCorner = new Table();
+        inventoryCorner.setFillParent(true);
+        inventoryCorner.bottom().left();
+
+        fleeCorner = new Table();
+        fleeCorner.setFillParent(true);
+        fleeCorner.bottom().right();
+
         root = new Table();
         root.setFillParent(true);
         root.bottom();
@@ -608,6 +673,8 @@ public class BattleHud implements Disposable {
         stage.addActor(bossHpCorner);
         stage.addActor(playerImage);
         stage.addActor(bossImage);
+        stage.addActor(inventoryCorner);
+        stage.addActor(fleeCorner);
         stage.addActor(root);
     }
 
@@ -662,6 +729,24 @@ public class BattleHud implements Disposable {
         root.add(specialLbl).center().padRight(buttonGap);
         root.add(itemLbl).center();
 
+        // Corner buttons sizing and positioning
+        float cornerButtonSize = MathUtils.clamp(Math.min(worldW * 0.08f, worldH * 0.14f), 48f, 80f);
+        float cornerPad = MathUtils.clamp(Math.min(worldW * 0.015f, worldH * 0.025f), 16f, 24f);
+
+        if (inventoryCorner != null && inventoryBtn != null) {
+            inventoryCorner.clearChildren();
+            inventoryCorner.bottom().left().pad(0f, cornerPad, cornerPad, 0f);
+            inventoryCorner.add(inventoryBtn).size(cornerButtonSize, cornerButtonSize);
+            inventoryCorner.invalidateHierarchy();
+        }
+
+        if (fleeCorner != null && fleeBtn != null) {
+            fleeCorner.clearChildren();
+            fleeCorner.bottom().right().pad(0f, 0f, cornerPad, cornerPad);
+            fleeCorner.add(fleeBtn).size(cornerButtonSize, cornerButtonSize);
+            fleeCorner.invalidateHierarchy();
+        }
+
         root.invalidateHierarchy();
         playerHpCorner.invalidateHierarchy();
         bossHpCorner.invalidateHierarchy();
@@ -712,7 +797,7 @@ public class BattleHud implements Disposable {
             // flip(flipX, flipY). 
             // Use (true, false) to mirror left/right. 
             // Use (true, true) for a full 180-degree upside-down rotation.
-            bossRegion.flip(true, false); 
+            // bossRegion.flip(true, false); 
 
             bossImage = new Image(new TextureRegionDrawable(bossRegion));
             bossImage.setSize(BOSS_PLACEHOLDER_W, BOSS_PLACEHOLDER_H);
@@ -773,4 +858,70 @@ public class BattleHud implements Disposable {
         });
         return btn;
     }
+
+    /**
+     * Creates an {@link ImageButton} with enhanced hover and click feedback.
+     * Includes scale animation on hover and click for better visual feedback.
+     */
+    private static ImageButton loadButtonWithFeedback(Texture buttonTex, Runnable onClick) {
+        TextureRegion region = new TextureRegion(buttonTex);
+        TextureRegionDrawable upDrawable = new TextureRegionDrawable(region);
+        TextureRegionDrawable downDrawable = new TextureRegionDrawable(region);
+
+        ImageButton.ImageButtonStyle style = new ImageButton.ImageButtonStyle();
+        style.imageUp   = upDrawable;
+        style.imageOver = upDrawable;
+        style.imageDown = downDrawable;
+
+        ImageButton btn = new ImageButton(style);
+        
+        // Add hover and click feedback
+        btn.addListener(new ClickListener() {
+            @Override
+            public void enter(InputEvent event, float x, float y, int pointer, com.badlogic.gdx.scenes.scene2d.Actor fromActor) {
+                super.enter(event, x, y, pointer, fromActor);
+                if (!btn.isDisabled()) {
+                    // Scale up slightly on hover
+                    btn.setScale(1.1f);
+                }
+            }
+
+            @Override
+            public void exit(InputEvent event, float x, float y, int pointer, com.badlogic.gdx.scenes.scene2d.Actor toActor) {
+                super.exit(event, x, y, pointer, toActor);
+                // Return to normal scale
+                btn.setScale(1.0f);
+            }
+
+            @Override
+            public boolean touchDown(InputEvent event, float x, float y, int pointer, int button) {
+                if (!btn.isDisabled()) {
+                    // Scale down on click
+                    btn.setScale(0.95f);
+                    // Slightly reduce alpha for visual feedback
+                    btn.setColor(1f, 1f, 1f, 0.8f);
+                }
+                return super.touchDown(event, x, y, pointer, button);
+            }
+
+            @Override
+            public void touchUp(InputEvent event, float x, float y, int pointer, int button) {
+                super.touchUp(event, x, y, pointer, button);
+                // Return to hover scale
+                btn.setScale(1.1f);
+                // Restore full alpha
+                btn.setColor(1f, 1f, 1f, 1f);
+            }
+
+            @Override
+            public void clicked(InputEvent e, float x, float y) {
+                if (!btn.isDisabled()) {
+                    onClick.run();
+                }
+            }
+        });
+        
+        return btn;
+    }
 }
+
