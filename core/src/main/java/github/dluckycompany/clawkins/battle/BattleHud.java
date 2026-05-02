@@ -102,6 +102,9 @@ public class BattleHud implements Disposable {
     private static final String INVENTORY_BUTTON_PATH = "ui/battle_ui/Sprites/Inventory_Button.png";
     private static final String FLEE_BUTTON_PATH = "ui/battle_ui/Sprites/Flee_Button.png";
 
+    // Shadow sprite asset path
+    private static final String SHADOW_PATH = "ui/battle_ui/Sprites/Shadow.png";
+
     // -----------------------------------------------------------------------
     // State
     // -----------------------------------------------------------------------
@@ -115,6 +118,11 @@ public class BattleHud implements Disposable {
     private Texture bossPlaceholderTex;
     private Image playerImage;
     private Image bossImage;
+
+    // Shadow textures and actors
+    private Texture shadowTex;
+    private Image playerShadow;
+    private Image bossShadow;
 
     // Owned button textures (dispose in dispose())
     private Texture button1Tex;
@@ -576,6 +584,7 @@ public class BattleHud implements Disposable {
         font.dispose();
         if (playerPlaceholderTex != null) playerPlaceholderTex.dispose();
         if (bossPlaceholderTex != null) bossPlaceholderTex.dispose();
+        if (shadowTex != null) shadowTex.dispose();
         if (button1Tex != null) button1Tex.dispose();
         if (button2Tex != null) button2Tex.dispose();
         if (button3Tex != null) button3Tex.dispose();
@@ -671,6 +680,8 @@ public class BattleHud implements Disposable {
         stage.addActor(bg);
         stage.addActor(playerHpCorner);
         stage.addActor(bossHpCorner);
+        stage.addActor(playerShadow);  // Shadow behind player
+        stage.addActor(bossShadow);    // Shadow behind boss
         stage.addActor(playerImage);
         stage.addActor(bossImage);
         stage.addActor(inventoryCorner);
@@ -782,12 +793,25 @@ public class BattleHud implements Disposable {
      * Loads placeholder textures and builds their Image actors (idempotent).
      */
     private void loadPlaceholders() {
+        // Load shadow texture (shared by both player and boss)
+        if (shadowTex == null) {
+            shadowTex = new Texture(Gdx.files.internal(SHADOW_PATH));
+        }
+
         if (playerImage == null) {
             playerPlaceholderTex = new Texture(Gdx.files.internal(PLAYER_PLACEHOLDER_PATH));
             playerImage = new Image(new TextureRegionDrawable(new TextureRegion(playerPlaceholderTex)));
             playerImage.setSize(PLAYER_PLACEHOLDER_W, PLAYER_PLACEHOLDER_H);
             playerImage.setName("player_placeholder");
         }
+
+        if (playerShadow == null) {
+            playerShadow = new Image(new TextureRegionDrawable(new TextureRegion(shadowTex)));
+            playerShadow.setName("player_shadow");
+            // Set transparency for natural shadow look
+            playerShadow.setColor(1f, 1f, 1f, 0.5f);
+        }
+
         if (bossImage == null) {
             bossPlaceholderTex = new Texture(Gdx.files.internal(BOSS_PLACEHOLDER_PATH));
 
@@ -802,6 +826,13 @@ public class BattleHud implements Disposable {
             bossImage = new Image(new TextureRegionDrawable(bossRegion));
             bossImage.setSize(BOSS_PLACEHOLDER_W, BOSS_PLACEHOLDER_H);
             bossImage.setName("boss_placeholder");
+        }
+
+        if (bossShadow == null) {
+            bossShadow = new Image(new TextureRegionDrawable(new TextureRegion(shadowTex)));
+            bossShadow.setName("boss_shadow");
+            // Set transparency for natural shadow look
+            bossShadow.setColor(1f, 1f, 1f, 0.5f);
         }
     }
 
@@ -834,6 +865,37 @@ public class BattleHud implements Disposable {
         (w * 0.75f) - (bossW / 2f),
         (h / 2f) - (bossH / 2f)
         );
+
+        // Position shadows below characters
+        if (playerShadow != null) {
+            // Shadow is slightly wider than the character (1.2x width)
+            float shadowW = playerW * 1.2f;
+            // Shadow height is proportional but flatter (0.3x of width for ellipse effect)
+            float shadowH = shadowW * 0.3f;
+            playerShadow.setSize(shadowW, shadowH);
+            
+            // Position shadow centered horizontally under the character, at the feet
+            float playerX = (w * 0.25f) - (playerW / 2f);
+            float playerY = (h / 2f) - (playerH / 2f);
+            float shadowX = playerX + (playerW / 2f) - (shadowW / 2f);
+            float shadowY = playerY - (shadowH * 0.5f); // Slightly below the character's feet
+            playerShadow.setPosition(shadowX, shadowY);
+        }
+
+        if (bossShadow != null) {
+            // Shadow is slightly wider than the boss (1.2x width)
+            float shadowW = bossW * 1.2f;
+            // Shadow height is proportional but flatter (0.3x of width for ellipse effect)
+            float shadowH = shadowW * 0.3f;
+            bossShadow.setSize(shadowW, shadowH);
+            
+            // Position shadow centered horizontally under the boss, at the feet
+            float bossX = (w * 0.75f) - (bossW / 2f);
+            float bossY = (h / 2f) - (bossH / 2f);
+            float shadowX = bossX + (bossW / 2f) - (shadowW / 2f);
+            float shadowY = bossY - (shadowH * 0.5f); // Slightly below the boss's feet
+            bossShadow.setPosition(shadowX, shadowY);
+        }
     }
 
     /**

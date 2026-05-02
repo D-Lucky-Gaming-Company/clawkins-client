@@ -222,7 +222,7 @@ public class GameScreen extends ScreenAdapter {
         this.battleService = new BattleService(encounterEventBus, playerBattleState);
         this.engine.addSystem(new EncounterDetectionSystem(encounterEventBus));
         DialogueBoxRenderer dialogueBoxRenderer = new DialogueBoxRenderer();
-        this.battleOverlay = new BattleOverlay(dialogueBoxRenderer);
+        this.battleOverlay = new BattleOverlay(game, dialogueBoxRenderer);
         this.battleOverlay.init(assetService, battleService, playerBattleState);
         this.mapTransitionFade = new BattleTransition();
         this.mapTransitionSwapDone = false;
@@ -273,7 +273,14 @@ public class GameScreen extends ScreenAdapter {
     public void show() {
         // When returning from screens like inventory, restore the normal input processor
         if (hasBeenInitialized) {
-            Gdx.input.setInputProcessor(null);  // Restore normal world input
+            // Check if we're in a battle - if so, don't reset input processor
+            // The battle HUD has already restored its own input processor
+            boolean inBattle = battleOverlay != null && battleOverlay.isInBattle();
+            
+            if (!inBattle) {
+                Gdx.input.setInputProcessor(null);  // Restore normal world input
+            }
+            
             isPaused = false;  // Make sure we're not paused
             teamViewerVisible = false;  // Clear team viewer state
             summaryVisible = false;

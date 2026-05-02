@@ -25,6 +25,7 @@ import com.badlogic.gdx.utils.Disposable;
 
 import java.util.List;
 
+import github.dluckycompany.clawkins.Main;
 import github.dluckycompany.clawkins.asset.AssetService;
 import github.dluckycompany.clawkins.character.Clawkin;
 import github.dluckycompany.clawkins.component.Interactible;
@@ -63,6 +64,7 @@ public class BattleOverlay implements Disposable {
 
     private static final int SKIN_FONT_SIZE = 12;
 
+    private final Main game;
     private final DialogueBoxRenderer dialogueBoxRenderer;
     private final BitmapFont skinFont;
     private final Matrix4 uiProjection;
@@ -98,7 +100,8 @@ public class BattleOverlay implements Disposable {
     // Construction
     // -----------------------------------------------------------------------
 
-    public BattleOverlay(DialogueBoxRenderer dialogueBoxRenderer) {
+    public BattleOverlay(Main game, DialogueBoxRenderer dialogueBoxRenderer) {
+        this.game = game;
         this.dialogueBoxRenderer = dialogueBoxRenderer;
         FreeTypeFontGenerator generator =
                 new FreeTypeFontGenerator(Gdx.files.internal(DialogueBoxRenderer.DIALOGUE_FONT_PATH));
@@ -193,6 +196,20 @@ public class BattleOverlay implements Disposable {
 
         // Button4 -> Special Attack
         battleHud.setOnItem(() -> submitPlayerSkillAndOpenDialogue(battleService, 3));
+
+        // Inventory button -> Open inventory screen
+        battleHud.setOnInventory(() -> openInventoryScreen());
+
+        // Flee button -> Attempt to flee from battle
+        battleHud.setOnFlee(() -> {
+            if (battleService != null) {
+                battleService.submitEscapeAction();
+                BattleStateMachine machine = battleService.getBattleStateMachine();
+                if (machine != null) {
+                    openDialogue(null, machine.getLastLog(), machine.getLastLogSpans(), DialogueFlowPhase.PLAYER_RESULT);
+                }
+            }
+        });
     }
 
     /** Forward resize events so the Stage viewport stays correct. */
@@ -320,6 +337,13 @@ public class BattleOverlay implements Disposable {
         transitionPending = false;
         resetDialogueFlow();
         showBattleHud();
+        
+        // Set wild battle flag (for now, assume all battles are wild)
+        // TODO: Determine from BattleContext if this is a trainer battle
+        if (battleHud != null) {
+            battleHud.setWildBattle(true);
+        }
+        
         if (battleService != null) {
             syncHudHpFromBattleState(battleService.getBattleStateMachine());
         }
@@ -515,6 +539,48 @@ public class BattleOverlay implements Disposable {
     private void hideBattleHud() {
         inBattle = false;
         if (battleHud != null) battleHud.hide();
+    }
+
+    // -----------------------------------------------------------------------
+    // Inventory Screen Integration
+    // -----------------------------------------------------------------------
+
+    /**
+     * Opens the inventory screen from battle.
+     * Pauses battle input and switches to the inventory screen.
+     * The inventory screen will automatically return to the game screen when closed.
+     */
+    private void openInventoryScreen() {
+        if (game == null) {
+            Gdx.app.log("BattleOverlay", "Cannot open inventory: game reference is null");
+            return;
+        }
+
+        // Store the current input processor to restore it later
+        // The inventory screen will handle its own input
+        Gdx.app.log("BattleOverlay", "Opening inventory screen from battle");
+        
+        // Switch to inventory screen (uses cached screen from Main)
+        game.setScreen(github.dluckycompany.clawkins.ui.InventoryScreen.class);
+    }
+
+    /**
+     * Called when returning from inventory screen to battle.
+     * Restores battle HUD input processor.
+     */
+    public void resumeFromInventory() {
+        if (inBattle && battleHud != null) {
+            // Restore battle HUD input
+            battleHud.show();
+            Gdx.app.log("BattleOverlay", "Resumed battle from inventory");
+        }
+    }
+
+    /**
+     * Returns true if currently in an active battle.
+     */
+    public boolean isInBattle() {
+        return inBattle;
     }
 
     // -----------------------------------------------------------------------
