@@ -152,7 +152,6 @@ public class BattleHud implements Disposable {
     // Selection highlight indicator
     private Image selectionHighlight;
     private Texture highlightTex;
-    private float[] slotYPositions; // Store Y positions of each slot for highlight positioning
 
     // Owned button textures (dispose in dispose())
     private Texture button1Tex;
@@ -711,7 +710,8 @@ public class BattleHud implements Disposable {
         positionPlaceholders();
 
         stage.addActor(bg);
-        stage.addActor(clawkinWrapper);  // Single wrapper contains container + icons
+        stage.addActor(clawkinWrapper);  // Container + icons
+        stage.addActor(selectionHighlight);  // Highlight as separate actor for absolute positioning
         stage.addActor(playerHpCorner);
         stage.addActor(bossHpCorner);
         stage.addActor(playerShadow);  // Shadow behind player
@@ -1014,11 +1014,10 @@ public class BattleHud implements Disposable {
             clawkinIconTable.center(); // Center icons within the table
         }
 
-        // Create stack to layer container, highlight, and icons
+        // Create stack to layer container and icons (highlight positioned separately)
         if (clawkinStack == null) {
             clawkinStack = new Stack();
             clawkinStack.add(clawkinContainer); // Background layer
-            clawkinStack.add(selectionHighlight); // Highlight layer (middle)
             clawkinStack.add(clawkinIconTable); // Foreground layer (icons)
         }
 
@@ -1029,12 +1028,9 @@ public class BattleHud implements Disposable {
             clawkinWrapper.add(clawkinStack); // Add the stack to the wrapper
         }
 
-        // Initialize icon list and slot positions
+        // Initialize icon list
         if (clawkinIcons == null) {
             clawkinIcons = new ArrayList<>();
-        }
-        if (slotYPositions == null) {
-            slotYPositions = new float[3]; // 3 slots
         }
     }
 
@@ -1340,13 +1336,6 @@ public class BattleHud implements Disposable {
                 }
             }
 
-            // Calculate and store slot Y positions for highlight positioning
-            for (int i = 0; i < numSlots; i++) {
-                // Y position from top of container
-                float slotY = containerH - (slotHeight * (i + 0.5f));
-                slotYPositions[i] = slotY;
-            }
-
             // Add icons to table in slot order (top to bottom)
             for (int i = 0; i < numSlots; i++) {
                 Image icon = slotIcons[i];
@@ -1391,7 +1380,7 @@ public class BattleHud implements Disposable {
      * Updates the position and size of the selection highlight to match the highlighted slot.
      */
     private void updateSelectionHighlight() {
-        if (selectionHighlight == null || clawkinWrapper == null || slotYPositions == null) {
+        if (selectionHighlight == null || clawkinWrapper == null) {
             return;
         }
 
@@ -1407,23 +1396,25 @@ public class BattleHud implements Disposable {
         float slotHeight = containerH / numSlots;
         float slotWidth = containerW;
 
-        // Highlight size (slightly larger than slot for border effect)
-        float highlightW = slotWidth * 0.95f;
-        float highlightH = slotHeight * 0.85f;
+        // Highlight size (slightly smaller than slot to fit inside)
+        float highlightW = slotWidth * 0.90f;
+        float highlightH = slotHeight * 0.80f;
 
-        // Position highlight at the selected slot
-        // The highlight is in a Stack, so position is relative to stack center
-        float highlightX = 0f; // Centered horizontally in stack
-        float highlightY = slotYPositions[highlightedClawkinIndex] - (containerH / 2f);
+        // Container position (must match positionClawkinContainer)
+        float containerX = 0f; // Flush against left edge
+        float containerY = (h / 2f) - (containerH / 2f); // Vertically centered
+
+        // Calculate Y position for the highlighted slot (from top of container)
+        float slotY = containerY + containerH - (slotHeight * (highlightedClawkinIndex + 0.5f));
+
+        // Center highlight in slot
+        float highlightX = containerX + (slotWidth - highlightW) / 2f;
+        float highlightY = slotY - (highlightH / 2f);
 
         selectionHighlight.setSize(highlightW, highlightH);
-        selectionHighlight.setPosition(
-            highlightX - (highlightW / 2f),
-            highlightY - (highlightH / 2f)
-        );
+        selectionHighlight.setPosition(highlightX, highlightY);
 
         // Make highlight visible
         selectionHighlight.setVisible(true);
     }
 }
-
