@@ -360,6 +360,9 @@ public class BattleOverlay implements Disposable {
             battleHud.updateActiveClawkin(activeClawkin);
             float maxHp = activeClawkin != null ? activeClawkin.getMaxHp() : 100f;
             battleHud.setPlayerHp(ally.getHp(), maxHp);
+            
+            // Update Clawkin container with party data
+            battleHud.updateClawkinContainer(playerBattleState.getParty());
         }
 
         BattleUnit enemy = battle.firstEnemy();

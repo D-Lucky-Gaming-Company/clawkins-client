@@ -13,6 +13,7 @@ import com.badlogic.gdx.scenes.scene2d.ui.ImageButton;
 import com.badlogic.gdx.scenes.scene2d.ui.Label;
 import com.badlogic.gdx.scenes.scene2d.ui.Label.LabelStyle;
 import com.badlogic.gdx.scenes.scene2d.ui.ProgressBar;
+import com.badlogic.gdx.scenes.scene2d.ui.Stack;
 import com.badlogic.gdx.scenes.scene2d.ui.Table;
 import com.badlogic.gdx.scenes.scene2d.utils.ClickListener;
 import com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable;
@@ -20,6 +21,9 @@ import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.utils.Scaling;
 import com.badlogic.gdx.utils.Disposable;
 import com.badlogic.gdx.utils.viewport.ScreenViewport;
+
+import java.util.ArrayList;
+import java.util.List;
 
 import github.dluckycompany.clawkins.asset.AssetService;
 import github.dluckycompany.clawkins.asset.TextureAsset;
@@ -105,6 +109,18 @@ public class BattleHud implements Disposable {
     // Shadow sprite asset path
     private static final String SHADOW_PATH = "ui/battle_ui/Sprites/Shadow.png";
 
+    // Clawkin container asset paths
+    private static final String CLAWKIN_CONTAINER_PATH = "ui/battle_ui/Sprites/Clawkins_Container.png";
+    private static final String ICON_DIR = "ui/battle_ui/Sprites/icons/";
+    
+    // Icon file name patterns
+    private static final String GINGER_ICON = "Ginger_icon.png";
+    private static final String GINGER_ICON_DOWN = "Ginger_icon_down.png";
+    private static final String DART_ICON = "Dart_icon.png";
+    private static final String DART_ICON_DOWN = "Dart_icon_down.png";
+    private static final String SWEEPEA_ICON = "Sweepea'_icon.png";
+    private static final String SWEEPEA_ICON_DOWN = "Sweepea'_icon_down.png";
+
     // -----------------------------------------------------------------------
     // State
     // -----------------------------------------------------------------------
@@ -123,6 +139,15 @@ public class BattleHud implements Disposable {
     private Texture shadowTex;
     private Image playerShadow;
     private Image bossShadow;
+
+    // Clawkin container UI
+    private Texture clawkinContainerTex;
+    private Image clawkinContainer;
+    private Table clawkinIconTable;
+    private Stack clawkinStack;  // Stack to layer container and icons
+    private Table clawkinWrapper; // Wrapper table for positioning
+    private List<Image> clawkinIcons;
+    private List<Clawkin> currentParty;
 
     // Owned button textures (dispose in dispose())
     private Texture button1Tex;
@@ -585,6 +610,7 @@ public class BattleHud implements Disposable {
         if (playerPlaceholderTex != null) playerPlaceholderTex.dispose();
         if (bossPlaceholderTex != null) bossPlaceholderTex.dispose();
         if (shadowTex != null) shadowTex.dispose();
+        if (clawkinContainerTex != null) clawkinContainerTex.dispose();
         if (button1Tex != null) button1Tex.dispose();
         if (button2Tex != null) button2Tex.dispose();
         if (button3Tex != null) button3Tex.dispose();
@@ -674,10 +700,12 @@ public class BattleHud implements Disposable {
         root.bottom();
 
         loadPlaceholders();
+        buildClawkinContainer();
         applyResponsiveLayout();
         positionPlaceholders();
 
         stage.addActor(bg);
+        stage.addActor(clawkinWrapper);  // Single wrapper contains container + icons
         stage.addActor(playerHpCorner);
         stage.addActor(bossHpCorner);
         stage.addActor(playerShadow);  // Shadow behind player
@@ -761,6 +789,9 @@ public class BattleHud implements Disposable {
         root.invalidateHierarchy();
         playerHpCorner.invalidateHierarchy();
         bossHpCorner.invalidateHierarchy();
+
+        // Position Clawkin container
+        positionClawkinContainer();
     }
 
     /**
@@ -984,6 +1015,179 @@ public class BattleHud implements Disposable {
         });
         
         return btn;
+    }
+
+    /**
+     * Builds the Clawkin container UI with party member icons.
+     * Creates a vertical container on the left side showing party status.
+     * Uses Stack to layer container background and icons properly.
+     */
+    private void buildClawkinContainer() {
+        // Load container texture
+        if (clawkinContainerTex == null) {
+            clawkinContainerTex = new Texture(Gdx.files.internal(CLAWKIN_CONTAINER_PATH));
+        }
+
+        // Create container background image
+        if (clawkinContainer == null) {
+            clawkinContainer = new Image(new TextureRegionDrawable(new TextureRegion(clawkinContainerTex)));
+            clawkinContainer.setName("clawkin_container");
+            clawkinContainer.setScaling(Scaling.stretch);
+        }
+
+        // Create table for icons (will be layered on top of container)
+        if (clawkinIconTable == null) {
+            clawkinIconTable = new Table();
+            clawkinIconTable.center(); // Center icons within the table
+        }
+
+        // Create stack to layer container and icons
+        if (clawkinStack == null) {
+            clawkinStack = new Stack();
+            clawkinStack.add(clawkinContainer); // Background layer
+            clawkinStack.add(clawkinIconTable); // Foreground layer (icons)
+        }
+
+        // Create wrapper table for positioning on screen
+        if (clawkinWrapper == null) {
+            clawkinWrapper = new Table();
+            clawkinWrapper.setFillParent(true);
+            clawkinWrapper.left().center(); // Left side, vertically centered
+            clawkinWrapper.add(clawkinStack); // Add the stack to the wrapper
+        }
+
+        // Initialize icon list
+        if (clawkinIcons == null) {
+            clawkinIcons = new ArrayList<>();
+        }
+    }
+
+    /**
+     * Updates the Clawkin container with current party data.
+     * Refreshes icons based on party member health states.
+     */
+    public void updateClawkinContainer(List<Clawkin> party) {
+        if (party == null) {
+            return;
+        }
+
+        // Store current party reference
+        this.currentParty = party;
+
+        // Trigger repositioning which will rebuild icons
+        positionClawkinContainer();
+    }
+
+    /**
+     * Creates an icon for a Clawkin based on its current health state.
+     */
+    private Image createClawkinIcon(Clawkin clawkin) {
+        if (clawkin == null) {
+            return null;
+        }
+
+        String iconPath = getIconPathForClawkin(clawkin);
+        if (iconPath == null) {
+            return null;
+        }
+
+        try {
+            Texture iconTex = new Texture(Gdx.files.internal(iconPath));
+            Image icon = new Image(new TextureRegionDrawable(new TextureRegion(iconTex)));
+            icon.setScaling(Scaling.fit);
+            icon.setName("clawkin_icon_" + clawkin.getId());
+            return icon;
+        } catch (Exception e) {
+            Gdx.app.error("BattleHud", "Failed to load icon: " + iconPath, e);
+            return null;
+        }
+    }
+
+    /**
+     * Determines the correct icon path based on Clawkin name/ID and health.
+     */
+    private String getIconPathForClawkin(Clawkin clawkin) {
+        boolean isDown = clawkin.getCurrentHp() <= 0;
+        String name = clawkin.getName() != null ? clawkin.getName().toLowerCase() : "";
+        String id = clawkin.getId() != null ? clawkin.getId().toLowerCase() : "";
+
+        // Determine which icon to use based on name/ID
+        if (name.contains("ginger") || id.contains("ginger")) {
+            return ICON_DIR + (isDown ? GINGER_ICON_DOWN : GINGER_ICON);
+        } else if (name.contains("dart") || id.contains("dart")) {
+            return ICON_DIR + (isDown ? DART_ICON_DOWN : DART_ICON);
+        } else if (name.contains("swee") || name.contains("swea") || id.contains("swee") || id.contains("swea")) {
+            return ICON_DIR + (isDown ? SWEEPEA_ICON_DOWN : SWEEPEA_ICON);
+        }
+
+        // Default to Ginger if unknown
+        return ICON_DIR + (isDown ? GINGER_ICON_DOWN : GINGER_ICON);
+    }
+
+    /**
+     * Refreshes Clawkin icons based on current party health.
+     * Call this when party member health changes during battle.
+     */
+    public void refreshClawkinIcons() {
+        if (currentParty != null) {
+            updateClawkinContainer(currentParty);
+        }
+    }
+
+    /**
+     * Positions and sizes the Clawkin container on the left side of the screen.
+     * Ensures icons are properly centered within container slots.
+     */
+    private void positionClawkinContainer() {
+        if (clawkinWrapper == null || clawkinStack == null || clawkinIconTable == null) {
+            return;
+        }
+
+        float w = stage.getViewport().getWorldWidth();
+        float h = stage.getViewport().getWorldHeight();
+
+        // Container sizing (responsive)
+        float containerW = MathUtils.clamp(w * 0.08f, 60f, 100f);
+        float containerH = MathUtils.clamp(h * 0.4f, 150f, 300f);
+
+        // Update wrapper table
+        clawkinWrapper.clearChildren();
+        clawkinWrapper.left().center();
+        clawkinWrapper.pad(10f, 10f, 0f, 0f); // 10px from left edge and top
+
+        // Set stack size to match container
+        clawkinWrapper.add(clawkinStack).size(containerW, containerH);
+
+        // Rebuild icon table with proper sizing
+        clawkinIconTable.clearChildren();
+        clawkinIconTable.center();
+
+        if (currentParty != null && !currentParty.isEmpty()) {
+            // Calculate icon size based on container and number of party members
+            int partySize = currentParty.size();
+            float availableHeight = containerH * 0.85f; // Use 85% of container height
+            float iconSlotHeight = availableHeight / partySize;
+            float iconSize = Math.min(iconSlotHeight * 0.8f, containerW * 0.65f); // 80% of slot height or 65% of width
+
+            // Add icons with proper spacing
+            for (int i = 0; i < currentParty.size(); i++) {
+                Clawkin clawkin = currentParty.get(i);
+                if (clawkin == null) continue;
+
+                Image icon = createClawkinIcon(clawkin);
+                if (icon != null) {
+                    // Add icon with size and padding
+                    clawkinIconTable.add(icon)
+                        .size(iconSize, iconSize)
+                        .pad(iconSlotHeight * 0.1f) // 10% padding
+                        .center()
+                        .row();
+                }
+            }
+        }
+
+        clawkinWrapper.invalidateHierarchy();
+        clawkinIconTable.invalidateHierarchy();
     }
 }
 
