@@ -360,33 +360,31 @@ public class ClawkinCard extends Table {
 
         if (name.contains("ginger") || id.contains("ginger")) {
             return new String[] {
-                "ui/Clawkin_01.png",
+                
                 "entities/clawkins/Clawkin_01.png",
-                "characters/Clawkin_01.png"
+              
             };
         }
 
         // Handle both "Swee'pea" and common misspellings like "Sweapee".
         if (name.contains("swee") || name.contains("swea") || id.contains("swee") || id.contains("swea")) {
             return new String[] {
-                "ui/Clawkin_02.png",
                 "entities/clawkins/Clawkin_02.png",
-                "characters/Clawkin_02.png"
             };
         }
 
         if (name.contains("dart") || id.contains("dart")) {
             return new String[] {
-                "ui/Clawkin_03.png",
+                
                 "entities/clawkins/Clawkin_03.png",
-                "characters/Clawkin_03.png"
+                
             };
         }
 
         return new String[] {
-            "ui/Clawkin_01.png",
+            
             "entities/clawkins/Clawkin_01.png",
-            "characters/Clawkin_01.png"
+            
         };
     }
 
