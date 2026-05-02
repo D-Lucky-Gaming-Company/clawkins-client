@@ -60,7 +60,8 @@ public class BattleOverlay implements Disposable {
         NONE,
         PLAYER_RESULT,
         ENEMY_RESULT,
-        RUN_CONFIRMATION
+        RUN_CONFIRMATION,
+        SWITCH_CONFIRMATION
     }
 
     private static final int SKIN_FONT_SIZE = 12;
@@ -307,6 +308,17 @@ public class BattleOverlay implements Disposable {
                 if (battleHud.isWildBattle()) {
                     showRunConfirmation();
                 }
+            } else if (Gdx.input.isKeyJustPressed(Keys.UP)) {
+                // Navigate Clawkin selection up
+                battleHud.moveSelectionUp();
+            } else if (Gdx.input.isKeyJustPressed(Keys.DOWN)) {
+                // Navigate Clawkin selection down
+                battleHud.moveSelectionDown();
+            } else if (Gdx.input.isKeyJustPressed(Keys.ENTER)) {
+                // Confirm Clawkin switch
+                if (battleHud.canSwitchToHighlighted()) {
+                    showSwitchConfirmation();
+                }
             }
             return;
         }
@@ -375,10 +387,10 @@ public class BattleOverlay implements Disposable {
             List<Clawkin> party = playerBattleState.getParty();
             battleHud.updateClawkinContainer(party);
             
-            // Set selected Clawkin index based on active Clawkin
+            // Set active Clawkin index based on active Clawkin
             if (activeClawkin != null && party != null) {
-                int selectedIndex = findClawkinIndex(activeClawkin, party);
-                battleHud.setSelectedClawkinIndex(selectedIndex);
+                int activeIndex = findClawkinIndex(activeClawkin, party);
+                battleHud.setActiveClawkinIndex(activeIndex);
             }
         }
 
@@ -527,6 +539,20 @@ public class BattleOverlay implements Disposable {
             return;
         }
 
+        // Handle switch confirmation
+        if (dialogueFlowPhase == DialogueFlowPhase.SWITCH_CONFIRMATION) {
+            // Check for Yes (Z/Space/Enter) or No (X/Escape)
+            if (isInteractionPressed()) {
+                // Confirmed - switch Clawkin
+                performClawkinSwitch(battleService);
+                resetDialogueFlow();
+            } else if (Gdx.input.isKeyJustPressed(Keys.X) || Gdx.input.isKeyJustPressed(Keys.ESCAPE)) {
+                // Cancelled - return to battle
+                resetDialogueFlow();
+            }
+            return;
+        }
+
         if (dialogueFlowPhase == DialogueFlowPhase.PLAYER_RESULT) {
             if (machine.canExecuteEnemyAction()) {
                 battleService.resolveEnemyTurn();
@@ -647,6 +673,68 @@ public class BattleOverlay implements Disposable {
     private void showRunConfirmation() {
         String confirmText = "Are you sure you want to run?\n[Z] Yes  [X] No";
         openDialogue(null, confirmText, List.of(), DialogueFlowPhase.RUN_CONFIRMATION);
+    }
+
+    /**
+     * Shows a confirmation prompt before switching Clawkins.
+     * Player must confirm with Z/Space/Enter or cancel with X/Escape.
+     */
+    private void showSwitchConfirmation() {
+        if (battleHud == null) return;
+        
+        String clawkinName = battleHud.getHighlightedClawkinName();
+        if (clawkinName == null) {
+            clawkinName = "this Clawkin";
+        }
+        
+        String confirmText = "Switch to " + clawkinName + "?\n[Z] Yes  [X] No";
+        openDialogue(null, confirmText, List.of(), DialogueFlowPhase.SWITCH_CONFIRMATION);
+    }
+
+    /**
+     * Performs the actual Clawkin switch after confirmation.
+     * Updates the active Clawkin in the player battle state.
+     */
+    private void performClawkinSwitch(BattleService battleService) {
+        if (battleHud == null || playerBattleState == null) return;
+        
+        int newIndex = battleHud.getHighlightedClawkinIndex();
+        Clawkin newClawkin = battleHud.getClawkinAtSlot(newIndex);
+        
+        if (newClawkin == null) {
+            Gdx.app.log("BattleOverlay", "Cannot switch: Clawkin not found at slot " + newIndex);
+            return;
+        }
+        
+        // Find the actual party index for this Clawkin
+        List<Clawkin> party = playerBattleState.getParty();
+        int partyIndex = -1;
+        for (int i = 0; i < party.size(); i++) {
+            if (party.get(i) == newClawkin) {
+                partyIndex = i;
+                break;
+            }
+        }
+        
+        if (partyIndex == -1) {
+            Gdx.app.log("BattleOverlay", "Cannot switch: Clawkin not found in party");
+            return;
+        }
+        
+        // Update player battle state with party index
+        playerBattleState.setActiveClawkinIndex(partyIndex);
+        
+        // Update HUD to reflect new active Clawkin
+        battleHud.setActiveClawkinIndex(newIndex);
+        battleHud.updateActiveClawkin(newClawkin);
+        
+        // Sync HP display
+        BattleStateMachine machine = battleService.getBattleStateMachine();
+        if (machine != null) {
+            syncHudHpFromBattleState(machine);
+        }
+        
+        Gdx.app.log("BattleOverlay", "Switched to " + newClawkin.getName());
     }
 
     /**

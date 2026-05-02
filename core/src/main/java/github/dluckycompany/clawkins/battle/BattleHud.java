@@ -148,6 +148,11 @@ public class BattleHud implements Disposable {
     private Table clawkinWrapper; // Wrapper table for positioning
     private List<Image> clawkinIcons;
     private List<Clawkin> currentParty;
+    
+    // Selection highlight indicator
+    private Image selectionHighlight;
+    private Texture highlightTex;
+    private float[] slotYPositions; // Store Y positions of each slot for highlight positioning
 
     // Owned button textures (dispose in dispose())
     private Texture button1Tex;
@@ -206,8 +211,11 @@ public class BattleHud implements Disposable {
     /** True if this is a wild battle (allows fleeing). */
     private boolean isWildBattle = false;
 
-    /** Currently selected Clawkin index (for visual indicator). */
-    private int selectedClawkinIndex = 0;
+    /** Currently active Clawkin index (the one in battle). */
+    private int activeClawkinIndex = 0;
+
+    /** Currently highlighted Clawkin index (cursor position for navigation). */
+    private int highlightedClawkinIndex = 0;
 
     /** Callback slots â€” set by GameScreen / BattleOverlay. */
     private Runnable onAttack = () -> {};
@@ -608,6 +616,7 @@ public class BattleHud implements Disposable {
         if (bossPlaceholderTex != null) bossPlaceholderTex.dispose();
         if (shadowTex != null) shadowTex.dispose();
         if (clawkinContainerTex != null) clawkinContainerTex.dispose();
+        if (highlightTex != null) highlightTex.dispose();
         if (button1Tex != null) button1Tex.dispose();
         if (button2Tex != null) button2Tex.dispose();
         if (button3Tex != null) button3Tex.dispose();
@@ -987,16 +996,29 @@ public class BattleHud implements Disposable {
             clawkinContainer.setScaling(Scaling.stretch);
         }
 
+        // Create selection highlight texture (yellow border)
+        if (highlightTex == null) {
+            highlightTex = createHighlightTexture();
+        }
+
+        // Create selection highlight image
+        if (selectionHighlight == null) {
+            selectionHighlight = new Image(new TextureRegionDrawable(new TextureRegion(highlightTex)));
+            selectionHighlight.setName("selection_highlight");
+            selectionHighlight.setColor(1f, 1f, 0f, 0.8f); // Yellow with transparency
+        }
+
         // Create table for icons (will be layered on top of container)
         if (clawkinIconTable == null) {
             clawkinIconTable = new Table();
             clawkinIconTable.center(); // Center icons within the table
         }
 
-        // Create stack to layer container and icons
+        // Create stack to layer container, highlight, and icons
         if (clawkinStack == null) {
             clawkinStack = new Stack();
             clawkinStack.add(clawkinContainer); // Background layer
+            clawkinStack.add(selectionHighlight); // Highlight layer (middle)
             clawkinStack.add(clawkinIconTable); // Foreground layer (icons)
         }
 
@@ -1007,10 +1029,41 @@ public class BattleHud implements Disposable {
             clawkinWrapper.add(clawkinStack); // Add the stack to the wrapper
         }
 
-        // Initialize icon list
+        // Initialize icon list and slot positions
         if (clawkinIcons == null) {
             clawkinIcons = new ArrayList<>();
         }
+        if (slotYPositions == null) {
+            slotYPositions = new float[3]; // 3 slots
+        }
+    }
+
+    /**
+     * Creates a texture for the selection highlight border.
+     * @return A texture with a border outline
+     */
+    private Texture createHighlightTexture() {
+        int size = 128;
+        int borderWidth = 4;
+        
+        Pixmap pixmap = new Pixmap(size, size, Pixmap.Format.RGBA8888);
+        
+        // Draw border (hollow rectangle)
+        pixmap.setColor(1f, 1f, 0f, 1f); // Yellow
+        
+        // Top border
+        pixmap.fillRectangle(0, 0, size, borderWidth);
+        // Bottom border
+        pixmap.fillRectangle(0, size - borderWidth, size, borderWidth);
+        // Left border
+        pixmap.fillRectangle(0, 0, borderWidth, size);
+        // Right border
+        pixmap.fillRectangle(size - borderWidth, 0, borderWidth, size);
+        
+        Texture texture = new Texture(pixmap);
+        pixmap.dispose();
+        
+        return texture;
     }
 
     /**
@@ -1086,23 +1139,127 @@ public class BattleHud implements Disposable {
     }
 
     /**
-     * Sets the currently selected Clawkin index for visual highlighting.
-     * @param index The index of the selected Clawkin (0-2)
+     * Sets the currently active Clawkin index (the one in battle).
+     * @param index The index of the active Clawkin (0-2)
      */
-    public void setSelectedClawkinIndex(int index) {
+    public void setActiveClawkinIndex(int index) {
         if (index >= 0 && index < 3) {
-            this.selectedClawkinIndex = index;
+            this.activeClawkinIndex = index;
+            this.highlightedClawkinIndex = index; // Sync highlight with active
             // Refresh container to update visual indicator
             positionClawkinContainer();
         }
     }
 
     /**
-     * Gets the currently selected Clawkin index.
-     * @return The index of the selected Clawkin (0-2)
+     * Gets the currently active Clawkin index.
+     * @return The index of the active Clawkin (0-2)
      */
-    public int getSelectedClawkinIndex() {
-        return selectedClawkinIndex;
+    public int getActiveClawkinIndex() {
+        return activeClawkinIndex;
+    }
+
+    /**
+     * Gets the currently highlighted Clawkin index (cursor position).
+     * @return The index of the highlighted Clawkin (0-2)
+     */
+    public int getHighlightedClawkinIndex() {
+        return highlightedClawkinIndex;
+    }
+
+    /**
+     * Moves the selection highlight up (decreases index).
+     */
+    public void moveSelectionUp() {
+        if (currentParty == null || currentParty.isEmpty()) return;
+        
+        int newIndex = highlightedClawkinIndex - 1;
+        if (newIndex < 0) {
+            newIndex = 2; // Wrap to bottom
+        }
+        
+        highlightedClawkinIndex = newIndex;
+        updateSelectionHighlight();
+    }
+
+    /**
+     * Moves the selection highlight down (increases index).
+     */
+    public void moveSelectionDown() {
+        if (currentParty == null || currentParty.isEmpty()) return;
+        
+        int newIndex = highlightedClawkinIndex + 1;
+        if (newIndex > 2) {
+            newIndex = 0; // Wrap to top
+        }
+        
+        highlightedClawkinIndex = newIndex;
+        updateSelectionHighlight();
+    }
+
+    /**
+     * Checks if the currently highlighted Clawkin can be switched to.
+     * @return true if the Clawkin is valid and can be switched to
+     */
+    public boolean canSwitchToHighlighted() {
+        if (currentParty == null || highlightedClawkinIndex >= currentParty.size()) {
+            return false;
+        }
+        
+        Clawkin highlighted = getClawkinAtSlot(highlightedClawkinIndex);
+        if (highlighted == null) {
+            return false;
+        }
+        
+        // Cannot switch to a knocked out Clawkin
+        if (highlighted.getCurrentHp() <= 0) {
+            return false;
+        }
+        
+        // Cannot switch to the already active Clawkin
+        if (highlightedClawkinIndex == activeClawkinIndex) {
+            return false;
+        }
+        
+        return true;
+    }
+
+    /**
+     * Gets the Clawkin at a specific slot index.
+     * @param slotIndex The slot index (0=Ginger, 1=Swee'pea, 2=Dart)
+     * @return The Clawkin at that slot, or null if not found
+     */
+    public Clawkin getClawkinAtSlot(int slotIndex) {
+        if (currentParty == null) {
+            return null;
+        }
+        
+        for (Clawkin clawkin : currentParty) {
+            if (clawkin == null) continue;
+            
+            String name = clawkin.getName() != null ? clawkin.getName().toLowerCase() : "";
+            String id = clawkin.getId() != null ? clawkin.getId().toLowerCase() : "";
+            
+            // Match slot based on Clawkin identity
+            if (slotIndex == 0 && (name.contains("ginger") || id.contains("ginger"))) {
+                return clawkin;
+            } else if (slotIndex == 1 && (name.contains("swee") || name.contains("swea") || id.contains("swee") || id.contains("swea"))) {
+                return clawkin;
+            } else if (slotIndex == 2 && (name.contains("dart") || id.contains("dart"))) {
+                return clawkin;
+            }
+        }
+        
+        return null;
+    }
+
+    /**
+     * Gets the name of the currently highlighted Clawkin.
+     * @return The Clawkin's name, or null if not found
+     */
+    public String getHighlightedClawkinName() {
+        Clawkin highlighted = getClawkinAtSlot(highlightedClawkinIndex);
+        return highlighted != null ? highlighted.getName() : null;
     }
 
     /**
@@ -1183,18 +1340,25 @@ public class BattleHud implements Disposable {
                 }
             }
 
+            // Calculate and store slot Y positions for highlight positioning
+            for (int i = 0; i < numSlots; i++) {
+                // Y position from top of container
+                float slotY = containerH - (slotHeight * (i + 0.5f));
+                slotYPositions[i] = slotY;
+            }
+
             // Add icons to table in slot order (top to bottom)
             for (int i = 0; i < numSlots; i++) {
                 Image icon = slotIcons[i];
                 
-                // Check if this slot is selected
-                boolean isSelected = (i == selectedClawkinIndex);
+                // Check if this slot is active (in battle)
+                boolean isActive = (i == activeClawkinIndex);
                 
                 if (icon != null) {
-                    // Apply visual highlight to selected icon
-                    if (isSelected) {
-                        // Brighter and slightly scaled for selection indicator
-                        icon.setColor(1.2f, 1.2f, 1.0f, 1.0f); // Slight yellow tint
+                    // Apply visual tint to active icon (subtle indicator)
+                    if (isActive) {
+                        // Slightly brighter for active Clawkin
+                        icon.setColor(1.1f, 1.1f, 1.0f, 1.0f);
                     } else {
                         // Normal appearance
                         icon.setColor(1.0f, 1.0f, 1.0f, 1.0f);
@@ -1218,6 +1382,48 @@ public class BattleHud implements Disposable {
 
         clawkinWrapper.invalidateHierarchy();
         clawkinIconTable.invalidateHierarchy();
+        
+        // Update selection highlight position
+        updateSelectionHighlight();
+    }
+
+    /**
+     * Updates the position and size of the selection highlight to match the highlighted slot.
+     */
+    private void updateSelectionHighlight() {
+        if (selectionHighlight == null || clawkinWrapper == null || slotYPositions == null) {
+            return;
+        }
+
+        float w = stage.getViewport().getWorldWidth();
+        float h = stage.getViewport().getWorldHeight();
+
+        // Container sizing (must match positionClawkinContainer)
+        float containerW = MathUtils.clamp(w * 0.08f, 60f, 100f);
+        float containerH = MathUtils.clamp(h * 0.4f, 150f, 300f);
+
+        // Slot dimensions
+        int numSlots = 3;
+        float slotHeight = containerH / numSlots;
+        float slotWidth = containerW;
+
+        // Highlight size (slightly larger than slot for border effect)
+        float highlightW = slotWidth * 0.95f;
+        float highlightH = slotHeight * 0.85f;
+
+        // Position highlight at the selected slot
+        // The highlight is in a Stack, so position is relative to stack center
+        float highlightX = 0f; // Centered horizontally in stack
+        float highlightY = slotYPositions[highlightedClawkinIndex] - (containerH / 2f);
+
+        selectionHighlight.setSize(highlightW, highlightH);
+        selectionHighlight.setPosition(
+            highlightX - (highlightW / 2f),
+            highlightY - (highlightH / 2f)
+        );
+
+        // Make highlight visible
+        selectionHighlight.setVisible(true);
     }
 }
 
