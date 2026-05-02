@@ -774,8 +774,7 @@ public class BattleOverlay implements Disposable {
 
     private static boolean isInteractionPressed() {
         return Gdx.input.isKeyJustPressed(Keys.Z)
-                || Gdx.input.isKeyJustPressed(Keys.SPACE)
-                || Gdx.input.isKeyJustPressed(Keys.ENTER);
+                || Gdx.input.isKeyJustPressed(Keys.SPACE);
     }
 
 }
