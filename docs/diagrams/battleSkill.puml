@@ -1,0 +1,35 @@
+@startuml
+skinparam classAttributeIconSize 0
+
+package "battleSkill" {
+  class BattleSkill {
+    - name : String
+    - effectBaseStat : int
+    - effectType : EffectType
+    - effectStatScale : String
+    - effectDurationTurns : int
+    - turnCooldown : int
+    - summaryDescription : String
+    - summaryEffectText : String
+    - summaryScalingText : String
+
+    + BattleSkill(name : String, effectBaseStat : int)
+    + BattleSkill(name : String, effectType : EffectType, effectStatScale : String, effectDurationTurns : int)
+    + BattleSkill(name : String, effectType : EffectType, effectBaseStat : int, effectStatScale : String, effectDurationTurns : int)
+    + BattleSkill(name : String, effectType : EffectType, effectBaseStat : int, effectStatScale : String, effectDurationTurns : int, turnCooldown : int)
+
+    + getName() : String
+    + getEffectBaseStat() : int
+    + getEffectType() : EffectType
+    + getEffectStatScale() : String
+    + getEffectDurationTurns() : int
+    + getTurnCooldown() : int
+    + getSummaryDescription() : String
+    + getSummaryEffectText() : String
+    + getSummaryScalingText() : String
+    + getPower() : int
+    + getEffectStat() : String
+  }
+}
+
+@enduml
