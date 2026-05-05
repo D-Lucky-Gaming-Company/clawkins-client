@@ -148,6 +148,7 @@ public class BattleHud implements Disposable {
     private Table clawkinWrapper; // Wrapper table for positioning
     private List<Image> clawkinIcons;
     private List<Clawkin> currentParty;
+    private String lastPartyVisualKey = "";
     
     // Selection highlight indicator
     private Image selectionHighlight;
@@ -258,6 +259,7 @@ public class BattleHud implements Disposable {
         visible = false;
         lastDisplayedClawkinKey = null;
         lastEnemyPortraitKey = null;
+        lastPartyVisualKey = "";
         Gdx.input.setInputProcessor(null);
     }
 
@@ -417,10 +419,10 @@ public class BattleHud implements Disposable {
 
     private static String clawkinVisualKey(Clawkin c) {
         String id = c.getId() == null ? "" : c.getId().trim();
-        if (!id.isEmpty()) {
-            return id;
-        }
-        return c.getName() == null ? "" : c.getName().trim();
+        String name = c.getName() == null ? "" : c.getName().trim();
+        String portraitPath = c.getImagePath() == null ? "" : c.getImagePath().trim();
+        String iconPath = c.getIconImagePath() == null ? "" : c.getIconImagePath().trim();
+        return id + "|" + name + "|" + portraitPath + "|" + iconPath;
     }
 
     private void restorePlayerPlaceholderPortrait() {
@@ -1071,8 +1073,14 @@ public class BattleHud implements Disposable {
             return;
         }
 
+        String nextVisualKey = buildPartyVisualKey(party);
+        if (nextVisualKey.equals(lastPartyVisualKey)) {
+            return;
+        }
+
         // Store current party reference
         this.currentParty = party;
+        this.lastPartyVisualKey = nextVisualKey;
 
         // Trigger repositioning which will rebuild icons
         positionClawkinContainer();
@@ -1108,6 +1116,20 @@ public class BattleHud implements Disposable {
      */
     private String getIconPathForClawkin(Clawkin clawkin) {
         boolean isDown = clawkin.getCurrentHp() <= 0;
+        String configuredIconPath = normalizeAssetPath(clawkin.getIconImagePath());
+        if (!configuredIconPath.isBlank()) {
+            if (isDown) {
+                String downVariantPath = toDownVariantPath(configuredIconPath);
+                if (!downVariantPath.isBlank() && Gdx.files.internal(downVariantPath).exists()) {
+                    return downVariantPath;
+                }
+            }
+            if (Gdx.files.internal(configuredIconPath).exists()) {
+                return configuredIconPath;
+            }
+            Gdx.app.error("BattleHud", "Configured clawkin icon path not found: " + configuredIconPath);
+        }
+
         String name = clawkin.getName() != null ? clawkin.getName().toLowerCase() : "";
         String id = clawkin.getId() != null ? clawkin.getId().toLowerCase() : "";
 
@@ -1122,6 +1144,25 @@ public class BattleHud implements Disposable {
 
         // Default to Ginger if unknown
         return ICON_DIR + (isDown ? GINGER_ICON_DOWN : GINGER_ICON);
+    }
+
+    private static String normalizeAssetPath(String rawPath) {
+        if (rawPath == null) {
+            return "";
+        }
+        String trimmed = rawPath.trim();
+        if (trimmed.startsWith("/")) {
+            return trimmed.substring(1);
+        }
+        return trimmed;
+    }
+
+    private static String toDownVariantPath(String path) {
+        int extensionDotIndex = path.lastIndexOf('.');
+        if (extensionDotIndex <= 0) {
+            return "";
+        }
+        return path.substring(0, extensionDotIndex) + "_down" + path.substring(extensionDotIndex);
     }
 
     /**
@@ -1139,12 +1180,17 @@ public class BattleHud implements Disposable {
      * @param index The index of the active Clawkin (0-2)
      */
     public void setActiveClawkinIndex(int index) {
-        if (index >= 0 && index < 3) {
-            this.activeClawkinIndex = index;
-            this.highlightedClawkinIndex = index; // Sync highlight with active
-            // Refresh container to update visual indicator
-            positionClawkinContainer();
+        int maxSlots = currentParty == null ? 3 : Math.min(3, currentParty.size());
+        if (index < 0 || index >= maxSlots) {
+            return;
         }
+        if (this.activeClawkinIndex == index && this.highlightedClawkinIndex == index) {
+            return;
+        }
+        this.activeClawkinIndex = index;
+        this.highlightedClawkinIndex = index; // Sync highlight with active
+        // Refresh container to update visual indicator
+        positionClawkinContainer();
     }
 
     /**
@@ -1168,12 +1214,13 @@ public class BattleHud implements Disposable {
      */
     public void moveSelectionUp() {
         if (currentParty == null || currentParty.isEmpty()) return;
-        
+
+        int slotCount = Math.min(3, currentParty.size());
         int newIndex = highlightedClawkinIndex - 1;
         if (newIndex < 0) {
-            newIndex = 2; // Wrap to bottom
+            newIndex = slotCount - 1; // Wrap to bottom
         }
-        
+
         highlightedClawkinIndex = newIndex;
         Gdx.app.log("BattleHud", "Move UP: highlightedIndex = " + highlightedClawkinIndex);
         updateSelectionHighlight();
@@ -1184,12 +1231,13 @@ public class BattleHud implements Disposable {
      */
     public void moveSelectionDown() {
         if (currentParty == null || currentParty.isEmpty()) return;
-        
+
+        int slotCount = Math.min(3, currentParty.size());
         int newIndex = highlightedClawkinIndex + 1;
-        if (newIndex > 2) {
+        if (newIndex >= slotCount) {
             newIndex = 0; // Wrap to top
         }
-        
+
         highlightedClawkinIndex = newIndex;
         Gdx.app.log("BattleHud", "Move DOWN: highlightedIndex = " + highlightedClawkinIndex);
         updateSelectionHighlight();
@@ -1231,24 +1279,11 @@ public class BattleHud implements Disposable {
         if (currentParty == null) {
             return null;
         }
-        
-        for (Clawkin clawkin : currentParty) {
-            if (clawkin == null) continue;
-            
-            String name = clawkin.getName() != null ? clawkin.getName().toLowerCase() : "";
-            String id = clawkin.getId() != null ? clawkin.getId().toLowerCase() : "";
-            
-            // Match slot based on Clawkin identity
-            if (slotIndex == 0 && (name.contains("ginger") || id.contains("ginger"))) {
-                return clawkin;
-            } else if (slotIndex == 1 && (name.contains("swee") || name.contains("swea") || id.contains("swee") || id.contains("swea"))) {
-                return clawkin;
-            } else if (slotIndex == 2 && (name.contains("dart") || id.contains("dart"))) {
-                return clawkin;
-            }
+
+        if (slotIndex < 0 || slotIndex >= currentParty.size() || slotIndex >= 3) {
+            return null;
         }
-        
-        return null;
+        return currentParty.get(slotIndex);
     }
 
     /**
@@ -1310,37 +1345,10 @@ public class BattleHud implements Disposable {
             float verticalPadding = (slotHeight - iconSize) / 2f;
             float horizontalPadding = (slotWidth - iconSize) / 2f;
 
-            // SLOT ASSIGNMENT
-            // Top slot → Ginger (index 0)
-            // Middle slot → Swee'pea (index 1)  
-            // Bottom slot → Dart (index 2)
-            
-            // Create array to hold icons in slot order
-            Image[] slotIcons = new Image[numSlots];
-            
-            // Assign icons to slots based on Clawkin name/ID
-            for (Clawkin clawkin : currentParty) {
-                if (clawkin == null) continue;
-                
-                String name = clawkin.getName() != null ? clawkin.getName().toLowerCase() : "";
-                String id = clawkin.getId() != null ? clawkin.getId().toLowerCase() : "";
-                
-                Image icon = createClawkinIcon(clawkin);
-                if (icon == null) continue;
-                
-                // Assign to specific slot based on Clawkin
-                if (name.contains("ginger") || id.contains("ginger")) {
-                    slotIcons[0] = icon; // Top slot
-                } else if (name.contains("swee") || name.contains("swea") || id.contains("swee") || id.contains("swea")) {
-                    slotIcons[1] = icon; // Middle slot
-                } else if (name.contains("dart") || id.contains("dart")) {
-                    slotIcons[2] = icon; // Bottom slot
-                }
-            }
-
             // Add icons to table in slot order (top to bottom)
             for (int i = 0; i < numSlots; i++) {
-                Image icon = slotIcons[i];
+                Clawkin clawkin = getClawkinAtSlot(i);
+                Image icon = createClawkinIcon(clawkin);
                 
                 // Check if this slot is active (in battle)
                 boolean isActive = (i == activeClawkinIndex);
@@ -1383,7 +1391,6 @@ public class BattleHud implements Disposable {
      */
     private void updateSelectionHighlight() {
         if (selectionHighlight == null || clawkinWrapper == null) {
-            Gdx.app.log("BattleHud", "updateSelectionHighlight: highlight or wrapper is null");
             return;
         }
 
@@ -1414,9 +1421,6 @@ public class BattleHud implements Disposable {
         float highlightX = containerX + (slotWidth - highlightW) / 2f;
         float highlightY = slotY - (highlightH / 2f);
 
-        Gdx.app.log("BattleHud", String.format("Highlight position: index=%d, x=%.1f, y=%.1f, w=%.1f, h=%.1f", 
-            highlightedClawkinIndex, highlightX, highlightY, highlightW, highlightH));
-
         selectionHighlight.setSize(highlightW, highlightH);
         selectionHighlight.setPosition(highlightX, highlightY);
         
@@ -1425,8 +1429,21 @@ public class BattleHud implements Disposable {
 
         // Make highlight visible
         selectionHighlight.setVisible(true);
-        
-        Gdx.app.log("BattleHud", "Highlight updated - visible: " + selectionHighlight.isVisible() + 
-            ", actual pos: " + selectionHighlight.getX() + "," + selectionHighlight.getY());
+    }
+
+    private static String buildPartyVisualKey(List<Clawkin> party) {
+        StringBuilder key = new StringBuilder();
+        int slots = Math.min(3, party.size());
+        for (int i = 0; i < slots; i++) {
+            Clawkin c = party.get(i);
+            if (c == null) {
+                key.append("null").append('|');
+                continue;
+            }
+            key.append(c.getId() == null ? "" : c.getId().trim()).append('|')
+               .append(c.getCurrentHp()).append('|')
+               .append(c.getIconImagePath() == null ? "" : c.getIconImagePath().trim()).append('|');
+        }
+        return key.toString();
     }
 }

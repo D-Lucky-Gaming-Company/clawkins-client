@@ -16,6 +16,7 @@ public class Clawkin {
     private final String id;
     private final String name;
     private final String imagePath;
+    private final String iconImagePath;
     private final int level;
     
     private final int maxHp;
@@ -30,13 +31,26 @@ public class Clawkin {
     private final Map<StatBoostEffect.StatType, StatBoost> statBoosts;
 
     public Clawkin(String id, String name, String imagePath, int level, int maxHp, int attack, int defense, int speed, List<BattleSkill> skills) {
-        this(id, name, imagePath, level, maxHp, attack, defense, speed, skills, SummaryProfile.fromCoreStats(name, maxHp, attack, defense, speed));
+        this(
+            id,
+            name,
+            imagePath,
+            "",
+            level,
+            maxHp,
+            attack,
+            defense,
+            speed,
+            skills,
+            SummaryProfile.fromCoreStats(name, maxHp, attack, defense, speed)
+        );
     }
 
     public Clawkin(
         String id,
         String name,
         String imagePath,
+        String iconImagePath,
         int level,
         int maxHp,
         int attack,
@@ -48,6 +62,7 @@ public class Clawkin {
         this.id = id;
         this.name = name;
         this.imagePath = imagePath == null ? "" : imagePath.trim();
+        this.iconImagePath = iconImagePath == null ? "" : iconImagePath.trim();
         this.level = Math.max(1, level);
         this.maxHp = Math.max(1, maxHp);
         this.currentHp = this.maxHp;
@@ -73,6 +88,10 @@ public class Clawkin {
 
     public String getImagePath() {
         return imagePath;
+    }
+
+    public String getIconImagePath() {
+        return iconImagePath;
     }
 
     public int getLevel() {

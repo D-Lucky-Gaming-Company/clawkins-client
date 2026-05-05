@@ -448,6 +448,7 @@ public class TiledObjectConfigurator {
         String resolvedId = rawId.isBlank() ? ("clawkin_" + toIdToken(resolvedName)) : rawId;
 
         String imagePath = getStringFromProps(clawkinProps, "image_clawkin", "").trim();
+        String iconImagePath = getStringFromProps(clawkinProps, "image_clawkin_icon", "").trim();
         int level = getIntFromProps(clawkinProps, "level", 1);
         int hp = getIntFromProps(clawkinProps, "hp", 50);
         int attack = getIntFromProps(clawkinProps, "attack", 8);
@@ -461,6 +462,7 @@ public class TiledObjectConfigurator {
             "Clawkin slot " + slot + " loaded -> id=" + resolvedId
                 + ", name=" + resolvedName
                 + ", image=" + imagePath
+                + ", iconImage=" + iconImagePath
                 + ", level=" + level
                 + ", hp=" + hp
                 + ", atk=" + attack
@@ -472,7 +474,19 @@ public class TiledObjectConfigurator {
                 + ", title=" + summaryProfile.getTitle()
         );
 
-        return new Clawkin(resolvedId, resolvedName, imagePath, level, hp, attack, defense, speed, skills, summaryProfile);
+        return new Clawkin(
+            resolvedId,
+            resolvedName,
+            imagePath,
+            iconImagePath,
+            level,
+            hp,
+            attack,
+            defense,
+            speed,
+            skills,
+            summaryProfile
+        );
     }
 
     private static Clawkin.SummaryProfile buildSummaryProfile(

@@ -379,6 +379,7 @@ public class BattleOverlay implements Disposable {
         BattleUnit ally = battle.firstAlly();
         if (ally != null && playerBattleState != null) {
             Clawkin activeClawkin = playerBattleState.getActiveClawkin();
+            int activeIndex = playerBattleState.getActiveClawkinIndex();
             battleHud.updateActiveClawkin(activeClawkin);
             float maxHp = activeClawkin != null ? activeClawkin.getMaxHp() : 100f;
             battleHud.setPlayerHp(ally.getHp(), maxHp);
@@ -386,10 +387,9 @@ public class BattleOverlay implements Disposable {
             // Update Clawkin container with party data
             List<Clawkin> party = playerBattleState.getParty();
             battleHud.updateClawkinContainer(party);
-            
-            // Set active Clawkin index based on active Clawkin
-            if (activeClawkin != null && party != null) {
-                int activeIndex = findClawkinIndex(activeClawkin, party);
+
+            // Use PlayerBattleState index as source of truth.
+            if (activeIndex >= 0) {
                 battleHud.setActiveClawkinIndex(activeIndex);
             }
         }
@@ -404,31 +404,6 @@ public class BattleOverlay implements Disposable {
                         ctx.getEnemyPortraitPath());
             }
         }
-    }
-
-    /**
-     * Finds the index of a Clawkin in the party based on name/ID matching.
-     * Returns the slot index (0=Ginger/top, 1=Swee'pea/middle, 2=Dart/bottom).
-     */
-    private int findClawkinIndex(Clawkin activeClawkin, List<Clawkin> party) {
-        if (activeClawkin == null || party == null) {
-            return 0;
-        }
-
-        String activeName = activeClawkin.getName() != null ? activeClawkin.getName().toLowerCase() : "";
-        String activeId = activeClawkin.getId() != null ? activeClawkin.getId().toLowerCase() : "";
-
-        // Determine slot based on Clawkin identity
-        if (activeName.contains("ginger") || activeId.contains("ginger")) {
-            return 0; // Top slot
-        } else if (activeName.contains("swee") || activeName.contains("swea") || activeId.contains("swee") || activeId.contains("swea")) {
-            return 1; // Middle slot
-        } else if (activeName.contains("dart") || activeId.contains("dart")) {
-            return 2; // Bottom slot
-        }
-
-        // Default to first slot
-        return 0;
     }
 
     // -----------------------------------------------------------------------
@@ -706,23 +681,8 @@ public class BattleOverlay implements Disposable {
             return;
         }
         
-        // Find the actual party index for this Clawkin
-        List<Clawkin> party = playerBattleState.getParty();
-        int partyIndex = -1;
-        for (int i = 0; i < party.size(); i++) {
-            if (party.get(i) == newClawkin) {
-                partyIndex = i;
-                break;
-            }
-        }
-        
-        if (partyIndex == -1) {
-            Gdx.app.log("BattleOverlay", "Cannot switch: Clawkin not found in party");
-            return;
-        }
-        
-        // Update player battle state with party index
-        playerBattleState.setActiveClawkinIndex(partyIndex);
+        // Slot index is party index; this keeps battle HUD and TeamViewer aligned.
+        playerBattleState.setActiveClawkinIndex(newIndex);
         
         // Update HUD to reflect new active Clawkin
         battleHud.setActiveClawkinIndex(newIndex);
