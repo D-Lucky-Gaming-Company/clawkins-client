@@ -1,0 +1,24 @@
+@startuml
+skinparam classAttributeIconSize 0
+
+package "clawkinCard"{
+    class ClawkinCard {
+    - clawkin : Clawkin
+    - font : BitmapFont
+    - hpBarContainer : Table
+    - isSelected : boolean
+    - isActiveFighter : boolean
+
+    + ClawkinCard(clawkin : Clawkin, font : BitmapFont)
+    + updateHp() : void
+    + refreshStats() : void
+    + setSelected(selected : boolean) : void
+    + setActiveFighter(active : boolean) : void
+    + isActiveFighter() : boolean
+    + getClawkin() : Clawkin
+    + isEmpty() : boolean
+    + isSelected() : boolean
+    }
+}
+
+@enduml

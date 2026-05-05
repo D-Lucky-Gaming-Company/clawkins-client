@@ -1,0 +1,55 @@
+@startuml
+skinparam classAttributeIconSize 0
+package "teamViewer"{
+class Clawkin
+class ClawkinCard
+class Stage
+class BitmapFont
+class Table
+class InputMultiplexer
+
+interface InputProcessor
+interface CardSelectionCallback
+
+enum ActionOption {
+  CANCEL
+  SWITCH
+  SUMMARY
+}
+
+class TeamViewerScreen {
+  - stage : Stage
+  - font : BitmapFont
+  - party : List
+  - rootTable : Table
+  - cardsContainer : Table
+  - footerTable : Table
+  - cards : List
+  - currentSelectedIndex : int
+  - activeFighterIndex : int
+  - inputMultiplexer : InputMultiplexer
+
+  + TeamViewerScreen(stage : Stage, party : List, font : BitmapFont)
+  + selectSlot(index : int) : void
+  + setActiveFighterIndex(index : int) : void
+  + updateSelectedHp() : void
+  + setOnBackPressed(callback : Runnable) : void
+  + setCardSelectionCallback(callback : CardSelectionCallback) : void
+  + getSelectedClawkin() : Clawkin
+  + getSelectedIndex() : int
+  + dispose() : void
+  + keyDown(keycode : int) : boolean
+  + keyUp(keycode : int) : boolean
+}
+
+TeamViewerScreen ..|> InputProcessor
+TeamViewerScreen --> Stage
+TeamViewerScreen --> BitmapFont
+TeamViewerScreen --> InputMultiplexer
+TeamViewerScreen --> ClawkinCard
+TeamViewerScreen --> Clawkin
+TeamViewerScreen --> ActionOption
+TeamViewerScreen --> CardSelectionCallback
+}
+
+@enduml

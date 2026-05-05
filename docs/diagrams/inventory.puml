@@ -1,0 +1,51 @@
+@startuml
+skinparam classAttributeIconSize 0
+
+package "inventory" {
+  enum ItemType {
+    POTION
+    REVIVE
+    STAT_BOOSTER
+  }
+
+  class Item {
+    - id : String
+    - name : String
+    - description : String
+    - type : ItemType
+    - sellPrice : int
+    - usableInBattle : boolean
+    - imageName : String
+
+    + getId() : String
+    + getName() : String
+    + getDescription() : String
+    + getType() : ItemType
+    + getSellPrice() : int
+    + isUsableInBattle() : boolean
+    + getImageName() : String
+    + applyEffectTo(target) : boolean
+    + getEffectDescription() : String
+  }
+
+  class Inventory {
+    - items : Map<Item, Integer>
+
+    + addItem(item : Item, quantity : int) : void
+    + removeItem(item : Item, quantity : int) : boolean
+    + dropAllOfItem(item : Item) : void
+    + clear() : void
+    + getQuantity(item : Item) : int
+    + hasItem(item : Item, quantity : int) : boolean
+    + contains(item : Item) : boolean
+    + getAllItems() : List<Item>
+    + getTotalItemCount() : int
+    + isEmpty() : boolean
+    + getUniqueItemCount() : int
+  }
+
+  Inventory o-- Item
+  Item -- ItemType
+}
+
+@enduml
