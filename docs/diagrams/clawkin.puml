@@ -1,0 +1,54 @@
+@startuml
+skinparam classAttributeIconSize 0
+
+package "clawkin" {
+  class BattleSkill
+  class Clawkin {
+    - id : String
+    - name : String
+    - imagePath : String
+    - level : int
+    - maxHp : int
+    - currentHp : int
+    - baseAttack : int
+    - baseDefense : int
+    - baseSpeed : int
+    - skills : List
+    - summaryProfile : SummaryProfile
+    - statBoosts : Map
+
+    + Clawkin(id : String, name : String, imagePath : String, level : int, maxHp : int, attack : int, defense : int, speed : int, skills : List)
+    + getId() : String
+    + getName() : String
+    + getImagePath() : String
+    + getLevel() : int
+    + getMaxHp() : int
+    + getCurrentHp() : int
+    + getBaseAttack() : int
+    + getBaseDefense() : int
+    + getBaseSpeed() : int
+    + getSkills() : List
+    + getSummaryProfile() : SummaryProfile
+    + getEffectiveAttack() : int
+    + getEffectiveDefense() : int
+    + getEffectiveSpeed() : int
+    + takeDamage(damage : int) : void
+    + heal(amount : int) : void
+    + isDead() : boolean
+    + isAlive() : boolean
+    + restoreFullHealth() : void
+    + setCurrentHp(hp : int) : void
+    + addStatBoost(stat, amount : int, durationTurns : int) : void
+    + decrementStatBoostTimers() : void
+    + hasStatBoost(stat) : boolean
+  }
+  class StatBoost {
+    - amount : int
+    - turnsRemaining : int
+    + decrementTurns() : void
+  }
+  Clawkin *-- BattleSkill
+  Clawkin *-- StatBoost
+}
+
+@enduml
