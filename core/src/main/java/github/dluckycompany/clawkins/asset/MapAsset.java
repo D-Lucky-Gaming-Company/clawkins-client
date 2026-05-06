@@ -20,7 +20,13 @@ public enum MapAsset implements Asset<TiledMap>{
     FIELD_SECRET("field_secret.tmx"),
     MANSION_MAZE("mansion_maze.tmx"),
     MANSION_GARDEN("mansion_garden.tmx"),
-    MANSION_EXIT("custom tilesets/mansion_exit.tmx");
+    MANSION_EXIT("custom tilesets/mansion_exit.tmx"),
+    BACKALLEY("backalley/backalley_1.tmx"),
+    BACKALLEY_2("backalley/backalley_2.tmx"),
+    BACKALLEY_3("backalley/backalley_3.tmx"),
+    BACKALLEY_4("backalley/backalley_4.tmx"),
+    BACKALLEY_EXIT("backalley/backalley_exit.tmx"),
+    BACKALLEY_SECRET("backalley/backalley_secret.tmx");
 
     private final AssetDescriptor<TiledMap> descriptor;
     private final String mapPath;
