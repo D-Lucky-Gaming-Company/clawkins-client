@@ -250,6 +250,7 @@ public class BattleHud implements Disposable {
     /** Makes the HUD visible but does NOT set input processor (keyboard-only control). */
     public void show() {
         visible = true;
+        // Highlight will be synced to active Clawkin in setActiveClawkinIndex() on first battle start
         // Do NOT set input processor - we use keyboard input only
         // Gdx.input.setInputProcessor(stage);
     }
@@ -1177,6 +1178,8 @@ public class BattleHud implements Disposable {
 
     /**
      * Sets the currently active Clawkin index (the one in battle).
+     * On first initialization, syncs the highlight to match.
+     * After that, highlight is independent for navigation.
      * @param index The index of the active Clawkin (0-2)
      */
     public void setActiveClawkinIndex(int index) {
@@ -1184,11 +1187,21 @@ public class BattleHud implements Disposable {
         if (index < 0 || index >= maxSlots) {
             return;
         }
-        if (this.activeClawkinIndex == index && this.highlightedClawkinIndex == index) {
+        
+        boolean isFirstTimeSet = (this.activeClawkinIndex == 0 && this.highlightedClawkinIndex == 0 && visible);
+        
+        if (this.activeClawkinIndex == index) {
             return;
         }
         this.activeClawkinIndex = index;
-        this.highlightedClawkinIndex = index; // Sync highlight with active
+        
+        // On first battle start, sync highlight to active Clawkin
+        // This ensures if player selected Sweepea before battle, highlight starts on Sweepea
+        if (isFirstTimeSet) {
+            this.highlightedClawkinIndex = index;
+        }
+        
+        // After first initialization, DO NOT sync highlight - let player continue navigating
         // Refresh container to update visual indicator
         positionClawkinContainer();
     }
@@ -1406,20 +1419,27 @@ public class BattleHud implements Disposable {
         float slotHeight = containerH / numSlots;
         float slotWidth = containerW;
 
-        // Highlight size (slightly smaller than slot to fit inside)
-        float highlightW = slotWidth * 0.90f;
-        float highlightH = slotHeight * 0.80f;
+        // Highlight size (match icon size for proper fit)
+        float iconWidth = slotWidth * 0.92f;
+        float iconHeight = slotHeight * 0.92f;
+        float iconSize = Math.min(iconWidth, iconHeight);
+        
+        float highlightW = iconSize;
+        float highlightH = iconSize;
 
         // Container position (must match positionClawkinContainer)
         float containerX = 0f; // Flush against left edge
         float containerY = (h / 2f) - (containerH / 2f); // Vertically centered
 
-        // Calculate Y position for the highlighted slot (from top of container)
-        float slotY = containerY + containerH - (slotHeight * (highlightedClawkinIndex + 0.5f));
+        // Calculate Y position for the highlighted slot
+        // Slots are arranged from top to bottom (index 0 = top, 1 = middle, 2 = bottom)
+        // Start from top of container and move down by slot index
+        float slotTopY = containerY + containerH - (slotHeight * highlightedClawkinIndex);
+        float slotCenterY = slotTopY - (slotHeight / 2f);
 
         // Center highlight in slot
         float highlightX = containerX + (slotWidth - highlightW) / 2f;
-        float highlightY = slotY - (highlightH / 2f);
+        float highlightY = slotCenterY - (highlightH / 2f);
 
         selectionHighlight.setSize(highlightW, highlightH);
         selectionHighlight.setPosition(highlightX, highlightY);
