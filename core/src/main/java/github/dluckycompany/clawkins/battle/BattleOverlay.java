@@ -26,6 +26,7 @@ import com.badlogic.gdx.utils.Disposable;
 import java.util.List;
 
 import github.dluckycompany.clawkins.Main;
+import github.dluckycompany.clawkins.audio.DialogueSoundManager;
 import github.dluckycompany.clawkins.asset.AssetService;
 import github.dluckycompany.clawkins.character.Clawkin;
 import github.dluckycompany.clawkins.component.Interactible;
@@ -97,6 +98,7 @@ public class BattleOverlay implements Disposable {
     private List<BattleTextSpan> dialogueSpans = List.of();
     private float dialogueVisibleChars = 0f;
     private static final float DIALOGUE_TYPEWRITER_CHARS_PER_SECOND = 44f;
+    private final DialogueSoundManager dialogueSoundManager = new DialogueSoundManager();
 
     /** True when inventory is open from battle. */
     private boolean inventoryOpen = false;
@@ -571,16 +573,24 @@ public class BattleOverlay implements Disposable {
         dialogueFullText = text == null ? "" : text;
         dialogueSpans = spans == null ? List.of() : List.copyOf(spans);
         dialogueVisibleChars = 0f;
+        dialogueSoundManager.stop();
     }
 
     private void updateTypewriter(float delta) {
         if (!dialogueVisible || dialogueFullText.isEmpty()) {
+            dialogueSoundManager.stop();
             return;
         }
+        int previousVisible = (int) dialogueVisibleChars;
         dialogueVisibleChars = Math.min(
                 dialogueFullText.length(),
                 dialogueVisibleChars + (DIALOGUE_TYPEWRITER_CHARS_PER_SECOND * delta)
         );
+
+        int currentVisible = (int) dialogueVisibleChars;
+        if (currentVisible > previousVisible) {
+            playDialogueSounds(previousVisible, currentVisible);
+        }
     }
 
     private boolean isDialogueFullyRevealed() {
@@ -594,6 +604,20 @@ public class BattleOverlay implements Disposable {
         dialogueFullText = "";
         dialogueSpans = List.of();
         dialogueVisibleChars = 0f;
+        dialogueSoundManager.stop();
+    }
+
+    private void playDialogueSounds(int startIndex, int endIndex) {
+        if (dialogueFullText == null || dialogueFullText.isEmpty()) {
+            return;
+        }
+
+        int safeStart = Math.max(0, startIndex);
+        int safeEnd = Math.min(dialogueFullText.length(), endIndex);
+        for (int i = safeStart; i < safeEnd; i++) {
+            char c = dialogueFullText.charAt(i);
+            dialogueSoundManager.onCharacterRevealed(c, i);
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -743,6 +767,7 @@ public class BattleOverlay implements Disposable {
         transition.dispose();
         if (battleHud != null) battleHud.dispose();
         if (skin != null) skin.dispose();
+        dialogueSoundManager.dispose();
     }
 
     // -----------------------------------------------------------------------
