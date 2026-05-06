@@ -652,6 +652,7 @@ public class BattleOverlay implements Disposable {
 
     /**
      * Shows a confirmation prompt before switching Clawkins.
+     * Switching ends the player's turn.
      * Player must confirm with Z/Space/Enter or cancel with X/Escape.
      */
     private void showSwitchConfirmation() {
@@ -662,13 +663,14 @@ public class BattleOverlay implements Disposable {
             clawkinName = "this Clawkin";
         }
         
-        String confirmText = "Switch to " + clawkinName + "?\n[Z] Yes  [X] No";
+        String confirmText = "Switch to " + clawkinName + "?\nThis will end your turn!\n\n[Z] Yes  [X] No";
         openDialogue(null, confirmText, List.of(), DialogueFlowPhase.SWITCH_CONFIRMATION);
     }
 
     /**
      * Performs the actual Clawkin switch after confirmation.
      * Updates the active Clawkin in the player battle state.
+     * Switching ends the player's turn.
      */
     private void performClawkinSwitch(BattleService battleService) {
         if (battleHud == null || playerBattleState == null) return;
@@ -695,6 +697,12 @@ public class BattleOverlay implements Disposable {
         }
         
         Gdx.app.log("BattleOverlay", "Switched to " + newClawkin.getName());
+        
+        // Switching Clawkin ends the player's turn - trigger enemy action
+        if (machine != null && machine.canExecuteEnemyAction()) {
+            battleService.resolveEnemyTurn();
+            openDialogue(null, machine.getLastLog(), machine.getLastLogSpans(), DialogueFlowPhase.ENEMY_RESULT);
+        }
     }
 
     /**
