@@ -381,8 +381,17 @@ public class BattleOverlay implements Disposable {
             Clawkin activeClawkin = playerBattleState.getActiveClawkin();
             int activeIndex = playerBattleState.getActiveClawkinIndex();
             battleHud.updateActiveClawkin(activeClawkin);
-            float maxHp = activeClawkin != null ? activeClawkin.getMaxHp() : 100f;
-            battleHud.setPlayerHp(ally.getHp(), maxHp);
+            
+            // Use the Clawkin's actual HP values, not the BattleUnit's
+            // This ensures the HP bar correctly reflects the switched Clawkin's health
+            if (activeClawkin != null) {
+                float currentHp = activeClawkin.getCurrentHp();
+                float maxHp = activeClawkin.getMaxHp();
+                battleHud.setPlayerHp(currentHp, maxHp);
+            } else {
+                // Fallback to BattleUnit HP if no active Clawkin
+                battleHud.setPlayerHp(ally.getHp(), ally.getMaxHp());
+            }
             
             // Update Clawkin container with party data
             List<Clawkin> party = playerBattleState.getParty();
