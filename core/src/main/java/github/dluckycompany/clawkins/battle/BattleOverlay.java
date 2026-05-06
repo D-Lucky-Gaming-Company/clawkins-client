@@ -284,7 +284,8 @@ public class BattleOverlay implements Disposable {
 
         if (dialogueVisible) {
             updateTypewriter(delta);
-            if (isInteractionPressed()) {
+            // Check for interaction (Z/Space/Enter) OR cancel (X/Escape)
+            if (isInteractionPressed() || Gdx.input.isKeyJustPressed(Keys.X) || Gdx.input.isKeyJustPressed(Keys.ESCAPE)) {
                 handleDialogueAdvance(battleService);
             }
             return;
