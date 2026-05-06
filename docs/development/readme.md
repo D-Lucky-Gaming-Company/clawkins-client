@@ -692,16 +692,16 @@ Properties are read from each `Interactible` object:
 - `ObjectId` (string, optional)
   - Identifier used for dialogue placeholders like `{objectID}`.
   - Default: `<normalizedObjectName>_<x>_<y>` when missing/blank.
-- `ObjectText` (string)
-  - First-time interaction source.
-  - Supports two formats:
+- `DialogueDirectory` (string)
+  - Interaction-count dialogue source contract.
+  - Supports two formats per source:
     - Direct text string
     - Relative `.json` file path under assets (example: `dialogue/interactible-sample.json`)
+  - Recommended: one staged JSON file with `Interactions`.
+  - Also supports `|`-separated source sequences:
+    - `first|repeat` => interaction 1 uses `first`, interaction 2+ uses `repeat`.
+    - `first|second|third` => interactions 1/2/3 use each source, interaction 4+ repeats `third`.
   - Default: `"..."`.
-- `ObjectTextInteracted` (string, optional)
-  - Interaction source shown after object has been interacted with once.
-  - Supports the same two formats as `ObjectText`.
-  - If missing/blank, system keeps showing `ObjectText` every time.
 - `hasCollision` (bool or `"True"/"False"` string)
   - Controls whether the interactible blocks movement.
   - Default: `true` when property is missing.
@@ -720,7 +720,7 @@ Properties are read from each `Interactible` object:
 ### 14.4 Dialogue behavior
 
 - Press interaction near a valid target:
-  - dialogue opens from `ObjectText` source.
+  - dialogue opens from the source selected by `DialogueDirectory` and interaction count.
 - If source is a JSON file:
   - system reads `DialogueFlow` array entries in order.
   - each entry supports fields:
@@ -738,22 +738,28 @@ Properties are read from each `Interactible` object:
 
 ```json
 {
-  "DialogueFlow": [
+  "Interactions": [
     {
-      "Name": "{this}",
-      "Text": "Hello"
+      "DialogueFlow": [
+        {
+          "Name": "{this}",
+          "Text": "Hello"
+        }
+      ]
     },
     {
-      "Name": "{player}",
-      "Text": "Hey"
-    },
-    {
-      "Name": "Name1",
-      "Text": "I am some random person, your name is {player} right?"
+      "DialogueFlow": [
+        {
+          "Name": "{player}",
+          "Text": "Hey"
+        }
+      ]
     }
   ]
 }
 ```
+
+- Backward-compatible single-flow files with root `DialogueFlow` are still supported.
 
 #### Supported placeholders (Name and Text)
 

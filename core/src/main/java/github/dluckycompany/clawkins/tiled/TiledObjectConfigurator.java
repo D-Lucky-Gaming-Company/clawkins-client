@@ -195,8 +195,7 @@ public class TiledObjectConfigurator {
                 if (objectId == null || objectId.isBlank()) {
                     objectId = objectIdFallback;
                 }
-                String objectText = getStringProperty(tileMapObject, "ObjectText", "...");
-                String objectTextInteracted = getStringProperty(tileMapObject, "ObjectTextInteracted", "");
+                String dialogueDirectory = getStringProperty(tileMapObject, "DialogueDirectory", "...");
                 boolean hasCollision = getBooleanProperty(tileMapObject, "hasCollision", true);
                 String posRaw = getStringProperty(tileMapObject, "DialoguePosition", "BOTTOM");
                 Interactible.DialoguePosition dialoguePosition = parseDialoguePosition(posRaw);
@@ -204,8 +203,7 @@ public class TiledObjectConfigurator {
                 entity.add(new Interactible(
                         objectName,
                     objectId,
-                        objectText,
-                        objectTextInteracted,
+                        dialogueDirectory,
                         hasCollision,
                         dialoguePosition
                 ));
@@ -218,8 +216,7 @@ public class TiledObjectConfigurator {
                 if (objectId == null || objectId.isBlank()) {
                     objectId = objectIdFallback;
                 }
-                String objectText = getStringProperty(tileMapObject, "ObjectText", "Welcome!");
-                String objectTextInteracted = getStringProperty(tileMapObject, "ObjectTextInteracted", "");
+                String dialogueDirectory = getStringProperty(tileMapObject, "DialogueDirectory", "Welcome!");
                 boolean hasCollision = getBooleanProperty(tileMapObject, "hasCollision", true);
                 String posRaw = getStringProperty(tileMapObject, "DialoguePosition", "BOTTOM");
                 Interactible.DialoguePosition dialoguePosition = parseDialoguePosition(posRaw);
@@ -227,8 +224,7 @@ public class TiledObjectConfigurator {
                 entity.add(new Interactible(
                         objectName,
                     objectId,
-                        objectText,
-                        objectTextInteracted,
+                        dialogueDirectory,
                         hasCollision,
                         dialoguePosition,
                         true  // isMerchant = true

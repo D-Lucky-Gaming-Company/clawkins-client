@@ -29,7 +29,7 @@ Updated `core/src/main/java/github/kinuseka/testproject/tiled/TiledObjectConfigu
 
 ### Property resolution order
 
-For each required field (example: `encounterId`, `ObjectText`, `playerHp`), runtime now checks:
+For each required field (example: `encounterId`, `DialogueDirectory`, `playerHp`), runtime now checks:
 
 1. direct object property
 2. nested class property `properties`

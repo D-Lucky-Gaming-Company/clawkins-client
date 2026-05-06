@@ -20,9 +20,11 @@ Object requirements:
 Supported custom properties:
 
 - `ObjectName` (string) → default `"Object"`
-- `ObjectText` (string) → default `"..."`
-- `ObjectTextInteracted` (string, optional)
-  - If missing/blank, system keeps showing `ObjectText` after first interaction.
+- `DialogueDirectory` (string) → default `"..."`
+  - Recommended: one staged JSON file with `Interactions`.
+  - Supports one source or a `|`-separated interaction sequence.
+  - The selected source is based on interaction count.
+  - If multiple sources are supplied, interactions beyond the last source repeat the final source.
 - `hasCollision` (bool or string `"True"/"False"`)
   - Default: `true` when missing.
 - `DialoguePosition` (`TOP` or `BOTTOM`)
@@ -39,10 +41,9 @@ Interaction keys:
 Rules:
 
 - Player must be facing the object and within interaction range.
-- First interaction shows `ObjectText`.
-- Subsequent interactions show:
-  - `ObjectTextInteracted` if defined/non-blank,
-  - otherwise `ObjectText`.
+- Dialogue source selection is interaction-count based from `DialogueDirectory`.
+  - `a|b` means interaction 1 uses `a`, interactions 2+ use `b`.
+  - `a|b|c` means interactions 1/2/3 use `a`/`b`/`c`, interaction 4+ repeats `c`.
 - Interaction while dialogue is open closes the dialogue.
 
 ## Collision Behavior
