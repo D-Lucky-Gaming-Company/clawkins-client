@@ -26,6 +26,7 @@ import com.badlogic.gdx.utils.Disposable;
 import java.util.List;
 
 import github.dluckycompany.clawkins.Main;
+import github.dluckycompany.clawkins.audio.DialogueSoundManager;
 import github.dluckycompany.clawkins.asset.AssetService;
 import github.dluckycompany.clawkins.character.Clawkin;
 import github.dluckycompany.clawkins.component.Interactible;
@@ -97,6 +98,7 @@ public class BattleOverlay implements Disposable {
     private List<BattleTextSpan> dialogueSpans = List.of();
     private float dialogueVisibleChars = 0f;
     private static final float DIALOGUE_TYPEWRITER_CHARS_PER_SECOND = 44f;
+    private final DialogueSoundManager dialogueSoundManager = new DialogueSoundManager();
 
     /** True when inventory is open from battle. */
     private boolean inventoryOpen = false;
@@ -282,7 +284,8 @@ public class BattleOverlay implements Disposable {
 
         if (dialogueVisible) {
             updateTypewriter(delta);
-            if (isInteractionPressed()) {
+            // Check for interaction (Z/Space/Enter) OR cancel (X/Escape)
+            if (isInteractionPressed() || Gdx.input.isKeyJustPressed(Keys.X) || Gdx.input.isKeyJustPressed(Keys.ESCAPE)) {
                 handleDialogueAdvance(battleService);
             }
             return;
@@ -381,8 +384,17 @@ public class BattleOverlay implements Disposable {
             Clawkin activeClawkin = playerBattleState.getActiveClawkin();
             int activeIndex = playerBattleState.getActiveClawkinIndex();
             battleHud.updateActiveClawkin(activeClawkin);
-            float maxHp = activeClawkin != null ? activeClawkin.getMaxHp() : 100f;
-            battleHud.setPlayerHp(ally.getHp(), maxHp);
+            
+            // Use the Clawkin's actual HP values, not the BattleUnit's
+            // This ensures the HP bar correctly reflects the switched Clawkin's health
+            if (activeClawkin != null) {
+                float currentHp = activeClawkin.getCurrentHp();
+                float maxHp = activeClawkin.getMaxHp();
+                battleHud.setPlayerHp(currentHp, maxHp);
+            } else {
+                // Fallback to BattleUnit HP if no active Clawkin
+                battleHud.setPlayerHp(ally.getHp(), ally.getMaxHp());
+            }
             
             // Update Clawkin container with party data
             List<Clawkin> party = playerBattleState.getParty();
@@ -562,16 +574,24 @@ public class BattleOverlay implements Disposable {
         dialogueFullText = text == null ? "" : text;
         dialogueSpans = spans == null ? List.of() : List.copyOf(spans);
         dialogueVisibleChars = 0f;
+        dialogueSoundManager.stop();
     }
 
     private void updateTypewriter(float delta) {
         if (!dialogueVisible || dialogueFullText.isEmpty()) {
+            dialogueSoundManager.stop();
             return;
         }
+        int previousVisible = (int) dialogueVisibleChars;
         dialogueVisibleChars = Math.min(
                 dialogueFullText.length(),
                 dialogueVisibleChars + (DIALOGUE_TYPEWRITER_CHARS_PER_SECOND * delta)
         );
+
+        int currentVisible = (int) dialogueVisibleChars;
+        if (currentVisible > previousVisible) {
+            playDialogueSounds(previousVisible, currentVisible);
+        }
     }
 
     private boolean isDialogueFullyRevealed() {
@@ -585,6 +605,20 @@ public class BattleOverlay implements Disposable {
         dialogueFullText = "";
         dialogueSpans = List.of();
         dialogueVisibleChars = 0f;
+        dialogueSoundManager.stop();
+    }
+
+    private void playDialogueSounds(int startIndex, int endIndex) {
+        if (dialogueFullText == null || dialogueFullText.isEmpty()) {
+            return;
+        }
+
+        int safeStart = Math.max(0, startIndex);
+        int safeEnd = Math.min(dialogueFullText.length(), endIndex);
+        for (int i = safeStart; i < safeEnd; i++) {
+            char c = dialogueFullText.charAt(i);
+            dialogueSoundManager.onCharacterRevealed(c, i);
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -652,6 +686,7 @@ public class BattleOverlay implements Disposable {
 
     /**
      * Shows a confirmation prompt before switching Clawkins.
+     * Switching ends the player's turn.
      * Player must confirm with Z/Space/Enter or cancel with X/Escape.
      */
     private void showSwitchConfirmation() {
@@ -662,13 +697,14 @@ public class BattleOverlay implements Disposable {
             clawkinName = "this Clawkin";
         }
         
-        String confirmText = "Switch to " + clawkinName + "?\n[Z] Yes  [X] No";
+        String confirmText = "Switch to " + clawkinName + "?\nThis will end your turn!\n\n[Z] Yes  [X] No";
         openDialogue(null, confirmText, List.of(), DialogueFlowPhase.SWITCH_CONFIRMATION);
     }
 
     /**
      * Performs the actual Clawkin switch after confirmation.
      * Updates the active Clawkin in the player battle state.
+     * Switching ends the player's turn.
      */
     private void performClawkinSwitch(BattleService battleService) {
         if (battleHud == null || playerBattleState == null) return;
@@ -695,6 +731,12 @@ public class BattleOverlay implements Disposable {
         }
         
         Gdx.app.log("BattleOverlay", "Switched to " + newClawkin.getName());
+        
+        // Switching Clawkin ends the player's turn - trigger enemy action
+        if (machine != null && machine.canExecuteEnemyAction()) {
+            battleService.resolveEnemyTurn();
+            openDialogue(null, machine.getLastLog(), machine.getLastLogSpans(), DialogueFlowPhase.ENEMY_RESULT);
+        }
     }
 
     /**
@@ -726,6 +768,7 @@ public class BattleOverlay implements Disposable {
         transition.dispose();
         if (battleHud != null) battleHud.dispose();
         if (skin != null) skin.dispose();
+        dialogueSoundManager.dispose();
     }
 
     // -----------------------------------------------------------------------

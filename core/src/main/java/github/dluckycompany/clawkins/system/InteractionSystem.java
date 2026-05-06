@@ -22,6 +22,7 @@ import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.utils.JsonReader;
 import com.badlogic.gdx.utils.JsonValue;
 
+import github.dluckycompany.clawkins.audio.DialogueSoundManager;
 import github.dluckycompany.clawkins.component.Interactible;
 import github.dluckycompany.clawkins.component.Player;
 import github.dluckycompany.clawkins.component.PlayerAnimation;
@@ -51,6 +52,7 @@ public class InteractionSystem extends EntitySystem {
     private boolean dialogueVisible = false;
     private int dialogueVisibleChars = 0;
     private float typewriterCarry = 0f;
+    private final DialogueSoundManager dialogueSoundManager = new DialogueSoundManager();
     
     // Merchant detection
     private Runnable onMerchantInteraction = () -> {};
@@ -62,6 +64,12 @@ public class InteractionSystem extends EntitySystem {
         players = engine.getEntitiesFor(Family.all(Player.class, Transform.class, PlayerAnimation.class).get());
         interactibles = engine.getEntitiesFor(Family.all(Interactible.class, Transform.class).get());
         encounters = engine.getEntitiesFor(Family.all(EncounterZone.class, Transform.class).get());
+    }
+
+    @Override
+    public void removedFromEngine(Engine engine) {
+        super.removedFromEngine(engine);
+        dialogueSoundManager.dispose();
     }
 
     @Override
@@ -248,13 +256,16 @@ public class InteractionSystem extends EntitySystem {
         this.dialogueFullText = "";
         this.dialogueVisibleChars = 0;
         this.typewriterCarry = 0f;
+        dialogueSoundManager.stop();
     }
 
     private void tickTypewriter(float deltaTime) {
         if (isDialogueFullyRevealed()) {
+            dialogueSoundManager.stop();
             return;
         }
 
+        int previousVisible = dialogueVisibleChars;
         float charProgress = TYPEWRITER_CHARS_PER_SECOND * Math.max(0f, deltaTime) + typewriterCarry;
         int charsToReveal = (int) charProgress;
         typewriterCarry = charProgress - charsToReveal;
@@ -264,6 +275,10 @@ public class InteractionSystem extends EntitySystem {
 
         dialogueVisibleChars = Math.min(dialogueFullText.length(), dialogueVisibleChars + charsToReveal);
         dialogueText = dialogueFullText.substring(0, dialogueVisibleChars);
+
+        if (dialogueVisibleChars > previousVisible) {
+            playDialogueSounds(previousVisible, dialogueVisibleChars);
+        }
     }
 
     private boolean isDialogueFullyRevealed() {
@@ -273,6 +288,7 @@ public class InteractionSystem extends EntitySystem {
     private void revealDialogueImmediately() {
         dialogueVisibleChars = dialogueFullText.length();
         dialogueText = dialogueFullText;
+        dialogueSoundManager.stop();
     }
 
     private boolean showNextDialogueLine() {
@@ -290,6 +306,20 @@ public class InteractionSystem extends EntitySystem {
         this.dialogueText = "";
         this.dialogueVisibleChars = 0;
         this.typewriterCarry = 0f;
+        dialogueSoundManager.stop();
+    }
+
+    private void playDialogueSounds(int startIndex, int endIndex) {
+        if (dialogueFullText == null || dialogueFullText.isEmpty()) {
+            return;
+        }
+
+        int safeStart = Math.max(0, startIndex);
+        int safeEnd = Math.min(dialogueFullText.length(), endIndex);
+        for (int i = safeStart; i < safeEnd; i++) {
+            char c = dialogueFullText.charAt(i);
+            dialogueSoundManager.onCharacterRevealed(c, i);
+        }
     }
 
     private static String resolveDialogueSource(Interactible interactible) {
