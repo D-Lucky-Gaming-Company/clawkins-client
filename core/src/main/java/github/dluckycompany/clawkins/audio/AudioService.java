@@ -73,6 +73,18 @@ public class AudioService implements Disposable {
             currentMusic.setVolume(effectiveMusicVolume());
         }
     }
+    
+    /**
+     * Stops all currently playing music and sounds.
+     * Used when transitioning to screens that manage their own audio (like main menu).
+     */
+    public void stopAll() {
+        if (currentMusic != null) {
+            currentMusic.stop();
+        }
+        currentMusic = null;
+        currentTrack = null;
+    }
 
     public void setMap(TiledMap tiledMap) {
         this.currentMap = tiledMap;

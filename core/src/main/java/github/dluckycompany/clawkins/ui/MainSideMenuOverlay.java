@@ -25,6 +25,8 @@ public class MainSideMenuOverlay {
         NONE,
         OPEN_CLAWKINS,
         OPEN_INVENTORY,
+        OPEN_SAVE_STATE,
+        OPEN_LOAD_STATE,
         EXIT_GAME,
         RETURN_TO_SIDEBAR
     }
@@ -40,6 +42,8 @@ public class MainSideMenuOverlay {
         "CLAWKINS",
         "INVENTORY",
         "SETTINGS",
+        "SAVE STATE",
+        "LOAD STATE",
         "EXIT GAME"
     };
 
@@ -210,6 +214,16 @@ public class MainSideMenuOverlay {
                 yield Action.NONE;
             }
             case 3 -> {
+                closeSidebar(false);
+                activeSubmenu = Submenu.NONE;
+                yield Action.OPEN_SAVE_STATE;
+            }
+            case 4 -> {
+                closeSidebar(false);
+                activeSubmenu = Submenu.NONE;
+                yield Action.OPEN_LOAD_STATE;
+            }
+            case 5 -> {
                 closeSidebar(false);
                 activeSubmenu = Submenu.NONE;
                 yield Action.EXIT_GAME;

@@ -13,12 +13,15 @@ import com.badlogic.gdx.graphics.g2d.NinePatch;
 import com.badlogic.gdx.graphics.g2d.freetype.FreeTypeFontGenerator;
 import com.badlogic.gdx.scenes.scene2d.InputEvent;
 import com.badlogic.gdx.scenes.scene2d.Stage;
+import com.badlogic.gdx.scenes.scene2d.ui.Label;
 import com.badlogic.gdx.scenes.scene2d.ui.Table;
 import com.badlogic.gdx.scenes.scene2d.ui.TextButton;
 import com.badlogic.gdx.scenes.scene2d.ui.TextButton.TextButtonStyle;
 import com.badlogic.gdx.scenes.scene2d.utils.ClickListener;
 import com.badlogic.gdx.scenes.scene2d.utils.NinePatchDrawable;
 import com.badlogic.gdx.utils.viewport.ScreenViewport;
+
+import github.dluckycompany.clawkins.save.SaveStateManager;
 
 /**
  * Dark fantasy-themed main menu screen.
@@ -66,6 +69,7 @@ public class MainMenuScreen implements Screen {
     private final Runnable onNewGame;
     private final Runnable onContinue;
     private final Runnable onExit;
+    private final SaveStateManager saveStateManager;
 
     // -----------------------------------------------------------------------
     // Constructor
@@ -79,13 +83,14 @@ public class MainMenuScreen implements Screen {
      * @param onContinue called when "CONTINUE" button is clicked
      * @param onExit called when "EXIT GAME" button is clicked
      */
-    public MainMenuScreen(Batch batch, Runnable onNewGame, Runnable onContinue, Runnable onExit) {
+    public MainMenuScreen(Batch batch, Runnable onNewGame, Runnable onContinue, Runnable onExit, SaveStateManager saveStateManager) {
         this.batch = batch;
         this.stage = new Stage(new ScreenViewport());
 
         this.onNewGame = onNewGame;
         this.onContinue = onContinue;
         this.onExit = onExit;
+        this.saveStateManager = saveStateManager;
 
         Gdx.input.setInputProcessor(stage);
     }
@@ -97,6 +102,10 @@ public class MainMenuScreen implements Screen {
     @Override
     public void show() {
         buildUI();
+        
+        // Set input processor to stage when screen is shown
+        // This ensures buttons work when returning from other screens
+        Gdx.input.setInputProcessor(stage);
     }
 
     @Override
@@ -164,6 +173,9 @@ public class MainMenuScreen implements Screen {
      * Uses responsive Table layout that scales to any screen size.
      */
     private void buildUI() {
+        // Clear any existing UI elements from previous show() calls
+        stage.clear();
+        
         // Load fonts
         loadFonts();
 
@@ -186,11 +198,16 @@ public class MainMenuScreen implements Screen {
             }
         });
 
+        boolean hasSaves = saveStateManager != null && saveStateManager.hasSaveStates();
         TextButton continueBtn = new TextButton("CONTINUE", buttonStyle);
+        continueBtn.setDisabled(!hasSaves);
         continueBtn.addListener(new ClickListener() {
             @Override
             public void clicked(InputEvent event, float x, float y) {
                 Gdx.app.log("MainMenu", "CONTINUE clicked");
+                if (continueBtn.isDisabled()) {
+                    return;
+                }
                 onContinue.run();
             }
         });
@@ -211,7 +228,14 @@ public class MainMenuScreen implements Screen {
 
         buttonTable.add(newGameBtn).width(btnWidth).height(btnHeight).row();
         buttonTable.add(continueBtn).width(btnWidth).height(btnHeight).padTop(btnSpacing).row();
-        buttonTable.add(exitBtn).width(btnWidth).height(btnHeight).padTop(btnSpacing);
+        buttonTable.add(exitBtn).width(btnWidth).height(btnHeight).padTop(btnSpacing).row();
+
+        Label statusLabel = new Label(
+            hasSaves ? "" : "No save states found.",
+            new Label.LabelStyle(buttonFont, Color.valueOf("#D6CBB8"))
+        );
+        statusLabel.setFontScale(0.9f);
+        buttonTable.add(statusLabel).padTop(btnSpacing * 0.6f);
 
         root.add(buttonTable).center();
 
