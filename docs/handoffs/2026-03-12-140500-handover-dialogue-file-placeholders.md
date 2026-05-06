@@ -4,9 +4,13 @@
 
 Implemented dialogue source flexibility for interactibles:
 
-- `ObjectText` and `ObjectTextInteracted` now support:
+- `DialogueDirectory` now supports:
   - direct string text (existing behavior)
   - JSON file path (new behavior)
+  - staged interaction JSON in a single file (recommended)
+  - interaction-count sequences using `|`:
+    - `first|repeat`
+    - `first|second|third` (3rd repeats from 4th+)
 
 Also implemented placeholder replacement in both dialogue speaker name and text.
 
@@ -14,20 +18,29 @@ Also implemented placeholder replacement in both dialogue speaker name and text.
 
 ```json
 {
-  "DialogueFlow": [
+  "Interactions": [
     {
-      "Name": "{this}",
-      "Text": "Hello"
+      "DialogueFlow": [
+        {
+          "Name": "{this}",
+          "Text": "Hello"
+        }
+      ]
     },
     {
-      "Name": "{player}",
-      "Text": "Hey"
+      "DialogueFlow": [
+        {
+          "Name": "{player}",
+          "Text": "Hey"
+        }
+      ]
     }
   ]
 }
 ```
 
 - Runtime accepts `DialogueFlow` and `dialogueFlow` keys.
+- Runtime also accepts staged root format with `Interactions`.
 - Each flow item supports `Name` and `Text`.
 - Lines are displayed in sequence and advance on interaction key.
 
@@ -83,4 +96,4 @@ While dialogue is visible:
 ## Notes
 
 - If a JSON file path is invalid or malformed, runtime logs an error and falls back to direct text behavior.
-- Existing direct-string `ObjectText` / `ObjectTextInteracted` maps remain compatible.
+- `DialogueDirectory` is now the required map property for interactible dialogue sources.

@@ -36,6 +36,7 @@ public class InteractionSystem extends EntitySystem {
     private static final float FACING_DOT_THRESHOLD = 0.6f;
     private static final float TYPEWRITER_CHARS_PER_SECOND = 45f;
     private static final String DIALOGUE_FLOW_KEY = "DialogueFlow";
+    private static final String INTERACTIONS_KEY = "Interactions";
     private static final Pattern PLACEHOLDER_PATTERN = Pattern.compile("\\{([^{}]+)}");
 
     private ImmutableArray<Entity> players;
@@ -94,7 +95,7 @@ public class InteractionSystem extends EntitySystem {
         String playerName = resolvePlayerName(playerEntity);
         Interactible interactible = Interactible.MAPPER.get(target);
         
-        interactible.setInteracted(true);
+        interactible.incrementInteractionCount();
         
         // Check if this is a merchant interaction
         if (interactible.isMerchant()) {
@@ -292,13 +293,34 @@ public class InteractionSystem extends EntitySystem {
     }
 
     private static String resolveDialogueSource(Interactible interactible) {
-        String objectTextInteracted = interactible.getObjectTextInteracted();
-        if (interactible.isInteracted()
-                && objectTextInteracted != null
-                && !objectTextInteracted.isBlank()) {
-            return objectTextInteracted;
+        String dialogueDirectory = interactible.getDialogueDirectory();
+        if (dialogueDirectory == null || dialogueDirectory.isBlank()) {
+            return dialogueDirectory;
         }
-        return interactible.getObjectText();
+
+        String[] rawEntries = dialogueDirectory.split("\\|");
+        if (rawEntries.length <= 1) {
+            return dialogueDirectory.trim();
+        }
+
+        List<String> entries = new ArrayList<>();
+        for (String rawEntry : rawEntries) {
+            if (rawEntry == null) {
+                continue;
+            }
+            String entry = rawEntry.trim();
+            if (!entry.isEmpty()) {
+                entries.add(entry);
+            }
+        }
+
+        if (entries.isEmpty()) {
+            return dialogueDirectory.trim();
+        }
+
+        int interactionIndex = Math.max(0, interactible.getInteractionCount() - 1);
+        int sourceIndex = Math.min(interactionIndex, entries.size() - 1);
+        return entries.get(sourceIndex);
     }
 
     private List<DialogueEntry> resolveDialogueFlow(Interactible interactible, String playerName, String source) {
@@ -312,7 +334,7 @@ public class InteractionSystem extends EntitySystem {
 
         String trimmedSource = source == null ? "" : source.trim();
         if (isJsonDialoguePath(trimmedSource)) {
-            List<DialogueEntry> fileFlow = loadDialogueFlowFromFile(trimmedSource, context);
+            List<DialogueEntry> fileFlow = loadDialogueFlowFromFile(trimmedSource, context, interactible.getInteractionCount());
             if (!fileFlow.isEmpty()) {
                 return fileFlow;
             }
@@ -327,7 +349,7 @@ public class InteractionSystem extends EntitySystem {
         return source != null && source.toLowerCase().endsWith(".json");
     }
 
-    private List<DialogueEntry> loadDialogueFlowFromFile(String path, DialogueContext context) {
+    private List<DialogueEntry> loadDialogueFlowFromFile(String path, DialogueContext context, int interactionCount) {
         FileHandle fileHandle = Gdx.files.internal(path);
         if (!fileHandle.exists()) {
             Gdx.app.error(InteractionSystem.class.getSimpleName(), "Dialogue file not found: " + path);
@@ -336,28 +358,58 @@ public class InteractionSystem extends EntitySystem {
 
         try {
             JsonValue root = new JsonReader().parse(fileHandle);
+            JsonValue interactionsArray = root.get(INTERACTIONS_KEY);
+            if (interactionsArray != null && interactionsArray.isArray()) {
+                JsonValue interactionNode = selectInteractionNode(root, interactionsArray, interactionCount);
+                if (interactionNode != null) {
+                    JsonValue flowArray = interactionNode.get(DIALOGUE_FLOW_KEY);
+                    if (flowArray == null) {
+                        flowArray = interactionNode.get("dialogueFlow");
+                    }
+                    return parseDialogueFlowEntries(flowArray, context, path);
+                }
+            }
+
             JsonValue flowArray = root.get(DIALOGUE_FLOW_KEY);
             if (flowArray == null) {
                 flowArray = root.get("dialogueFlow");
             }
-            if (flowArray == null || !flowArray.isArray()) {
-                Gdx.app.error(InteractionSystem.class.getSimpleName(), "DialogueFlow array missing in: " + path);
-                return List.of();
-            }
-
-            List<DialogueEntry> entries = new ArrayList<>();
-            for (JsonValue line = flowArray.child; line != null; line = line.next) {
-                String nameTemplate = line.getString("Name", "{this}");
-                String textTemplate = line.getString("Text", "");
-                String resolvedName = replacePlaceholders(nameTemplate, context);
-                String resolvedText = replacePlaceholders(textTemplate, context);
-                entries.add(new DialogueEntry(resolvedName, resolvedText));
-            }
-            return entries;
+            return parseDialogueFlowEntries(flowArray, context, path);
         } catch (Exception ex) {
             Gdx.app.error(InteractionSystem.class.getSimpleName(), "Failed to parse dialogue file: " + path, ex);
             return List.of();
         }
+    }
+
+    private JsonValue selectInteractionNode(JsonValue root, JsonValue interactionsArray, int interactionCount) {
+        int totalInteractions = interactionsArray.size;
+        if (totalInteractions <= 0) {
+            return null;
+        }
+
+        int interactionIndex = Math.max(0, interactionCount - 1);
+        if (interactionIndex < totalInteractions) {
+            return interactionsArray.get(interactionIndex);
+        }
+
+        return interactionsArray.get(totalInteractions - 1);
+    }
+
+    private List<DialogueEntry> parseDialogueFlowEntries(JsonValue flowArray, DialogueContext context, String path) {
+        if (flowArray == null || !flowArray.isArray()) {
+            Gdx.app.error(InteractionSystem.class.getSimpleName(), "DialogueFlow array missing in: " + path);
+            return List.of();
+        }
+
+        List<DialogueEntry> entries = new ArrayList<>();
+        for (JsonValue line = flowArray.child; line != null; line = line.next) {
+            String nameTemplate = line.getString("Name", "{this}");
+            String textTemplate = line.getString("Text", "");
+            String resolvedName = replacePlaceholders(nameTemplate, context);
+            String resolvedText = replacePlaceholders(textTemplate, context);
+            entries.add(new DialogueEntry(resolvedName, resolvedText));
+        }
+        return entries;
     }
 
     private static String replacePlaceholders(String input, DialogueContext context) {

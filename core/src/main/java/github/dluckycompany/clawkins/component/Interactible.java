@@ -13,39 +13,35 @@ public class Interactible implements Component {
 
     private final String objectName;
     private final String objectId;
-    private final String objectText;
-    private final String objectTextInteracted;
+    private final String dialogueDirectory;
     private final boolean hasCollision;
     private final DialoguePosition dialoguePosition;
     private final boolean isMerchant;
-    private boolean interacted;
+    private int interactionCount;
 
     public Interactible(
             String objectName,
             String objectId,
-            String objectText,
-            String objectTextInteracted,
+            String dialogueDirectory,
             boolean hasCollision,
             DialoguePosition dialoguePosition) {
-        this(objectName, objectId, objectText, objectTextInteracted, hasCollision, dialoguePosition, false);
+        this(objectName, objectId, dialogueDirectory, hasCollision, dialoguePosition, false);
     }
 
     public Interactible(
             String objectName,
             String objectId,
-            String objectText,
-            String objectTextInteracted,
+            String dialogueDirectory,
             boolean hasCollision,
             DialoguePosition dialoguePosition,
             boolean isMerchant) {
         this.objectName = objectName;
         this.objectId = objectId;
-        this.objectText = objectText;
-        this.objectTextInteracted = objectTextInteracted;
+        this.dialogueDirectory = dialogueDirectory;
         this.hasCollision = hasCollision;
         this.dialoguePosition = dialoguePosition;
         this.isMerchant = isMerchant;
-        this.interacted = false;
+        this.interactionCount = 0;
     }
 
     public String getObjectName() {
@@ -56,12 +52,8 @@ public class Interactible implements Component {
         return objectId;
     }
 
-    public String getObjectText() {
-        return objectText;
-    }
-
-    public String getObjectTextInteracted() {
-        return objectTextInteracted;
+    public String getDialogueDirectory() {
+        return dialogueDirectory;
     }
 
     public boolean hasCollision() {
@@ -76,11 +68,11 @@ public class Interactible implements Component {
         return isMerchant;
     }
 
-    public boolean isInteracted() {
-        return interacted;
+    public int getInteractionCount() {
+        return interactionCount;
     }
 
-    public void setInteracted(boolean interacted) {
-        this.interacted = interacted;
+    public void incrementInteractionCount() {
+        interactionCount++;
     }
 }
