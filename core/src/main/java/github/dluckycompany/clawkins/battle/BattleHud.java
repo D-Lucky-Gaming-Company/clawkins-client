@@ -250,6 +250,7 @@ public class BattleHud implements Disposable {
     /** Makes the HUD visible but does NOT set input processor (keyboard-only control). */
     public void show() {
         visible = true;
+        // Highlight will be synced to active Clawkin in setActiveClawkinIndex() on first battle start
         // Do NOT set input processor - we use keyboard input only
         // Gdx.input.setInputProcessor(stage);
     }
@@ -1177,7 +1178,8 @@ public class BattleHud implements Disposable {
 
     /**
      * Sets the currently active Clawkin index (the one in battle).
-     * Does NOT change the highlight position - highlight is independent for navigation.
+     * On first initialization, syncs the highlight to match.
+     * After that, highlight is independent for navigation.
      * @param index The index of the active Clawkin (0-2)
      */
     public void setActiveClawkinIndex(int index) {
@@ -1185,11 +1187,21 @@ public class BattleHud implements Disposable {
         if (index < 0 || index >= maxSlots) {
             return;
         }
+        
+        boolean isFirstTimeSet = (this.activeClawkinIndex == 0 && this.highlightedClawkinIndex == 0 && visible);
+        
         if (this.activeClawkinIndex == index) {
             return;
         }
         this.activeClawkinIndex = index;
-        // DO NOT sync highlight - let player continue navigating from current position
+        
+        // On first battle start, sync highlight to active Clawkin
+        // This ensures if player selected Sweepea before battle, highlight starts on Sweepea
+        if (isFirstTimeSet) {
+            this.highlightedClawkinIndex = index;
+        }
+        
+        // After first initialization, DO NOT sync highlight - let player continue navigating
         // Refresh container to update visual indicator
         positionClawkinContainer();
     }
