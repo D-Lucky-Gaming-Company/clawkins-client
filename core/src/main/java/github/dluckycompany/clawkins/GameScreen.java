@@ -32,6 +32,7 @@ import github.dluckycompany.clawkins.audio.AudioService;
 import github.dluckycompany.clawkins.battle.BattleOverlay;
 import github.dluckycompany.clawkins.battle.BattlePhase;
 import github.dluckycompany.clawkins.battle.BattleService;
+import github.dluckycompany.clawkins.battle.BattleSkill;
 import github.dluckycompany.clawkins.battle.BattleTransition;
 import github.dluckycompany.clawkins.battle.PlayerBattleState;
 import github.dluckycompany.clawkins.character.Clawkin;
@@ -40,7 +41,9 @@ import github.dluckycompany.clawkins.component.Player;
 import github.dluckycompany.clawkins.component.Transform;
 import github.dluckycompany.clawkins.encounter.EncounterDetectionSystem;
 import github.dluckycompany.clawkins.encounter.EncounterEventBus;
+import github.dluckycompany.clawkins.item.Item;
 import github.dluckycompany.clawkins.item.ItemFactory;
+import github.dluckycompany.clawkins.save.SaveState;
 import github.dluckycompany.clawkins.system.AnimationSystem;
 import github.dluckycompany.clawkins.system.CameraSystem;
 import github.dluckycompany.clawkins.system.EnemySystem;
@@ -55,8 +58,10 @@ import github.dluckycompany.clawkins.ui.DialogueBoxRenderer;
 import github.dluckycompany.clawkins.ui.DialogueOverlay;
 import github.dluckycompany.clawkins.ui.HudWallet;
 import github.dluckycompany.clawkins.ui.InventoryScreen;
+import github.dluckycompany.clawkins.ui.MainMenuScreen;
 import github.dluckycompany.clawkins.ui.MainSideMenuOverlay;
 import github.dluckycompany.clawkins.ui.MerchantShopUI;
+import github.dluckycompany.clawkins.ui.SaveStateScreen;
 import github.dluckycompany.clawkins.ui.SummaryScreen;
 import github.dluckycompany.clawkins.ui.TeamViewerScreen;
 
@@ -178,6 +183,8 @@ public class GameScreen extends ScreenAdapter {
     private String activeTransitionMap;
     private String activeTransitionId;
     private boolean mapTransitionSwapDone;
+
+    private SaveState pendingSaveState;
     
     // Virtual UI resolution (constant, independent of physical screen)
     private static final float VIRTUAL_UI_WIDTH = 800f;
@@ -292,8 +299,14 @@ public class GameScreen extends ScreenAdapter {
         }
         hasBeenInitialized = true;
 
+        boolean loadedFromSave = false;
+        if (pendingSaveState != null) {
+            loadedFromSave = applySaveState(pendingSaveState);
+            pendingSaveState = null;
+        }
+
         // Initialize inventory with default items
-        if (playerBattleState.getInventory().getAllItems().isEmpty()) {
+        if (!loadedFromSave && playerBattleState.getInventory().getAllItems().isEmpty()) {
             playerBattleState.getInventory().addItem(ItemFactory.BASIC_POTION, 3);
             playerBattleState.getInventory().addItem(ItemFactory.FULL_HEAL, 1);
             playerBattleState.getInventory().addItem(ItemFactory.REVIVE, 2);
@@ -302,7 +315,7 @@ public class GameScreen extends ScreenAdapter {
         }
         
         // Initialize wallet with starting money
-        if (playerBattleState.getWallet().getMoney() == 0) {
+        if (!loadedFromSave && playerBattleState.getWallet().getMoney() == 0) {
             playerBattleState.getWallet().addMoney(500);
         }
         
@@ -328,20 +341,30 @@ public class GameScreen extends ScreenAdapter {
         this.inventoryScreen = new InventoryScreen(game, playerBattleState.getInventory(), this);
         game.addScreen(inventoryScreen);
         
-        // Load the map and hand it to TiledService.
-        // This triggers: object parsing → entity spawning → map change notification to systems.
-        TiledMap startMap = this.tiledService.loadMap(MapAsset.COTTAGE);
-        this.tiledService.setMap(startMap);
-        // Prevent frame-1 transition triggers from moving the player off the authored spawn.
-        mapTransitionSystem.setCooldown(0f);
+        if (!loadedFromSave) {
+            // Load the map and hand it to TiledService.
+            // This triggers: object parsing → entity spawning → map change notification to systems.
+            TiledMap startMap = this.tiledService.loadMap(MapAsset.COTTAGE);
+            this.tiledService.setMap(startMap);
+            // Prevent frame-1 transition triggers from moving the player off the authored spawn.
+            mapTransitionSystem.setCooldown(0f);
 
-        // Center camera immediately on the spawned player so first frame matches Tiled placement.
-        Entity startupPlayer = findPlayerEntity();
-        if (startupPlayer != null) {
-            centerCameraOnPlayer(startupPlayer);
+            // Center camera immediately on the spawned player so first frame matches Tiled placement.
+            Entity startupPlayer = findPlayerEntity();
+            if (startupPlayer != null) {
+                centerCameraOnPlayer(startupPlayer);
+            }
+            audioService.setMap(startMap);
+            audioService.onEvent(AudioEventType.MAP_CHANGED);
         }
-        audioService.setMap(startMap);
-        audioService.onEvent(AudioEventType.MAP_CHANGED);
+    }
+
+    public void queueSaveStateLoad(SaveState saveState) {
+        if (hasBeenInitialized) {
+            applySaveState(saveState);
+            return;
+        }
+        this.pendingSaveState = saveState;
     }
 
     private void ensurePlayerEntityPresentAfterReturn() {
@@ -407,7 +430,9 @@ public class GameScreen extends ScreenAdapter {
             switch (menuAction) {
                 case OPEN_CLAWKINS -> openTeamViewerSubmenu();
                 case OPEN_INVENTORY -> openInventoryScreen();
-                case EXIT_GAME -> Gdx.app.exit();
+                case OPEN_SAVE_STATE -> openSaveStateScreen();
+                case OPEN_LOAD_STATE -> openLoadStateScreen();
+                case EXIT_GAME -> returnToMainMenu();
                 case RETURN_TO_SIDEBAR -> returnToSidebarFromSubmenu();
                 case NONE -> {
                 }
@@ -871,6 +896,335 @@ public class GameScreen extends ScreenAdapter {
     private void openInventoryScreen() {
         isPaused = false;
         game.setScreen(InventoryScreen.class);
+    }
+
+    private void openSaveStateScreen() {
+        SaveStateScreen screen = game.getScreen(SaveStateScreen.class);
+        screen.configure(
+            SaveStateScreen.Mode.SAVE,
+            this::buildSaveState,
+            null,
+            () -> game.setScreen(GameScreen.class)
+        );
+        closeAllMenuUi();
+        game.setScreen(SaveStateScreen.class);
+    }
+
+    private void openLoadStateScreen() {
+        SaveStateScreen screen = game.getScreen(SaveStateScreen.class);
+        screen.configure(
+            SaveStateScreen.Mode.LOAD,
+            null,
+            saveState -> {
+                if (saveState == null) {
+                    return;
+                }
+                queueSaveStateLoad(saveState);
+                game.setScreen(GameScreen.class);
+            },
+            () -> game.setScreen(GameScreen.class)
+        );
+        closeAllMenuUi();
+        game.setScreen(SaveStateScreen.class);
+    }
+
+    private void returnToMainMenu() {
+        // Clean up all menu UI state
+        closeAllMenuUi();
+        
+        // Clear inventory stage to remove any lingering UI elements
+        inventoryStage.clear();
+        
+        // Stop all game audio (music and sounds)
+        audioService.stopAll();
+        
+        // Reset input processor to null (MainMenuScreen will set its own)
+        Gdx.input.setInputProcessor(null);
+        
+        // Properly transition to MainMenuScreen using the screen cache system
+        game.setScreen(MainMenuScreen.class);
+    }
+
+    private SaveState buildSaveState() {
+        SaveState state = new SaveState();
+        state.setMapKey(resolveCurrentMapKey());
+
+        Entity playerEntity = findPlayerEntity();
+        if (playerEntity != null) {
+            Transform transform = Transform.MAPPER.get(playerEntity);
+            if (transform != null) {
+                Vector2 pos = transform.getPosition();
+                state.setPlayerX(pos.x);
+                state.setPlayerY(pos.y);
+            }
+        }
+
+        state.setMoney(playerBattleState.getWallet().getMoney());
+        state.setActiveClawkinIndex(playerBattleState.getActiveClawkinIndex());
+
+        for (Clawkin clawkin : playerBattleState.getParty()) {
+            if (clawkin == null) {
+                continue;
+            }
+            SaveState.PartyEntry entry = new SaveState.PartyEntry();
+            entry.setId(clawkin.getId());
+            entry.setName(clawkin.getName());
+            entry.setImagePath(clawkin.getImagePath());
+            entry.setIconImagePath(clawkin.getIconImagePath());
+            entry.setLevel(clawkin.getLevel());
+            entry.setMaxHp(clawkin.getMaxHp());
+            entry.setCurrentHp(clawkin.getCurrentHp());
+            entry.setAttack(clawkin.getBaseAttack());
+            entry.setDefense(clawkin.getBaseDefense());
+            entry.setSpeed(clawkin.getBaseSpeed());
+
+            Clawkin.SummaryProfile summary = clawkin.getSummaryProfile();
+            if (summary != null) {
+                SaveState.SummaryEntry summaryEntry = new SaveState.SummaryEntry();
+                summaryEntry.setSpecies(summary.getSpecies());
+                summaryEntry.setRole(summary.getRole());
+                summaryEntry.setTitle(summary.getTitle());
+                summaryEntry.setOverview(summary.getOverview());
+                summaryEntry.setProfileHp(summary.getProfileHp());
+                summaryEntry.setProfileAttack(summary.getProfileAttack());
+                summaryEntry.setProfileDefense(summary.getProfileDefense());
+                summaryEntry.setProfileSpeed(summary.getProfileSpeed());
+                summaryEntry.setHpNote(summary.getHpNote());
+                summaryEntry.setAttackNote(summary.getAttackNote());
+                summaryEntry.setDefenseNote(summary.getDefenseNote());
+                summaryEntry.setSpeedNote(summary.getSpeedNote());
+                entry.setSummary(summaryEntry);
+            }
+
+            for (BattleSkill skill : clawkin.getSkills()) {
+                if (skill == null) {
+                    continue;
+                }
+                SaveState.SkillEntry skillEntry = new SaveState.SkillEntry();
+                skillEntry.setName(skill.getName());
+                skillEntry.setEffectType(skill.getEffectType().name());
+                skillEntry.setEffectBaseStat(skill.getEffectBaseStat());
+                skillEntry.setEffectStatScale(skill.getEffectStatScale());
+                skillEntry.setEffectDurationTurns(skill.getEffectDurationTurns());
+                skillEntry.setTurnCooldown(skill.getTurnCooldown());
+                skillEntry.setSummaryDescription(skill.getSummaryDescription());
+                skillEntry.setSummaryEffectText(skill.getSummaryEffectText());
+                skillEntry.setSummaryScalingText(skill.getSummaryScalingText());
+                entry.getSkills().add(skillEntry);
+            }
+
+            state.getParty().add(entry);
+        }
+
+        for (Item item : playerBattleState.getInventory().getAllItems()) {
+            int qty = playerBattleState.getInventory().getQuantity(item);
+            if (item == null || qty <= 0) {
+                continue;
+            }
+            SaveState.InventoryEntry entry = new SaveState.InventoryEntry();
+            entry.setItemId(item.getId());
+            entry.setQuantity(qty);
+            state.getInventory().add(entry);
+        }
+
+        return state;
+    }
+
+    private boolean applySaveState(SaveState saveState) {
+        if (saveState == null) {
+            return false;
+        }
+
+        Gdx.app.log("GameScreen", "=== APPLYING SAVE STATE ===");
+        Gdx.app.log("GameScreen", "Map: " + saveState.getMapKey());
+        Gdx.app.log("GameScreen", "Position: (" + saveState.getPlayerX() + ", " + saveState.getPlayerY() + ")");
+        Gdx.app.log("GameScreen", "Party size: " + saveState.getParty().size());
+
+        // Apply player data (party, inventory, wallet) first
+        applySaveStateToPlayer(saveState);
+
+        MapAsset targetAsset = MapAsset.fromKey(saveState.getMapKey());
+        if (targetAsset == null) {
+            Gdx.app.error("GameScreen", "Invalid map key: " + saveState.getMapKey() + ", defaulting to COTTAGE");
+            targetAsset = MapAsset.COTTAGE;
+        } else {
+            Gdx.app.log("GameScreen", "Resolved map asset: " + targetAsset.name());
+        }
+
+        // Remove all existing entities (including player if present)
+        // The new map will spawn a fresh player entity
+        int entityCountBefore = engine.getEntities().size();
+        engine.removeAllEntities();
+        Gdx.app.log("GameScreen", "Removed " + entityCountBefore + " entities before loading new map");
+
+        // Load and set the new map (this spawns all entities including player)
+        Gdx.app.log("GameScreen", "Loading map: " + targetAsset.name());
+        TiledMap loadedMap = tiledService.loadMap(targetAsset);
+        
+        Gdx.app.log("GameScreen", "Setting map (this will spawn entities)");
+        tiledService.setMap(loadedMap);
+        
+        int entityCountAfter = engine.getEntities().size();
+        Gdx.app.log("GameScreen", "After setMap, entity count: " + entityCountAfter);
+        
+        mapTransitionSystem.setCooldown(0f);
+
+        // Find the newly spawned player entity
+        Entity loadedPlayer = findPlayerEntity();
+        if (loadedPlayer != null) {
+            Gdx.app.log("GameScreen", "✓ Player entity found, applying saved position");
+            applySavedPlayerPosition(loadedPlayer, loadedMap, saveState.getPlayerX(), saveState.getPlayerY());
+            
+            // Center camera on player
+            centerCameraOnPlayer(loadedPlayer);
+            Gdx.app.log("GameScreen", "✓ Camera centered on player");
+        } else {
+            Gdx.app.error("GameScreen", "✗ CRITICAL: Player entity not found after loading map " + targetAsset);
+            Gdx.app.error("GameScreen", "✗ Total entities in engine: " + engine.getEntities().size());
+            
+            // List all entities for debugging
+            for (int i = 0; i < engine.getEntities().size(); i++) {
+                Entity e = engine.getEntities().get(i);
+                Gdx.app.log("GameScreen", "  Entity " + i + ": " + e.getClass().getSimpleName());
+            }
+        }
+
+        // Update audio and UI
+        audioService.setMap(loadedMap);
+        audioService.onEvent(AudioEventType.MAP_CHANGED);
+        hudWallet.updateDisplay();
+        
+        Gdx.app.log("GameScreen", "=== SAVE STATE APPLIED ===");
+        return true;
+    }
+
+    private void applySaveStateToPlayer(SaveState saveState) {
+        playerBattleState.getParty().clear();
+        for (SaveState.PartyEntry entry : saveState.getParty()) {
+            if (entry == null) {
+                continue;
+            }
+
+            List<BattleSkill> skills = new java.util.ArrayList<>();
+            for (SaveState.SkillEntry skillEntry : entry.getSkills()) {
+                if (skillEntry == null) {
+                    continue;
+                }
+                BattleSkill.EffectType effectType = parseEffectType(skillEntry.getEffectType());
+                BattleSkill skill = new BattleSkill(
+                    safeText(skillEntry.getName(), "Skill"),
+                    effectType,
+                    skillEntry.getEffectBaseStat(),
+                    safeText(skillEntry.getEffectStatScale(), "attack[self]"),
+                    skillEntry.getEffectDurationTurns(),
+                    skillEntry.getTurnCooldown(),
+                    safeText(skillEntry.getSummaryDescription(), ""),
+                    safeText(skillEntry.getSummaryEffectText(), ""),
+                    safeText(skillEntry.getSummaryScalingText(), "")
+                );
+                skills.add(skill);
+            }
+
+            SaveState.SummaryEntry summaryEntry = entry.getSummary();
+            Clawkin.SummaryProfile summary = summaryEntry == null
+                ? Clawkin.SummaryProfile.fromCoreStats(entry.getName(), entry.getMaxHp(), entry.getAttack(), entry.getDefense(), entry.getSpeed())
+                : new Clawkin.SummaryProfile(
+                    safeText(summaryEntry.getSpecies(), ""),
+                    safeText(summaryEntry.getRole(), ""),
+                    safeText(summaryEntry.getTitle(), ""),
+                    safeText(summaryEntry.getOverview(), ""),
+                    summaryEntry.getProfileHp(),
+                    summaryEntry.getProfileAttack(),
+                    summaryEntry.getProfileDefense(),
+                    summaryEntry.getProfileSpeed(),
+                    safeText(summaryEntry.getHpNote(), ""),
+                    safeText(summaryEntry.getAttackNote(), ""),
+                    safeText(summaryEntry.getDefenseNote(), ""),
+                    safeText(summaryEntry.getSpeedNote(), "")
+                );
+
+            Clawkin clawkin = new Clawkin(
+                safeText(entry.getId(), "clawkin"),
+                safeText(entry.getName(), "Clawkin"),
+                safeText(entry.getImagePath(), ""),
+                safeText(entry.getIconImagePath(), ""),
+                Math.max(1, entry.getLevel()),
+                Math.max(1, entry.getMaxHp()),
+                Math.max(1, entry.getAttack()),
+                Math.max(0, entry.getDefense()),
+                Math.max(1, entry.getSpeed()),
+                skills,
+                summary
+            );
+            clawkin.setCurrentHp(entry.getCurrentHp());
+            playerBattleState.addClawkinToParty(clawkin);
+        }
+
+        playerBattleState.getInventory().clear();
+        for (SaveState.InventoryEntry entry : saveState.getInventory()) {
+            if (entry == null || entry.getItemId() == null) {
+                continue;
+            }
+            Item item = ItemFactory.getItemById(entry.getItemId());
+            if (item == null) {
+                continue;
+            }
+            playerBattleState.getInventory().addItem(item, entry.getQuantity());
+        }
+
+        playerBattleState.getWallet().setMoney(saveState.getMoney());
+        playerBattleState.setActiveClawkinIndex(saveState.getActiveClawkinIndex());
+    }
+
+    private void applySavedPlayerPosition(Entity playerEntity, TiledMap map, float x, float y) {
+        Transform transform = Transform.MAPPER.get(playerEntity);
+        if (transform == null || map == null) {
+            return;
+        }
+
+        Vector2 size = transform.getSize();
+        int mapW = map.getProperties().get("width", 0, Integer.class);
+        int tileW = map.getProperties().get("tilewidth", 0, Integer.class);
+        int mapH = map.getProperties().get("height", 0, Integer.class);
+        int tileH = map.getProperties().get("tileheight", 0, Integer.class);
+        float worldW = mapW * tileW * Main.UNIT_SCALE;
+        float worldH = mapH * tileH * Main.UNIT_SCALE;
+
+        float spawnX = Math.max(0f, Math.min(x, worldW - size.x));
+        float spawnY = Math.max(0f, Math.min(y, worldH - size.y));
+        transform.getPosition().set(spawnX, spawnY);
+        centerCameraOnPlayer(playerEntity);
+    }
+
+    private String resolveCurrentMapKey() {
+        TiledMap map = tiledService.getCurrentMap();
+        if (map == null) {
+            return MapAsset.COTTAGE.name();
+        }
+        Object asset = map.getProperties().get("mapAsset");
+        if (asset instanceof MapAsset mapAsset) {
+            return mapAsset.name();
+        }
+        return MapAsset.COTTAGE.name();
+    }
+
+    private static BattleSkill.EffectType parseEffectType(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return BattleSkill.EffectType.DAMAGE;
+        }
+        return switch (raw.trim().toLowerCase(java.util.Locale.ROOT)) {
+            case "heal" -> BattleSkill.EffectType.HEAL;
+            case "attack" -> BattleSkill.EffectType.ATTACK;
+            case "defense" -> BattleSkill.EffectType.DEFENSE;
+            default -> BattleSkill.EffectType.DAMAGE;
+        };
+    }
+
+    private static String safeText(String value, String fallback) {
+        if (value == null || value.isBlank()) {
+            return fallback;
+        }
+        return value;
     }
 
     private void openSummaryFromTeamViewer() {

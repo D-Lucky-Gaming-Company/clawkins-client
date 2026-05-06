@@ -20,7 +20,9 @@ import github.dluckycompany.clawkins.asset.AssetService;
 import github.dluckycompany.clawkins.audio.AudioService;
 import github.dluckycompany.clawkins.audio.MusicTrack;
 import github.dluckycompany.clawkins.audio.SoundEffect;
+import github.dluckycompany.clawkins.save.SaveStateManager;
 import github.dluckycompany.clawkins.ui.MainMenuScreen;
+import github.dluckycompany.clawkins.ui.SaveStateScreen;
 
 /**
  * {@link com.badlogic.gdx.ApplicationListener} implementation shared by all
@@ -37,6 +39,8 @@ public class Main extends Game {
     private AssetService assetService;
     private AudioService audioService;
     private GLProfiler glProfiler;
+    private SaveStateManager saveStateManager;
+    private SaveStateScreen saveStateScreen;
 
     private final Map<Class<? extends Screen>, Screen> screenCache = new HashMap<>();
 
@@ -49,6 +53,7 @@ public class Main extends Game {
         this.viewport = new FitViewport(WORLD_WIDTH, WORLD_HEIGHT, camera);
         this.assetService = new AssetService(new InternalFileHandleResolver());
         this.audioService = new AudioService();
+        this.saveStateManager = new SaveStateManager();
         // Placeholder registrations. Add real files later (safe no-op if files don't exist).
         audioService.registerMusic(MusicTrack.EXPLORATION, "audio/music/exploration.mp3");
         audioService.registerMusic(MusicTrack.EXPLORATION_2, "audio/music/exploration2.mp3");
@@ -68,9 +73,12 @@ public class Main extends Game {
         addScreen(new MainMenuScreen(batch,
             () -> startNewGame(),
             () -> continueGame(),
-            () -> exitGame()
+            () -> exitGame(),
+            saveStateManager
         ));
         addScreen(new GameScreen(this));
+        this.saveStateScreen = new SaveStateScreen(batch, saveStateManager);
+        addScreen(saveStateScreen);
 
         // Show main menu first
         setScreen(MainMenuScreen.class);
@@ -89,7 +97,25 @@ public class Main extends Game {
      */
     private void continueGame() {
         Gdx.app.log("Main", "Continue Game");
-        // TODO: load save file and transition to GameScreen
+        openSaveStateScreenForLoad();
+    }
+
+    private void openSaveStateScreenForLoad() {
+        SaveStateScreen screen = getScreen(SaveStateScreen.class);
+        screen.configure(
+            SaveStateScreen.Mode.LOAD,
+            null,
+            saveState -> {
+                if (saveState == null) {
+                    return;
+                }
+                GameScreen gameScreen = getScreen(GameScreen.class);
+                gameScreen.queueSaveStateLoad(saveState);
+                setScreen(GameScreen.class);
+            },
+            () -> setScreen(MainMenuScreen.class)
+        );
+        setScreen(SaveStateScreen.class);
     }
 
     /**
@@ -117,6 +143,14 @@ public class Main extends Game {
         }
 
         super.setScreen(cachedScreen);
+    }
+
+    public <T extends Screen> T getScreen(Class<T> screenClass) {
+        Screen cached = screenCache.get(screenClass);
+        if (cached == null) {
+            throw new GdxRuntimeException("No screen with class " + screenClass + " found in the screen cache");
+        }
+        return screenClass.cast(cached);
     }
 
     @Override
@@ -160,5 +194,9 @@ public class Main extends Game {
 
     public AudioService getAudioService() {
         return audioService;
+    }
+
+    public SaveStateManager getSaveStateManager() {
+        return saveStateManager;
     }
 }

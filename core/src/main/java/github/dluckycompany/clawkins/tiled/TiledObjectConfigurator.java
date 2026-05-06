@@ -67,6 +67,8 @@ public class TiledObjectConfigurator {
      * Creates and configures an entity from the map object's properties.
      */
     public void onLoadObject(TiledMapTileMapObject tileMapObject) {
+        Gdx.app.log(TAG, "onLoadObject called for: " + tileMapObject.getName() + " (type: " + tileMapObject.getProperties().get("type") + ")");
+        
         Entity entity = engine.createEntity();
         TiledMapTile tile = tileMapObject.getTile();
         TextureRegion textureRegion = tile.getTextureRegion();
@@ -78,8 +80,10 @@ public class TiledObjectConfigurator {
 
         if (shouldAdd) {
             engine.addEntity(entity);
-            Gdx.app.debug(TAG, "Spawned entity: name=" + tileMapObject.getName()
+            Gdx.app.log(TAG, "✓ Spawned entity: name=" + tileMapObject.getName()
                     + " pos=" + Transform.MAPPER.get(entity).getPosition());
+        } else {
+            Gdx.app.log(TAG, "✗ Skipped entity: name=" + tileMapObject.getName());
         }
     }
 
@@ -101,10 +105,15 @@ public class TiledObjectConfigurator {
         ObjectType objectType = readObjectType(tileMapObject);
         switch (objectType) {
             case PLAYER -> {
-                if (engine.getEntitiesFor(Family.all(Player.class).get()).size() > 0) {
-                    Gdx.app.debug(TAG, "Skipping duplicate PLAYER entity (map transition)");
+                int existingPlayerCount = engine.getEntitiesFor(Family.all(Player.class).get()).size();
+                Gdx.app.log(TAG, "Configuring PLAYER entity. Existing player count: " + existingPlayerCount);
+                
+                if (existingPlayerCount > 0) {
+                    Gdx.app.log(TAG, "Skipping duplicate PLAYER entity (map transition)");
                     return false;
                 }
+                
+                Gdx.app.log(TAG, "Creating new PLAYER entity");
                 float moveSpeed = getFloatProperty(tileMapObject, "moveSpeed", 3f);
                 String playerName = getStringProperty(tileMapObject, "Name", "Player");
                 int playerHp = getIntProperty(tileMapObject, "playerHp", 100);
