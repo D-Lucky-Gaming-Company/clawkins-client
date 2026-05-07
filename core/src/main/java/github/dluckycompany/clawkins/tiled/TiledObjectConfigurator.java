@@ -20,7 +20,6 @@ import github.dluckycompany.clawkins.asset.AssetService;
 import github.dluckycompany.clawkins.battle.BattleSkill;
 import github.dluckycompany.clawkins.battle.PlayerBattleState;
 import github.dluckycompany.clawkins.character.Clawkin;
-import github.dluckycompany.clawkins.component.Barrier;
 import github.dluckycompany.clawkins.component.CameraFollow;
 import github.dluckycompany.clawkins.component.Enemy;
 import github.dluckycompany.clawkins.component.Graphic;
@@ -264,9 +263,8 @@ public class TiledObjectConfigurator {
                 Gdx.app.debug(TAG, "Configured as MERCHANT: " + objectName + " collision=" + hasCollision);
             }
             case BARRIER -> {
-                boolean hasCollision = getBooleanProperty(tileMapObject, "hasCollision", true);
-                entity.add(new Barrier(hasCollision));
-                Gdx.app.debug(TAG, "Configured as BARRIER collision=" + hasCollision);
+                // Barrier collision is handled via map barrier objects, no entity component required.
+                Gdx.app.debug(TAG, "Configured as BARRIER (shape-based map collision)");
             }
             case PROP -> {
                 // Reserved type for future use, intentionally no behavior for now.

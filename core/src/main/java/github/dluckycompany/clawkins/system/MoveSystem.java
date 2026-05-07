@@ -18,7 +18,6 @@ import com.badlogic.gdx.maps.tiled.TiledMapTileLayer;
 import com.badlogic.gdx.math.Rectangle;
 import com.badlogic.gdx.math.Vector2;
 import github.dluckycompany.clawkins.Main;
-import github.dluckycompany.clawkins.component.Barrier;
 import github.dluckycompany.clawkins.component.Enemy;
 import github.dluckycompany.clawkins.component.Interactible;
 import github.dluckycompany.clawkins.component.Move;
@@ -56,7 +55,6 @@ public class MoveSystem extends IteratingSystem {
     private final Rectangle tmpTileRect;
     private final Rectangle tmpSolidRect;
     private ImmutableArray<Entity> solidInteractibles;
-    private ImmutableArray<Entity> solidBarriers;
 
     public MoveSystem() {
         super(Family.all(Move.class, Transform.class).get());
@@ -71,7 +69,6 @@ public class MoveSystem extends IteratingSystem {
     public void addedToEngine(Engine engine) {
         super.addedToEngine(engine);
         this.solidInteractibles = engine.getEntitiesFor(Family.all(Interactible.class, Transform.class).get());
-        this.solidBarriers = engine.getEntitiesFor(Family.all(Barrier.class, Transform.class).get());
     }
 
     @Override
@@ -239,10 +236,7 @@ public class MoveSystem extends IteratingSystem {
     }
 
     private boolean isBlockedBySolidEntity(Rectangle entityHitbox, Entity mover) {
-        if (isBlockedBySolidInteractible(entityHitbox, mover)) {
-            return true;
-        }
-        return isBlockedBySolidBarrier(entityHitbox, mover);
+        return isBlockedBySolidInteractible(entityHitbox, mover);
     }
 
     private boolean isBlockedBySolidInteractible(Rectangle entityHitbox, Entity mover) {
@@ -255,36 +249,6 @@ public class MoveSystem extends IteratingSystem {
             }
             Interactible interactible = Interactible.MAPPER.get(entity);
             if (interactible == null || !interactible.hasCollision()) {
-                continue;
-            }
-            Transform transform = Transform.MAPPER.get(entity);
-            if (transform == null) {
-                continue;
-            }
-
-            float solidW = transform.getSize().x * SOLID_HITBOX_WIDTH_FACTOR;
-            float solidH = transform.getSize().y * SOLID_HITBOX_HEIGHT_FACTOR;
-            float solidX = transform.getPosition().x + (transform.getSize().x - solidW) * 0.5f;
-            float solidY = transform.getPosition().y;
-            tmpSolidRect.set(solidX, solidY, solidW, solidH);
-            if (entityHitbox.overlaps(tmpSolidRect)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private boolean isBlockedBySolidBarrier(Rectangle entityHitbox, Entity mover) {
-        if (solidBarriers == null || solidBarriers.size() == 0) {
-            return false;
-        }
-
-        for (Entity entity : solidBarriers) {
-            if (entity == mover) {
-                continue;
-            }
-            Barrier barrier = Barrier.MAPPER.get(entity);
-            if (barrier == null || !barrier.hasCollision()) {
                 continue;
             }
             Transform transform = Transform.MAPPER.get(entity);
