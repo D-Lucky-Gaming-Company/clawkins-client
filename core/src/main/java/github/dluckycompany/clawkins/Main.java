@@ -62,6 +62,15 @@ public class Main extends Game {
         audioService.registerMusic(MusicTrack.MENU, "audio/music/menu.mp3");
         audioService.registerMusic(MusicTrack.VICTORY, "audio/music/victory.mp3");
         audioService.registerMusic(MusicTrack.DEFEAT, "audio/music/defeat.mp3");
+        audioService.registerMusic(MusicTrack.COTTAGE, "audio/music/cottage.mp3");
+        audioService.registerMusic(MusicTrack.FIELDS, "audio/music/fields.mp3");
+        audioService.registerMusic(MusicTrack.MOUNTAIN_PATH, "audio/music/mountain_path.mp3");
+        audioService.registerMusic(MusicTrack.NURSERY, "audio/music/nursery.mp3");
+        audioService.registerMusic(MusicTrack.BACKALLEY_SHOP, "audio/music/backalley_shop.mp3");
+        audioService.registerMusic(MusicTrack.TAMERGROUNDS, "audio/music/tamergrounds.mp3");
+        audioService.registerMusic(MusicTrack.BOSS_CERBERUS, "audio/music/BOSS/boss_cerberus.mp3");
+        audioService.registerMusic(MusicTrack.BOSS_SPARTACUS, "audio/music/BOSS/boss_spartacus.mp3");
+        audioService.registerMusic(MusicTrack.BOSS_SANTIRAL, "audio/music/BOSS/boss_santiral.mp3");
         audioService.registerSound(SoundEffect.CONFIRM, "audio/sfx/confirm.wav");
         audioService.registerSound(SoundEffect.CANCEL, "audio/sfx/cancel.wav");
         audioService.registerSound(SoundEffect.HIT, "audio/sfx/hit.wav");
