@@ -165,6 +165,36 @@ Current object-to-entity mapping:
 - Tiled rule for enemy data: when object class is `Enemy`, keep enemy fields at top-level object properties and do not wrap them in nested `properties` class field.
 - Full technical details: see `docs/handoffs/2026-05-08-handover-enemy-alert-pause-and-sfx.md`.
 
+### Boss Interaction Confirmation Rule (2026-05-08)
+- **Default rule for all future bosses:** follow this sequence unless explicitly overridden:
+  1. pre-dialogue event/checks
+  2. dialogue
+  3. post-dialogue special event
+- Special-interaction bosses must prompt for confirmation after dialogue before starting combat.
+- Prompt format: `Fight {enemy name}?` with `Yes/No` selection.
+- `Yes` starts encounter flow.
+- `No` cancels encounter start and should run authored fallback movement/behavior (tutorial baseline: move player left for ~1s at base speed).
+- Prompt loop behavior: if boss event is not yet accomplished, prompt appears again on later interactions (Bert Jr. uses this now).
+- `InteractionSystem` now supports per-object pre-dialogue checks:
+  - `registerPreDialogueCheck(objectId, Predicate<SpecialInteractionContext>)`
+  - Runs before interaction count increment, dialogue flow resolution, and post-dialogue special handler
+  - Return `false` to block the interaction entirely
+- Boss music hooks are now supported in `GameScreen` on a per-encounter basis:
+  - pre-battle hook (before encounter publish, e.g., tension cue)
+  - battle-start hook
+  - mid-battle HP threshold hooks (e.g., <= 50%)
+  - post-battle hook (victory/defeat)
+- Boss intro prop convention (Bert Jr. baseline, now expected for future bosses with intro props):
+  - keep boss prop off-screen before first trigger
+  - on first trigger: lock player + run prop walk-in during pre-dialogue
+  - when prop reaches target: auto-continue interaction flow (no extra manual retrigger)
+  - after boss defeat: hide/remove boss prop
+- Current tutorial setup uses placeholder boss tracks for Bert Jr. and demonstrates a 50% HP mid-battle music shift.
+- Runtime event tracking uses `PlayerProgress` (`core/.../progress/PlayerProgress.java`) for:
+  - accomplished event flags
+  - per-event stats (`attempt`, `accepted`, `declined`, `win`, `loss`, `completed`)
+- Current integration: Bert Jr. is considered accomplished only after battle victory.
+
 ### Add a new spawnable object from Tiled
 1. Place tile object in `objects` layer in Tiled.
 2. Set a unique object `name`.

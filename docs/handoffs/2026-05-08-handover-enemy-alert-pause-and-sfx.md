@@ -55,3 +55,17 @@ This update adds an RPG-style "notice/alert" pause before enemies start chasing,
 
 - `:core:compileJava` passed after this change.
 - Lint/IDE diagnostics were clean on touched Java files.
+
+## Follow-up Convention (Boss Interactibles)
+
+- Default sequence for future bosses: `pre-dialogue event/check -> dialogue -> post-dialogue special event`.
+- Boss encounters triggered from special/trippable interactibles must ask for confirmation after dialogue:
+  - Prompt text format: `Fight {enemy name}?`
+  - Selection: `Yes` or `No` (RPG-style choice)
+- `Yes` should continue/start the encounter.
+- `No` should not start combat and instead run a short non-combat fallback movement when authored (current tutorial boss behavior: move player left for 1 second at normal speed).
+- Repeat behavior: if boss completion event is still not accomplished, interacting again should show the same `Fight {enemy name}?` prompt.
+- Progress data should be tracked through `PlayerProgress` so this can later be serialized in save data.
+- New interaction extension point: `InteractionSystem.registerPreDialogueCheck(...)` allows per-object checks/effects before dialogue starts (e.g., temporary music shift, gating by completion flags). Returning `false` cancels that interaction.
+- Boss music lifecycle hooks now exist in `GameScreen` (encounter-id keyed): pre-battle, battle-start, mid-battle HP thresholds, and post-battle (victory/defeat).
+- Intro prop baseline (applies to future bosses when using props): pre-dialogue lock player, walk prop to authored target, then auto-continue interaction flow; hide prop after boss defeat.
