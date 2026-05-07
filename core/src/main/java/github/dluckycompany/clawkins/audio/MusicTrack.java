@@ -7,5 +7,14 @@ public enum MusicTrack {
     BATTLE,
     MENU,
     VICTORY,
-    DEFEAT
+    DEFEAT,
+    COTTAGE,
+    FIELDS,
+    MOUNTAIN_PATH,
+    NURSERY,
+    BACKALLEY_SHOP,
+    TAMERGROUNDS,
+    BOSS_CERBERUS,
+    BOSS_SPARTACUS,
+    BOSS_SANTIRAL
 }
