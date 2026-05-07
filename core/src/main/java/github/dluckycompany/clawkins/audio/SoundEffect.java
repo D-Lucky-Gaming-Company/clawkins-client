@@ -4,5 +4,6 @@ public enum SoundEffect {
     CONFIRM,
     CANCEL,
     HIT,
-    ENCOUNTER
+    ENCOUNTER,
+    AREA_NAME_DISPLAY
 }
