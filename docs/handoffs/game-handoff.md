@@ -158,6 +158,12 @@ Current object-to-entity mapping:
 - Player skills still come from `playerBattleState.createPlayerSkills()` (from Tiled PLAYER object). Clawkin skill fields are parsed/logged but not yet used in combat.
 - Full technical details: see `docs/handoffs/2026-04-06-handover-clawkin-independent-class.md` and `docs/handoffs/2026-04-06-handover-clawkin-battle-integration.md`.
 
+### Enemy Alert Pause + Alert SFX (2026-05-08)
+- Enemy objects now support `alertPauseDuration` (float, seconds) to delay chase after player detection.
+- Runtime state flow is explicitly `ALERTED` -> pause -> `CHASING`.
+- Alert start now triggers `AudioEventType.ENEMY_ALERT_STARTED`, routed to `SoundEffect.ENEMY_ALERT`.
+- Full technical details: see `docs/handoffs/2026-05-08-handover-enemy-alert-pause-and-sfx.md`.
+
 ### Add a new spawnable object from Tiled
 1. Place tile object in `objects` layer in Tiled.
 2. Set a unique object `name`.

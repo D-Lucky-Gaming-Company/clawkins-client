@@ -227,7 +227,7 @@ public class GameScreen extends ScreenAdapter {
         this.interactionSystem = new InteractionSystem();
         this.engine.addSystem(interactionSystem);
         this.engine.addSystem(new AnimationSystem());
-        this.engine.addSystem(new EnemySystem());
+        this.engine.addSystem(new EnemySystem(audioService));
         this.engine.addSystem(new MoveSystem());
         this.engine.addSystem(new CameraSystem(camera));
         this.engine.addSystem(new RenderSystem(batch, viewport, camera));
