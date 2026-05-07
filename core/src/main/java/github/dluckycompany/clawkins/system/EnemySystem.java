@@ -1,7 +1,12 @@
 package github.dluckycompany.clawkins.system;
 
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.PriorityQueue;
+import java.util.Set;
 
 import com.badlogic.ashley.core.Engine;
 import com.badlogic.ashley.core.Entity;
@@ -35,10 +40,14 @@ public class EnemySystem extends IteratingSystem {
     private static final float MAX_IDLE_DURATION = 1.6f;
     private static final float CHASE_MEMORY_DURATION = 1.2f;
     private static final int ROAM_DIRECTION_ATTEMPTS = 12;
-    private static final float[] CHASE_STEER_ANGLES = { 0f, 25f, -25f, 45f, -45f, 70f, -70f };
-    private static final float ENEMY_HITBOX_WIDTH_FACTOR = 0.32f;
-    private static final float ENEMY_HITBOX_HEIGHT_FACTOR = 0.33f;
+    private static final float[] CHASE_STEER_ANGLES = { 15f, -15f, 30f, -30f, 45f, -45f, 65f, -65f, 90f, -90f };
+    private static final float ENEMY_HITBOX_WIDTH_FACTOR = 0.28f;
+    private static final float ENEMY_HITBOX_HEIGHT_FACTOR = 0.24f;
     private static final float PLAYER_FEET_PROBE_Y_FACTOR = 0.08f;
+    private static final int PATH_NODE_LIMIT = 800;
+    private static final int[][] CARDINAL_DIRS = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } };
+    private static final int PATH_SWEEP_SAMPLES_PER_EDGE = 6;
+    private static final float HOME_REACHED_DISTANCE = 0.12f;
 
     private ImmutableArray<Entity> players;
     private ImmutableArray<Entity> solidEntities;
@@ -53,6 +62,8 @@ public class EnemySystem extends IteratingSystem {
 
     private float mapWidth;
     private float mapHeight;
+    private float tileWorldWidth;
+    private float tileWorldHeight;
 
     // Using simple hitboxes for raycasting validation mirroring the MoveSystem
     private static final float TILE_HITBOX_WIDTH_FACTOR = 0.80f;
@@ -61,6 +72,13 @@ public class EnemySystem extends IteratingSystem {
     private static final float SOLID_HITBOX_HEIGHT_FACTOR = 0.45f;
     private static final float PLAYER_HITBOX_WIDTH_FACTOR = 0.26f;
     private static final float PLAYER_HITBOX_HEIGHT_FACTOR = 0.22f;
+
+    private record PathNode(long key, int col, int row, float fScore) implements Comparable<PathNode> {
+        @Override
+        public int compareTo(PathNode other) {
+            return Float.compare(this.fScore, other.fScore);
+        }
+    }
 
     public EnemySystem(AudioService audioService) {
         super(Family.all(Enemy.class, Move.class, Transform.class).get());
@@ -83,6 +101,8 @@ public class EnemySystem extends IteratingSystem {
         int tileH = tiledMap.getProperties().get("tileheight", 0, Integer.class);
         this.mapWidth = width * tileW * Main.UNIT_SCALE;
         this.mapHeight = height * tileH * Main.UNIT_SCALE;
+        this.tileWorldWidth = tileW * Main.UNIT_SCALE;
+        this.tileWorldHeight = tileH * Main.UNIT_SCALE;
 
         for (MapLayer layer : tiledMap.getLayers()) {
             if (layer instanceof TiledMapTileLayer tileLayer) {
@@ -119,10 +139,30 @@ public class EnemySystem extends IteratingSystem {
             enemy.setChaseMemoryTimer(Math.max(0f, enemy.getChaseMemoryTimer() - deltaTime));
         }
 
+        if (isTerritorialStaticChaser(enemy)
+                && distanceFromHome(transform, enemy) > enemy.getTerritorialChaseDistance()) {
+            enemy.setReturningToHome(true);
+        }
+
+        if (enemy.isReturningToHome()) {
+            if (updateReturnToHome(enemy, move, transform, entity)) {
+                enemy.setReturningToHome(false);
+            }
+            return;
+        }
+
         boolean hasChaseTarget = enemy.canChase()
                 && targetPlayer != null
                 && (seesPlayer || enemy.getChaseMemoryTimer() > 0f);
         if (hasChaseTarget) {
+            if (isTerritorialStaticChaser(enemy)
+                    && distanceFromHome(transform, enemy) >= enemy.getTerritorialChaseDistance()) {
+                enemy.setReturningToHome(true);
+                enemy.setChaseMemoryTimer(0f);
+                move.getDirection().setZero();
+                move.setMaxSpeed(0f);
+                return;
+            }
             Transform targetTransform = targetPlayer.getComponent(Transform.class);
             if (enemy.getState() != Enemy.State.CHASING) {
                 if (enemy.getState() != Enemy.State.ALERTED) {
@@ -209,7 +249,7 @@ public class EnemySystem extends IteratingSystem {
         }
 
         if (!move.getDirection().isZero()
-                && !canMoveAlong(transform, move.getDirection(), enemy.getRoamDecisionDistance(), self)) {
+                && !canRoamAlong(enemy, transform, move.getDirection(), enemy.getRoamDecisionDistance(), self)) {
             chooseRoamDirection(enemy, move, transform, self);
         }
     }
@@ -218,7 +258,7 @@ public class EnemySystem extends IteratingSystem {
         for (int i = 0; i < ROAM_DIRECTION_ATTEMPTS; i++) {
             float angle = MathUtils.random(0f, 360f);
             tmpDir.set(MathUtils.cosDeg(angle), MathUtils.sinDeg(angle)).nor();
-            if (!canMoveAlong(transform, tmpDir, enemy.getRoamDecisionDistance(), self)) {
+            if (!canRoamAlong(enemy, transform, tmpDir, enemy.getRoamDecisionDistance(), self)) {
                 continue;
             }
             move.getDirection().set(tmpDir);
@@ -226,6 +266,87 @@ public class EnemySystem extends IteratingSystem {
             return;
         }
         move.getDirection().setZero();
+    }
+
+    private boolean updateReturnToHome(Enemy enemy, Move move, Transform transform, Entity self) {
+        Vector2 homeCenter = homeCenterOf(enemy, transform);
+        Vector2 currentCenter = centerOf(transform);
+        tmpDir.set(homeCenter).sub(currentCenter);
+        if (tmpDir.len2() <= HOME_REACHED_DISTANCE * HOME_REACHED_DISTANCE) {
+            transform.getPosition().set(enemy.getHomePosition());
+            enemy.setState(Enemy.State.IDLE);
+            move.getDirection().setZero();
+            move.setMaxSpeed(0f);
+            return true;
+        }
+
+        Vector2 desired = tmpDir.nor();
+        Vector2 chosen = findBestReturnDirection(desired, transform, enemy, self);
+        if (chosen.isZero()) {
+            move.getDirection().setZero();
+            move.setMaxSpeed(0f);
+            enemy.setState(Enemy.State.IDLE);
+            return false;
+        }
+
+        enemy.setState(Enemy.State.CHASING);
+        move.setMaxSpeed(returnSpeedFor(enemy));
+        move.getDirection().set(chosen);
+        updateFacingDirectionFromMove(enemy, chosen);
+        return false;
+    }
+
+    private Vector2 findBestReturnDirection(Vector2 desired, Transform enemyTransform, Enemy enemy, Entity self) {
+        if (canMoveAlong(enemyTransform, desired, enemy.getChaseProbeDistance(), self)) {
+            return new Vector2(desired);
+        }
+        for (float angle : CHASE_STEER_ANGLES) {
+            Vector2 candidate = rotatedDirection(desired, angle);
+            if (canMoveAlong(enemyTransform, candidate, enemy.getChaseProbeDistance(), self)) {
+                return new Vector2(candidate);
+            }
+        }
+        return new Vector2();
+    }
+
+    private boolean canRoamAlong(Enemy enemy, Transform transform, Vector2 direction, float distance, Entity self) {
+        if (!canMoveAlong(transform, direction, distance, self)) {
+            return false;
+        }
+        if (!enemy.isTerritorial()) {
+            return true;
+        }
+        float nextX = transform.getPosition().x + direction.x * distance;
+        float nextY = transform.getPosition().y + direction.y * distance;
+        return distanceFromHome(nextX, nextY, transform, enemy) <= enemy.getTerritorialRoamRadius();
+    }
+
+    private boolean isTerritorialStaticChaser(Enemy enemy) {
+        return enemy.isTerritorial() && !enemy.canRoam() && enemy.canChase();
+    }
+
+    private float returnSpeedFor(Enemy enemy) {
+        if (enemy.getRoamingSpeed() > 0f) {
+            return enemy.getRoamingSpeed();
+        }
+        return enemy.getChasingSpeed();
+    }
+
+    private float distanceFromHome(Transform transform, Enemy enemy) {
+        return distanceFromHome(transform.getPosition().x, transform.getPosition().y, transform, enemy);
+    }
+
+    private float distanceFromHome(float x, float y, Transform transform, Enemy enemy) {
+        float centerX = x + transform.getSize().x * 0.5f;
+        float centerY = y + transform.getSize().y * 0.5f;
+        Vector2 homeCenter = homeCenterOf(enemy, transform);
+        return Vector2.dst(centerX, centerY, homeCenter.x, homeCenter.y);
+    }
+
+    private Vector2 homeCenterOf(Enemy enemy, Transform transform) {
+        return new Vector2(
+                enemy.getHomePosition().x + transform.getSize().x * 0.5f,
+                enemy.getHomePosition().y + transform.getSize().y * 0.5f);
     }
 
     private void updateFacingDirectionFromMove(Enemy enemy, Vector2 moveDir) {
@@ -250,7 +371,7 @@ public class EnemySystem extends IteratingSystem {
         }
 
         Vector2 desired = tmpDir.nor();
-        Vector2 chosen = findBestChaseDirection(desired, enemyTransform, enemy, self);
+        Vector2 chosen = findBestChaseDirection(desired, enemyTransform, playerTransform, enemy, self);
         move.getDirection().set(chosen);
     }
 
@@ -278,21 +399,187 @@ public class EnemySystem extends IteratingSystem {
         return new Vector2((regionX + feetX) * 0.5f, (regionY + feetY) * 0.5f);
     }
 
-    private Vector2 findBestChaseDirection(Vector2 desired, Transform enemyTransform, Enemy enemy, Entity self) {
-        Vector2 best = null;
-        float bestScore = -Float.MAX_VALUE;
+    private Vector2 findBestChaseDirection(
+            Vector2 desired,
+            Transform enemyTransform,
+            Transform playerTransform,
+            Enemy enemy,
+            Entity self) {
+        if (canMoveAlong(enemyTransform, desired, enemy.getChaseProbeDistance(), self)) {
+            return new Vector2(desired);
+        }
+
+        Vector2 pathDirection = findPathDirection(enemyTransform, playerTransform, self);
+        if (!pathDirection.isZero() && canMoveAlong(enemyTransform, pathDirection, enemy.getChaseProbeDistance(), self)) {
+            return pathDirection;
+        }
+
         for (float angle : CHASE_STEER_ANGLES) {
             Vector2 candidate = rotatedDirection(desired, angle);
             if (!canMoveAlong(enemyTransform, candidate, enemy.getChaseProbeDistance(), self)) {
                 continue;
             }
-            float score = desired.dot(candidate);
-            if (score > bestScore) {
-                bestScore = score;
-                best = new Vector2(candidate);
+            return new Vector2(candidate);
+        }
+        return new Vector2();
+    }
+
+    private Vector2 findPathDirection(Transform enemyTransform, Transform playerTransform, Entity self) {
+        if (tileWorldWidth <= 0f || tileWorldHeight <= 0f) {
+            return new Vector2();
+        }
+
+        Vector2 enemyCenter = enemyHitboxCenterOf(enemyTransform);
+        Vector2 playerCenter = centerOf(playerTransform);
+        int startCol = worldToCol(enemyCenter.x);
+        int startRow = worldToRow(enemyCenter.y);
+        int goalCol = worldToCol(playerCenter.x);
+        int goalRow = worldToRow(playerCenter.y);
+
+        if (!isInGrid(startCol, startRow) || !isInGrid(goalCol, goalRow)) {
+            return new Vector2();
+        }
+        if (startCol == goalCol && startRow == goalRow) {
+            return new Vector2(playerCenter).sub(enemyCenter).nor();
+        }
+
+        long startKey = keyOf(startCol, startRow);
+        long goalKey = keyOf(goalCol, goalRow);
+
+        PriorityQueue<PathNode> open = new PriorityQueue<>();
+        Set<Long> closed = new HashSet<>();
+        Map<Long, Long> cameFrom = new HashMap<>();
+        Map<Long, Float> gScore = new HashMap<>();
+
+        gScore.put(startKey, 0f);
+        open.add(new PathNode(startKey, startCol, startRow, heuristic(startCol, startRow, goalCol, goalRow)));
+
+        int expanded = 0;
+        boolean found = false;
+        while (!open.isEmpty() && expanded < PATH_NODE_LIMIT) {
+            PathNode node = open.poll();
+            if (!closed.add(node.key())) {
+                continue;
+            }
+            expanded++;
+
+            if (node.key() == goalKey) {
+                found = true;
+                break;
+            }
+
+            float currentG = gScore.getOrDefault(node.key(), Float.MAX_VALUE);
+            for (int[] dir : CARDINAL_DIRS) {
+                int nextCol = node.col() + dir[0];
+                int nextRow = node.row() + dir[1];
+                if (!isInGrid(nextCol, nextRow)) {
+                    continue;
+                }
+                if (!canTraverseGridEdge(node.col(), node.row(), nextCol, nextRow, enemyTransform, self)
+                        && !(nextCol == goalCol && nextRow == goalRow)) {
+                    continue;
+                }
+
+                long nextKey = keyOf(nextCol, nextRow);
+                if (closed.contains(nextKey)) {
+                    continue;
+                }
+
+                float tentativeG = currentG + 1f;
+                float knownG = gScore.getOrDefault(nextKey, Float.MAX_VALUE);
+                if (tentativeG >= knownG) {
+                    continue;
+                }
+                cameFrom.put(nextKey, node.key());
+                gScore.put(nextKey, tentativeG);
+                float fScore = tentativeG + heuristic(nextCol, nextRow, goalCol, goalRow);
+                open.add(new PathNode(nextKey, nextCol, nextRow, fScore));
             }
         }
-        return best == null ? new Vector2() : best;
+
+        if (!found || !cameFrom.containsKey(goalKey)) {
+            return new Vector2();
+        }
+
+        long stepKey = goalKey;
+        while (cameFrom.containsKey(stepKey) && cameFrom.get(stepKey) != startKey) {
+            stepKey = cameFrom.get(stepKey);
+        }
+
+        int stepCol = colOf(stepKey);
+        int stepRow = rowOf(stepKey);
+        Vector2 stepCenter = gridCenter(stepCol, stepRow);
+        return stepCenter.sub(enemyCenter).nor();
+    }
+
+    private boolean isGridCellWalkable(int col, int row, Transform enemyTransform, Entity self) {
+        Vector2 center = gridCenter(col, row);
+        Rectangle hitbox = enemyHitboxAtCenter(center.x, center.y, enemyTransform, tmpRect);
+        if (isOutOfMapBounds(hitbox)) {
+            return false;
+        }
+        return !isPointObstructed(hitbox, self);
+    }
+
+    private boolean canTraverseGridEdge(
+            int fromCol,
+            int fromRow,
+            int toCol,
+            int toRow,
+            Transform enemyTransform,
+            Entity self) {
+        if (!isGridCellWalkable(toCol, toRow, enemyTransform, self)) {
+            return false;
+        }
+        Vector2 from = gridCenter(fromCol, fromRow);
+        Vector2 to = gridCenter(toCol, toRow);
+        for (int i = 1; i <= PATH_SWEEP_SAMPLES_PER_EDGE; i++) {
+            float t = (float) i / PATH_SWEEP_SAMPLES_PER_EDGE;
+            float x = MathUtils.lerp(from.x, to.x, t);
+            float y = MathUtils.lerp(from.y, to.y, t);
+            Rectangle sweepHitbox = enemyHitboxAtCenter(x, y, enemyTransform, tmpRect);
+            if (isOutOfMapBounds(sweepHitbox) || isPointObstructed(sweepHitbox, self)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private int worldToCol(float worldX) {
+        return (int) Math.floor(worldX / tileWorldWidth);
+    }
+
+    private int worldToRow(float worldY) {
+        return (int) Math.floor(worldY / tileWorldHeight);
+    }
+
+    private Vector2 gridCenter(int col, int row) {
+        return new Vector2((col + 0.5f) * tileWorldWidth, (row + 0.5f) * tileWorldHeight);
+    }
+
+    private boolean isInGrid(int col, int row) {
+        if (tileWorldWidth <= 0f || tileWorldHeight <= 0f || mapWidth <= 0f || mapHeight <= 0f) {
+            return false;
+        }
+        int cols = Math.max(1, (int) Math.floor(mapWidth / tileWorldWidth));
+        int rows = Math.max(1, (int) Math.floor(mapHeight / tileWorldHeight));
+        return col >= 0 && row >= 0 && col < cols && row < rows;
+    }
+
+    private static long keyOf(int col, int row) {
+        return ((long) row << 32) | (col & 0xffffffffL);
+    }
+
+    private static int colOf(long key) {
+        return (int) key;
+    }
+
+    private static int rowOf(long key) {
+        return (int) (key >> 32);
+    }
+
+    private static float heuristic(int col, int row, int goalCol, int goalRow) {
+        return Math.abs(goalCol - col) + Math.abs(goalRow - row);
     }
 
     private Vector2 rotatedDirection(Vector2 direction, float angleDeg) {
@@ -327,6 +614,14 @@ public class EnemySystem extends IteratingSystem {
         return outRect.set(hitboxX, hitboxY, hitboxWidth, hitboxHeight);
     }
 
+    private Rectangle enemyHitboxAtCenter(float centerX, float centerY, Transform enemyTransform, Rectangle outRect) {
+        float hitboxWidth = enemyTransform.getSize().x * ENEMY_HITBOX_WIDTH_FACTOR;
+        float hitboxHeight = enemyTransform.getSize().y * ENEMY_HITBOX_HEIGHT_FACTOR;
+        float hitboxX = centerX - hitboxWidth * 0.5f;
+        float hitboxY = centerY - hitboxHeight * 0.5f;
+        return outRect.set(hitboxX, hitboxY, hitboxWidth, hitboxHeight);
+    }
+
     private boolean hasLineOfSight(Transform enemyTransform, Enemy enemy, Transform playerTransform, Entity self) {
         Vector2 enemyPos = centerOf(enemyTransform);
         Vector2 playerPos = centerOf(playerTransform);
@@ -351,8 +646,8 @@ public class EnemySystem extends IteratingSystem {
             float t = (float) i / steps;
             tmpVec.set(enemyPos).lerp(playerPos, t);
 
-            // Create a small bounding box at the test point
-            tmpRect.set(tmpVec.x - 0.2f, tmpVec.y - 0.2f, 0.4f, 0.4f);
+            // Use a slightly wider probe so thin walls cannot be "seen through".
+            tmpRect.set(tmpVec.x - 0.28f, tmpVec.y - 0.28f, 0.56f, 0.56f);
 
             if (isPointObstructed(tmpRect, self)) {
                 return false;
@@ -366,6 +661,16 @@ public class EnemySystem extends IteratingSystem {
         return new Vector2(
                 transform.getPosition().x + transform.getSize().x * 0.5f,
                 transform.getPosition().y + transform.getSize().y * 0.5f);
+    }
+
+    private Vector2 enemyHitboxCenterOf(Transform enemyTransform) {
+        float width = enemyTransform.getSize().x;
+        float height = enemyTransform.getSize().y;
+        float hitboxWidth = width * ENEMY_HITBOX_WIDTH_FACTOR;
+        float hitboxHeight = height * ENEMY_HITBOX_HEIGHT_FACTOR;
+        float hitboxX = enemyTransform.getPosition().x + (width - hitboxWidth) * 0.5f;
+        float hitboxY = enemyTransform.getPosition().y;
+        return new Vector2(hitboxX + hitboxWidth * 0.5f, hitboxY + hitboxHeight * 0.5f);
     }
 
     private boolean isPointObstructed(Rectangle rayRect, Entity self) {
