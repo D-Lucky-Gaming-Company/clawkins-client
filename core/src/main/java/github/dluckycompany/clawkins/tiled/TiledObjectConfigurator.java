@@ -177,6 +177,9 @@ public class TiledObjectConfigurator {
                 float sightRange = getFloatProperty(tileMapObject, "sightRange", 4.0f);
                 float sightConeDotThreshold = getFloatProperty(tileMapObject, "sightConeDotThreshold", 0.5f);
                 float alertPauseDuration = getFloatProperty(tileMapObject, "alertPauseDuration", 0.8f);
+                boolean isTerritorial = getBooleanProperty(tileMapObject, "isTerritorial", false);
+                float territorialRoamRadius = getFloatProperty(tileMapObject, "territorialRoamRadius", 3.0f);
+                float territorialChaseDistance = getFloatProperty(tileMapObject, "territorialChaseDistance", 6.0f);
                 String facingDirection = getStringProperty(tileMapObject, "facingDirection", "SOUTH");
 
                 Enemy enemy = new Enemy(
@@ -186,7 +189,10 @@ public class TiledObjectConfigurator {
                         chasingSpeed,
                         sightRange,
                         sightConeDotThreshold,
-                        alertPauseDuration);
+                        alertPauseDuration,
+                        isTerritorial,
+                        territorialRoamRadius,
+                        territorialChaseDistance);
                 enemy.setFacingDirection(parseFacingDirection(facingDirection));
                 entity.add(enemy);
                 entity.add(new Move(0)); // Speed is managed by EnemySystem
