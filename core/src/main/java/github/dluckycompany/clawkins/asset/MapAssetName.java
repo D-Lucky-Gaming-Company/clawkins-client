@@ -4,10 +4,10 @@ import java.util.EnumMap;
 import java.util.Map;
 
 public enum MapAssetName {
-    NURSE_INTERIOR(MapAsset.NURSE_INTERIOR, "Clinic"),
-    NURSE_INTERIOR_1(MapAsset.NURSE_INTERIOR_1, "Clinic"),
-    NURSE_INTERIOR_2(MapAsset.NURSE_INTERIOR_2, "Clinic"),
-    NURSE_INTERIOR_3(MapAsset.NURSE_INTERIOR_3, "Clinic"),
+    NURSE_INTERIOR(MapAsset.NURSE_INTERIOR, "Nursery"),
+    NURSE_INTERIOR_1(MapAsset.NURSE_INTERIOR_1, "Nursery"),
+    NURSE_INTERIOR_2(MapAsset.NURSE_INTERIOR_2, "Nursery"),
+    NURSE_INTERIOR_3(MapAsset.NURSE_INTERIOR_3, "Nursery"),
     COTTAGE(MapAsset.COTTAGE, "Cottage"),
     SHOP(MapAsset.SHOP, "Shop"),
     SHOP_1(MapAsset.SHOP_1, "Shop"),
@@ -26,16 +26,16 @@ public enum MapAssetName {
     FIELD_3(MapAsset.FIELD_3, "Field"),
     FIELD_4(MapAsset.FIELD_4, "Field"),
     FIELD_5(MapAsset.FIELD_5, "Field"),
-    FIELD_SECRET(MapAsset.FIELD_SECRET, "Field"),
-    MANSION_MAZE(MapAsset.MANSION_MAZE, "Mansion Maze"),
-    MANSION_GARDEN(MapAsset.MANSION_GARDEN, "Mansion Garden"),
-    MANSION_EXIT(MapAsset.MANSION_EXIT, "Mansion Exit"),
+    FIELD_SECRET(MapAsset.FIELD_SECRET, "Field Secret"),
+    MANSION_MAZE(MapAsset.MANSION_MAZE, "Mansion", "Maze"),
+    MANSION_GARDEN(MapAsset.MANSION_GARDEN, "Mansion", "Garden"),
+    MANSION_EXIT(MapAsset.MANSION_EXIT, "Mansion", "Exit"),
     BACKALLEY(MapAsset.BACKALLEY, "Back Alley"),
     BACKALLEY_2(MapAsset.BACKALLEY_2, "Back Alley"),
     BACKALLEY_3(MapAsset.BACKALLEY_3, "Back Alley"),
     BACKALLEY_4(MapAsset.BACKALLEY_4, "Back Alley"),
     BACKALLEY_EXIT(MapAsset.BACKALLEY_EXIT, "Back Alley"),
-    BACKALLEY_SECRET(MapAsset.BACKALLEY_SECRET, "Back Alley Secret");
+    BACKALLEY_SECRET(MapAsset.BACKALLEY_SECRET, "Back Alley", "Secret");
 
     private static final Map<MapAsset, MapAssetName> BY_ASSET = new EnumMap<>(MapAsset.class);
 
@@ -46,23 +46,43 @@ public enum MapAssetName {
     }
 
     private final MapAsset asset;
-    private final String displayName;
+    private final String areaName;
+    private final String variationName;
 
-    MapAssetName(MapAsset asset, String displayName) {
+    MapAssetName(MapAsset asset, String areaName) {
+        this(asset, areaName, null);
+    }
+
+    MapAssetName(MapAsset asset, String areaName, String variationName) {
         this.asset = asset;
-        this.displayName = displayName;
+        this.areaName = areaName;
+        this.variationName = variationName;
     }
 
     public MapAsset asset() {
         return asset;
     }
 
+    public String areaName() {
+        return areaName;
+    }
+
+    public String variationName() {
+        return variationName;
+    }
+
     public String displayName() {
-        return displayName;
+        return variationName == null || variationName.isBlank()
+            ? areaName
+            : areaName + " " + variationName;
     }
 
     public static String fromAsset(MapAsset asset) {
         MapAssetName mapAssetName = BY_ASSET.get(asset);
         return mapAssetName == null ? null : mapAssetName.displayName();
+    }
+
+    public static MapAssetName fromAssetEntry(MapAsset asset) {
+        return BY_ASSET.get(asset);
     }
 }
