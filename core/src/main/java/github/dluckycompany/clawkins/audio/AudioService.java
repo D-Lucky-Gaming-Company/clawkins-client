@@ -14,6 +14,10 @@ import com.badlogic.gdx.utils.Disposable;
  * missing file paths are ignored without crashing.
  */
 public class AudioService implements Disposable {
+    // Per-SFX multiplier for map area title sound.
+    // Final loudness = soundVolume * AREA_NAME_DISPLAY_VOLUME_MULTIPLIER.
+    private static final float AREA_NAME_DISPLAY_VOLUME_MULTIPLIER = 0.45f;
+
     private final Map<MusicTrack, String> musicPaths = new EnumMap<>(MusicTrack.class);
     private final Map<SoundEffect, String> soundPaths = new EnumMap<>(SoundEffect.class);
     private final Map<MusicTrack, Music> musicCache = new EnumMap<>(MusicTrack.class);
@@ -158,7 +162,7 @@ public class AudioService implements Disposable {
         if (sound == null) {
             return;
         }
-        sound.play(effectiveSoundVolume());
+        sound.play(effectiveSoundVolume(effect));
     }
 
     private float effectiveMusicVolume() {
@@ -167,6 +171,14 @@ public class AudioService implements Disposable {
 
     private float effectiveSoundVolume() {
         return muted ? 0f : soundVolume;
+    }
+
+    private float effectiveSoundVolume(SoundEffect effect) {
+        float base = effectiveSoundVolume();
+        if (effect == SoundEffect.AREA_NAME_DISPLAY) {
+            return base * AREA_NAME_DISPLAY_VOLUME_MULTIPLIER;
+        }
+        return base;
     }
 
     private Music resolveMusic(MusicTrack track) {

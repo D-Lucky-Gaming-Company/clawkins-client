@@ -197,7 +197,8 @@ public class GameScreen extends ScreenAdapter {
     private String activeAreaTitle;
     private float areaTitleTimer;
     private MapAsset pendingAreaTitleAsset;
-    private String lastAreaTitleForSfx;
+    private String lastAreaNameForSfx;
+    private String lastAreaDisplayKey;
 
     private SaveState pendingSaveState;
     
@@ -263,7 +264,8 @@ public class GameScreen extends ScreenAdapter {
         this.activeAreaTitle = null;
         this.areaTitleTimer = 0f;
         this.pendingAreaTitleAsset = null;
-        this.lastAreaTitleForSfx = null;
+        this.lastAreaNameForSfx = null;
+        this.lastAreaDisplayKey = null;
         this.sideMenuOverlay = new MainSideMenuOverlay(inventoryStage, battleOverlay.getSkin(), uiFont, audioService);
         this.hudWallet = new HudWallet(playerBattleState.getWallet(), uiFont);
         this.hudWallet.setPosition(10, 10);
@@ -367,7 +369,8 @@ public class GameScreen extends ScreenAdapter {
             // This triggers: object parsing → entity spawning → map change notification to systems.
             TiledMap startMap = this.tiledService.loadMap(MapAsset.COTTAGE);
             this.tiledService.setMap(startMap);
-            this.lastAreaTitleForSfx = MapAssetName.fromAsset(MapAsset.COTTAGE);
+            this.lastAreaNameForSfx = resolveAreaName(MapAsset.COTTAGE);
+            this.lastAreaDisplayKey = buildAreaDisplayKey(MapAsset.COTTAGE);
             // Prevent frame-1 transition triggers from moving the player off the authored spawn.
             mapTransitionSystem.setCooldown(0f);
 
@@ -1134,6 +1137,8 @@ public class GameScreen extends ScreenAdapter {
         audioService.setMap(loadedMap);
         audioService.onEvent(AudioEventType.MAP_CHANGED);
         hudWallet.updateDisplay();
+        this.lastAreaNameForSfx = resolveAreaName(targetAsset);
+        this.lastAreaDisplayKey = buildAreaDisplayKey(targetAsset);
         
         Gdx.app.log("GameScreen", "=== SAVE STATE APPLIED ===");
         return true;
@@ -1353,18 +1358,56 @@ public class GameScreen extends ScreenAdapter {
     }
 
     private void showAreaTitle(MapAsset targetAsset) {
-        String title = MapAssetName.fromAsset(targetAsset);
-        if (title == null || title.isBlank()) {
-            title = targetAsset.name().replace('_', ' ');
+        String areaName = resolveAreaName(targetAsset);
+        String variation = resolveAreaVariation(targetAsset);
+        String title = variation == null || variation.isBlank()
+            ? areaName
+            : areaName + " " + variation;
+        String displayKey = buildAreaDisplayKey(targetAsset);
+
+        // Skip duplicate transitions within the same named area + variation.
+        if (displayKey != null && displayKey.equals(lastAreaDisplayKey)) {
+            return;
         }
 
-        boolean shouldPlaySfx = lastAreaTitleForSfx != null && !lastAreaTitleForSfx.equals(title);
+        boolean shouldPlaySfx = lastAreaNameForSfx != null && !lastAreaNameForSfx.equals(areaName);
         this.activeAreaTitle = title;
         this.areaTitleTimer = AREA_TITLE_DURATION_SECONDS;
         if (shouldPlaySfx) {
             audioService.onEvent(AudioEventType.AREA_NAME_DISPLAY);
         }
-        this.lastAreaTitleForSfx = title;
+        this.lastAreaNameForSfx = areaName;
+        this.lastAreaDisplayKey = displayKey;
+    }
+
+    private String resolveAreaName(MapAsset targetAsset) {
+        MapAssetName mapped = MapAssetName.fromAssetEntry(targetAsset);
+        if (mapped != null && mapped.areaName() != null && !mapped.areaName().isBlank()) {
+            return mapped.areaName();
+        }
+        String fallback = MapAssetName.fromAsset(targetAsset);
+        if (fallback != null && !fallback.isBlank()) {
+            return fallback;
+        }
+        return targetAsset.name().replace('_', ' ');
+    }
+
+    private String resolveAreaVariation(MapAsset targetAsset) {
+        MapAssetName mapped = MapAssetName.fromAssetEntry(targetAsset);
+        if (mapped == null) {
+            return null;
+        }
+        String variation = mapped.variationName();
+        return variation == null || variation.isBlank() ? null : variation;
+    }
+
+    private String buildAreaDisplayKey(MapAsset targetAsset) {
+        String areaName = resolveAreaName(targetAsset);
+        String variation = resolveAreaVariation(targetAsset);
+        if (variation == null) {
+            return areaName;
+        }
+        return areaName + "|" + variation;
     }
 
     private void renderAreaTitle(float delta) {
