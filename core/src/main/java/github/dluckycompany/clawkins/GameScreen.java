@@ -22,7 +22,6 @@ import com.badlogic.gdx.maps.tiled.TiledMap;
 import com.badlogic.gdx.math.Rectangle;
 import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.scenes.scene2d.Stage;
-import com.badlogic.gdx.scenes.scene2d.ui.Table;
 import com.badlogic.gdx.utils.Disposable;
 import com.badlogic.gdx.utils.viewport.FitViewport;
 import com.badlogic.gdx.utils.viewport.Viewport;
@@ -157,6 +156,7 @@ public class GameScreen extends ScreenAdapter {
     // Inventory system - Virtual coordinate system (800x600)
     private final Stage inventoryStage;
     private final Stage hudStage;
+    private final Stage cheatConsoleStage;
     private final HudWallet hudWallet;
     private final BitmapFont uiFont;
     private final BitmapFont areaTitleFont;
@@ -201,6 +201,10 @@ public class GameScreen extends ScreenAdapter {
     private String lastAreaDisplayKey;
 
     private SaveState pendingSaveState;
+    
+    // Cheat console system for developer debugging
+    private github.dluckycompany.clawkins.debug.CheatCodeManager cheatCodeManager;
+    private github.dluckycompany.clawkins.debug.CheatConsoleOverlay cheatConsoleOverlay;
     
     // Virtual UI resolution (constant, independent of physical screen)
     private static final float VIRTUAL_UI_WIDTH = 800f;
@@ -257,6 +261,7 @@ public class GameScreen extends ScreenAdapter {
         // Inventory system initialization - Fixed virtual UI resolution
         this.inventoryStage = new Stage(new FitViewport(VIRTUAL_UI_WIDTH, VIRTUAL_UI_HEIGHT));
         this.hudStage = new Stage(new FitViewport(VIRTUAL_UI_WIDTH, VIRTUAL_UI_HEIGHT));
+        this.cheatConsoleStage = new Stage(new FitViewport(VIRTUAL_UI_WIDTH, VIRTUAL_UI_HEIGHT));
         this.shapeRenderer = new ShapeRenderer();
         this.uiFont = new BitmapFont();
         this.areaTitleFont = createAreaTitleFont();
@@ -268,15 +273,9 @@ public class GameScreen extends ScreenAdapter {
         this.lastAreaDisplayKey = null;
         this.sideMenuOverlay = new MainSideMenuOverlay(inventoryStage, battleOverlay.getSkin(), uiFont, audioService);
         this.hudWallet = new HudWallet(playerBattleState.getWallet(), uiFont);
-        this.hudWallet.setPosition(10, 10);
-        this.hudWallet.pack(); // Size the label to fit its content
         
-        // Create root table for HUD wallet with fixed virtual coordinates
-        Table hudRoot = new Table();
-        hudRoot.setFillParent(true);
-        hudRoot.top().left();
-        hudRoot.add(hudWallet);
-        this.hudStage.addActor(hudRoot);
+        // Note: HUD wallet is kept for potential future use but not displayed
+        // Money can be viewed in the inventory screen
 
         // Tiled map services
         this.tiledService = new TiledService(assetService);
@@ -297,6 +296,16 @@ public class GameScreen extends ScreenAdapter {
             audioService.onEvent(AudioEventType.MAP_CHANGED);
         };
         this.tiledService.setMapChangeConsumer(renderConsumer.andThen(cameraConsumer).andThen(moveConsumer).andThen(enemyConsumer).andThen(transitionConsumer).andThen(audioConsumer));
+        
+        // Initialize cheat console system
+        this.cheatCodeManager = new github.dluckycompany.clawkins.debug.CheatCodeManager(playerBattleState);
+        this.cheatConsoleOverlay = new github.dluckycompany.clawkins.debug.CheatConsoleOverlay(cheatConsoleStage, cheatCodeManager, uiFont, battleOverlay.getSkin());
+        
+        // Set up callback to update HUD when money changes via cheats
+        this.cheatCodeManager.setOnMoneyChanged(() -> {
+            hudWallet.updateDisplay();
+            Gdx.app.log("GameScreen", "HUD wallet updated after cheat: " + playerBattleState.getWallet().getMoney());
+        });
     }
 
     @Override
@@ -446,8 +455,29 @@ public class GameScreen extends ScreenAdapter {
         // after exiting CLAWKINS/SETTINGS and closing the sidebar.
         isPaused = shouldPauseForUi();
 
+        // Handle F12 cheat console toggle (before other input processing)
+        if (Gdx.input.isKeyJustPressed(Input.Keys.F12)) {
+            cheatConsoleOverlay.toggle();
+        }
+        
+        // Handle cheat console input when open
+        boolean cheatConsoleHandledInput = cheatConsoleOverlay.handleInput();
+        
+        // Update cheat console
+        cheatConsoleOverlay.update(uiDelta);
+        
+        // Update player position for whereami cheat
+        Entity playerEntity = findPlayerEntity();
+        if (playerEntity != null) {
+            Transform playerTransform = Transform.MAPPER.get(playerEntity);
+            if (playerTransform != null) {
+                Vector2 pos = playerTransform.getPosition();
+                cheatCodeManager.updatePlayerPosition(resolveCurrentMapKey(), pos.x, pos.y);
+            }
+        }
+
         // Don't update game state when paused (inventory or other overlays using isPaused flag)
-        if (isPaused) {
+        if (isPaused || cheatConsoleOverlay.isVisible()) {
             delta = 0f; // Skip time advancement
         }
         
@@ -456,7 +486,7 @@ public class GameScreen extends ScreenAdapter {
 
         // Handle side-menu and submenu navigation while in exploration.
         if (!battleService.hasBattleSession() && !interactionSystem.isDialogueVisible() && !merchantShopVisible
-                && !mapTransitionFade.isTransitioning()) {
+                && !mapTransitionFade.isTransitioning() && !cheatConsoleOverlay.isVisible()) {
             MainSideMenuOverlay.Action menuAction = sideMenuOverlay.handleInput();
             switch (menuAction) {
                 case OPEN_CLAWKINS -> openTeamViewerSubmenu();
@@ -544,6 +574,11 @@ public class GameScreen extends ScreenAdapter {
             mapTransitionFade.render(batch);
         }
         renderAreaTitle(uiDelta);
+        
+        // Render cheat console overlay (always on top, independent stage)
+        if (cheatConsoleOverlay.isVisible()) {
+            renderUIWithViewport(cheatConsoleStage, uiDelta);
+        }
     }
 
     /**
@@ -620,9 +655,13 @@ public class GameScreen extends ScreenAdapter {
         // HUD stage: maps physical screen to virtual 800x600 coordinate space  
         hudStage.getViewport().update(width, height, true);
         
+        // Cheat console stage: maps physical screen to virtual 800x600 coordinate space
+        cheatConsoleStage.getViewport().update(width, height, true);
+        
         // Force camera update to recalculate projection matrix
         inventoryStage.getCamera().update();
         hudStage.getCamera().update();
+        cheatConsoleStage.getCamera().update();
     }
 
     @Override
@@ -643,6 +682,9 @@ public class GameScreen extends ScreenAdapter {
         if (hudStage != null) {
             hudStage.dispose();
         }
+        if (cheatConsoleStage != null) {
+            cheatConsoleStage.dispose();
+        }
         if (uiFont != null) {
             uiFont.dispose();
         }
@@ -652,6 +694,9 @@ public class GameScreen extends ScreenAdapter {
         if (shapeRenderer != null) {
             shapeRenderer.dispose();
         }
+        if (cheatConsoleOverlay != null) {
+            cheatConsoleOverlay.dispose();
+        }
     }
 
     private void syncSystemStates() {
@@ -660,15 +705,16 @@ public class GameScreen extends ScreenAdapter {
         boolean merchantLocked = merchantShopVisible;
         boolean mapTransitionLocked = mapTransitionFade.isTransitioning();
         boolean menuLocked = sideMenuOverlay.isBlockingGameplay() || teamViewerVisible;
-        boolean shouldEnableExploration = !battleLocked && !dialogueLocked && !merchantLocked && !mapTransitionLocked && !menuLocked;
+        boolean cheatConsoleLocked = cheatConsoleOverlay.isVisible();
+        boolean shouldEnableExploration = !battleLocked && !dialogueLocked && !merchantLocked && !mapTransitionLocked && !menuLocked && !cheatConsoleLocked;
         if (shouldEnableExploration == explorationSystemsEnabled) {
-            interactionSystem.setProcessing(!battleLocked && !merchantLocked && !menuLocked);
+            interactionSystem.setProcessing(!battleLocked && !merchantLocked && !menuLocked && !cheatConsoleLocked);
             return;
         }
 
         explorationSystemsEnabled = shouldEnableExploration;
         engine.getSystem(PlayerInputSystem.class).setProcessing(shouldEnableExploration);
-        interactionSystem.setProcessing(!battleLocked && !merchantLocked && !menuLocked);
+        interactionSystem.setProcessing(!battleLocked && !merchantLocked && !menuLocked && !cheatConsoleLocked);
         engine.getSystem(MoveSystem.class).setProcessing(shouldEnableExploration);
         engine.getSystem(EncounterDetectionSystem.class).setProcessing(shouldEnableExploration);
         mapTransitionSystem.setProcessing(shouldEnableExploration);
@@ -1445,7 +1491,7 @@ public class GameScreen extends ScreenAdapter {
     }
 
     private boolean shouldPauseForUi() {
-        return sideMenuOverlay.isBlockingGameplay() || teamViewerVisible || merchantShopVisible;
+        return sideMenuOverlay.isBlockingGameplay() || teamViewerVisible || merchantShopVisible || cheatConsoleOverlay.isVisible();
     }
 
     // ============================================================
