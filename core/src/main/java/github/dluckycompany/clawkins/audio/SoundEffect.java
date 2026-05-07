@@ -5,5 +5,6 @@ public enum SoundEffect {
     CANCEL,
     HIT,
     ENCOUNTER,
+    ENEMY_ALERT,
     AREA_NAME_DISPLAY
 }

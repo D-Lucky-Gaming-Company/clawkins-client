@@ -34,10 +34,11 @@ import java.util.List;
  * you'd replace this with a PhysicMoveSystem that sets body velocity instead.
  */
 public class MoveSystem extends IteratingSystem {
+    private static final float MAX_SWEEP_STEP_DISTANCE = 0.08f;
     private static final float HITBOX_WIDTH_FACTOR = 0.26f;
     private static final float HITBOX_HEIGHT_FACTOR = 0.22f;
-    private static final float ENEMY_HITBOX_WIDTH_FACTOR = 0.32f;
-    private static final float ENEMY_HITBOX_HEIGHT_FACTOR = 0.33f;
+    private static final float ENEMY_HITBOX_WIDTH_FACTOR = 0.28f;
+    private static final float ENEMY_HITBOX_HEIGHT_FACTOR = 0.24f;
     private static final float TILE_HITBOX_WIDTH_FACTOR = 0.80f;
     private static final float TILE_HITBOX_HEIGHT_FACTOR = 0.45f;
     private static final float SOLID_HITBOX_WIDTH_FACTOR = 0.80f;
@@ -79,19 +80,39 @@ public class MoveSystem extends IteratingSystem {
         Vector2 position = transform.getPosition();
         Vector2 size = transform.getSize();
 
-        float targetX = position.x + direction.x * speed * deltaTime;
-        float targetY = position.y + direction.y * speed * deltaTime;
+        float moveX = direction.x * speed * deltaTime;
+        float moveY = direction.y * speed * deltaTime;
+        int sweepSteps = sweepStepsFor(moveX, moveY);
+        if (sweepSteps <= 1) {
+            applySingleStep(entity, position, size, moveX, moveY);
+            return;
+        }
 
-        // Resolve X and Y independently so sliding against borders feels natural.
-        targetX = clampX(targetX, size.x, entity);
+        float stepX = moveX / sweepSteps;
+        float stepY = moveY / sweepSteps;
+        for (int i = 0; i < sweepSteps; i++) {
+            applySingleStep(entity, position, size, stepX, stepY);
+        }
+    }
+
+    private void applySingleStep(Entity entity, Vector2 position, Vector2 size, float moveX, float moveY) {
+        float targetX = clampX(position.x + moveX, size.x, entity);
         if (!isBlocked(targetX, position.y, size.x, size.y, entity)) {
             position.x = targetX;
         }
 
-        targetY = clampY(targetY, size.y, entity);
+        float targetY = clampY(position.y + moveY, size.y, entity);
         if (!isBlocked(position.x, targetY, size.x, size.y, entity)) {
             position.y = targetY;
         }
+    }
+
+    private static int sweepStepsFor(float moveX, float moveY) {
+        float longestAxisDistance = Math.max(Math.abs(moveX), Math.abs(moveY));
+        if (longestAxisDistance <= MAX_SWEEP_STEP_DISTANCE) {
+            return 1;
+        }
+        return Math.max(1, (int) Math.ceil(longestAxisDistance / MAX_SWEEP_STEP_DISTANCE));
     }
 
     public void setMap(TiledMap tiledMap) {

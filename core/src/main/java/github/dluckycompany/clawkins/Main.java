@@ -75,6 +75,7 @@ public class Main extends Game {
         audioService.registerSound(SoundEffect.CANCEL, "audio/sfx/cancel.wav");
         audioService.registerSound(SoundEffect.HIT, "audio/sfx/hit.wav");
         audioService.registerSound(SoundEffect.ENCOUNTER, "audio/sfx/encounter.wav");
+        audioService.registerSound(SoundEffect.ENEMY_ALERT, "audio/soundEffects/SFX_MayGenko/square channel SFX/ba-da 1.ogg");
         audioService.registerSound(SoundEffect.AREA_NAME_DISPLAY, "audio/soundEffects/mapTransition/area_name.mp3");
         this.glProfiler = new GLProfiler(Gdx.graphics);
         this.glProfiler.enable();

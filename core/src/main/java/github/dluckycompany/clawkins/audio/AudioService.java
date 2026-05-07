@@ -17,6 +17,9 @@ public class AudioService implements Disposable {
     // Per-SFX multiplier for map area title sound.
     // Final loudness = soundVolume * AREA_NAME_DISPLAY_VOLUME_MULTIPLIER.
     private static final float AREA_NAME_DISPLAY_VOLUME_MULTIPLIER = 0.45f;
+    // Per-SFX multiplier for enemy alert sound.
+    // Final loudness = soundVolume * ENEMY_ALERT_VOLUME_MULTIPLIER.
+    private static final float ENEMY_ALERT_VOLUME_MULTIPLIER = 0.40f;
 
     private final Map<MusicTrack, String> musicPaths = new EnumMap<>(MusicTrack.class);
     private final Map<SoundEffect, String> soundPaths = new EnumMap<>(SoundEffect.class);
@@ -103,6 +106,7 @@ public class AudioService implements Disposable {
             case MAP_CHANGED -> playCurrentMapMusic(true);
             case AREA_NAME_DISPLAY -> playSound(SoundEffect.AREA_NAME_DISPLAY);
             case ENCOUNTER_STARTED -> playSound(SoundEffect.ENCOUNTER);
+            case ENEMY_ALERT_STARTED -> playSound(SoundEffect.ENEMY_ALERT);
             case BATTLE_STARTED -> playMusic(MusicTrack.BATTLE, true);
             case BATTLE_VICTORY -> playMusic(MusicTrack.VICTORY, false);
             case BATTLE_DEFEAT -> playMusic(MusicTrack.DEFEAT, false);
@@ -177,6 +181,9 @@ public class AudioService implements Disposable {
         float base = effectiveSoundVolume();
         if (effect == SoundEffect.AREA_NAME_DISPLAY) {
             return base * AREA_NAME_DISPLAY_VOLUME_MULTIPLIER;
+        }
+        if (effect == SoundEffect.ENEMY_ALERT) {
+            return base * ENEMY_ALERT_VOLUME_MULTIPLIER;
         }
         return base;
     }
