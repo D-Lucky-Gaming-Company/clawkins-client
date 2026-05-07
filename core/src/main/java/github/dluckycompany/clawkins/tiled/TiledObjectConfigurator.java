@@ -9,6 +9,7 @@ import com.badlogic.ashley.core.Family;
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.g2d.TextureRegion;
+import com.badlogic.gdx.maps.MapObject;
 import com.badlogic.gdx.maps.MapProperties;
 import com.badlogic.gdx.maps.tiled.TiledMapTile;
 import com.badlogic.gdx.maps.tiled.objects.TiledMapTileMapObject;
@@ -53,6 +54,7 @@ public class TiledObjectConfigurator {
         INTERACTIBLE,
         MERCHANT,
         ENEMY,
+        BARRIER,
         UNDEFINED
     }
 
@@ -63,9 +65,15 @@ public class TiledObjectConfigurator {
     }
 
     /**
-     * Called by TiledService for each object in the "objects" layer.
+     * Called by TiledService for each object in map object layers.
      * Creates and configures an entity from the map object's properties.
      */
+    public void onLoadObject(MapObject mapObject) {
+        if (mapObject instanceof TiledMapTileMapObject tileMapObject) {
+            onLoadObject(tileMapObject);
+        }
+    }
+
     public void onLoadObject(TiledMapTileMapObject tileMapObject) {
         Gdx.app.log(TAG, "onLoadObject called for: " + tileMapObject.getName() + " (type: " + tileMapObject.getProperties().get("type") + ")");
         
@@ -174,11 +182,25 @@ public class TiledObjectConfigurator {
                 boolean canChase = getBooleanProperty(tileMapObject, "canChase", true);
                 float roamingSpeed = getFloatProperty(tileMapObject, "roamingSpeed", 1.5f);
                 float chasingSpeed = getFloatProperty(tileMapObject, "chasingSpeed", 3.0f);
-                float sightRange = getFloatProperty(tileMapObject, "sightRange", 6.0f);
+                float sightRange = getFloatProperty(tileMapObject, "sightRange", 4.0f);
                 float sightConeDotThreshold = getFloatProperty(tileMapObject, "sightConeDotThreshold", 0.5f);
+                float alertPauseDuration = getFloatProperty(tileMapObject, "alertPauseDuration", 0.8f);
+                boolean isTerritorial = getBooleanProperty(tileMapObject, "isTerritorial", false);
+                float territorialRoamRadius = getFloatProperty(tileMapObject, "territorialRoamRadius", 3.0f);
+                float territorialChaseDistance = getFloatProperty(tileMapObject, "territorialChaseDistance", 6.0f);
                 String facingDirection = getStringProperty(tileMapObject, "facingDirection", "SOUTH");
 
-                Enemy enemy = new Enemy(canRoam, canChase, roamingSpeed, chasingSpeed, sightRange, sightConeDotThreshold);
+                Enemy enemy = new Enemy(
+                        canRoam,
+                        canChase,
+                        roamingSpeed,
+                        chasingSpeed,
+                        sightRange,
+                        sightConeDotThreshold,
+                        alertPauseDuration,
+                        isTerritorial,
+                        territorialRoamRadius,
+                        territorialChaseDistance);
                 enemy.setFacingDirection(parseFacingDirection(facingDirection));
                 entity.add(enemy);
                 entity.add(new Move(0)); // Speed is managed by EnemySystem
@@ -239,6 +261,10 @@ public class TiledObjectConfigurator {
                         true  // isMerchant = true
                 ));
                 Gdx.app.debug(TAG, "Configured as MERCHANT: " + objectName + " collision=" + hasCollision);
+            }
+            case BARRIER -> {
+                // Barrier collision is handled via map barrier objects, no entity component required.
+                Gdx.app.debug(TAG, "Configured as BARRIER (shape-based map collision)");
             }
             case PROP -> {
                 // Reserved type for future use, intentionally no behavior for now.
@@ -316,6 +342,7 @@ public class TiledObjectConfigurator {
             case "ENEMY", "ENCOUNTERZONE" -> ObjectType.ENEMY;
             case "INTERACTIBLE" -> ObjectType.INTERACTIBLE;
             case "MERCHANT" -> ObjectType.MERCHANT;
+            case "BARRIER" -> ObjectType.BARRIER;
             default -> ObjectType.UNDEFINED;
         };
     }
