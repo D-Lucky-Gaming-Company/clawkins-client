@@ -48,6 +48,7 @@ This update adds an RPG-style "notice/alert" pause before enemies start chasing,
   - Small: `0.4` to `0.7` (snappier enemies)
   - Medium: `0.8` to `1.2` (classic RPG notice)
   - High: `1.5+` (dramatic telegraph)
+- Tiled authoring rule: if an object is already class `Enemy`, write enemy fields directly on that object (`canRoam`, `canChase`, `isTerritorial`, etc.). Do **not** add a nested `properties` class field of type `Enemy`.
 - If the alert sound file is missing, current audio service behavior remains safe no-op.
 
 ## Validation
