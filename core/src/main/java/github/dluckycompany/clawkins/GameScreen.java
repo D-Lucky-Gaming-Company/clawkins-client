@@ -359,6 +359,7 @@ public class GameScreen extends ScreenAdapter {
         interactionSystem.setOnMerchantInteraction(() -> {
             openMerchantShop();
         });
+        registerSpecialInteractions();
         
         // Create the full-screen inventory screen and cache it
         this.inventoryScreen = new InventoryScreen(game, playerBattleState.getInventory(), this);
@@ -390,6 +391,17 @@ public class GameScreen extends ScreenAdapter {
             return;
         }
         this.pendingSaveState = saveState;
+    }
+
+    private void registerSpecialInteractions() {
+        // Register object-id based handlers here.
+        // Flow: dialogue (if any) always finishes first, then this handler executes.
+        //
+        // Example:
+        // interactionSystem.registerSpecialInteraction("chest_tutorial_01", context -> {
+        //     playerBattleState.getWallet().addMoney(100);
+        //     hudWallet.updateDisplay();
+        // });
     }
 
     private void ensurePlayerEntityPresentAfterReturn() {

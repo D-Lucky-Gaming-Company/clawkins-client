@@ -1,10 +1,15 @@
 package github.dluckycompany.clawkins.system;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.function.Consumer;
 import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -58,6 +63,10 @@ public class InteractionSystem extends EntitySystem {
     private Runnable onMerchantInteraction = () -> {};
     private boolean isMerchantMode = false;
     private Supplier<List<Clawkin>> clawkinPartySupplier = List::of;
+    private final Map<String, Consumer<SpecialInteractionContext>> specialInteractionByObjectId = new HashMap<>();
+    private Consumer<SpecialInteractionContext> pendingSpecialInteraction;
+    private SpecialInteractionContext pendingSpecialInteractionContext;
+    private final Set<Entity> activeTrippableTargets = Collections.newSetFromMap(new IdentityHashMap<>());
 
     @Override
     public void addedToEngine(Engine engine) {
@@ -69,6 +78,7 @@ public class InteractionSystem extends EntitySystem {
     @Override
     public void removedFromEngine(Engine engine) {
         super.removedFromEngine(engine);
+        activeTrippableTargets.clear();
         dialogueSoundManager.dispose();
     }
 
@@ -90,6 +100,10 @@ public class InteractionSystem extends EntitySystem {
             return;
         }
 
+        if (processTrippableInteraction()) {
+            return;
+        }
+
         if (!isInteractionPressed()) {
             return;
         }
@@ -100,25 +114,7 @@ public class InteractionSystem extends EntitySystem {
         }
 
         Entity playerEntity = players.first();
-        String playerName = resolvePlayerName(playerEntity);
-        Interactible interactible = Interactible.MAPPER.get(target);
-        
-        interactible.incrementInteractionCount();
-        
-        // Check if this is a merchant interaction
-        if (interactible.isMerchant()) {
-            isMerchantMode = true;
-            onMerchantInteraction.run();
-            return;
-        }
-        
-        String dialogueSource = resolveDialogueSource(interactible);
-        List<DialogueEntry> resolvedFlow = resolveDialogueFlow(interactible, playerName, dialogueSource);
-        if (resolvedFlow.isEmpty()) {
-            return;
-        }
-
-        showDialogue(resolvedFlow, interactible.getDialoguePosition());
+        startInteraction(playerEntity, target);
     }
 
     public boolean isDialogueVisible() {
@@ -151,6 +147,26 @@ public class InteractionSystem extends EntitySystem {
 
     public void closeMerchant() {
         isMerchantMode = false;
+    }
+
+    public void registerSpecialInteraction(String objectId, Consumer<SpecialInteractionContext> specialInteraction) {
+        String normalizedObjectId = normalizeObjectId(objectId);
+        if (normalizedObjectId.isEmpty() || specialInteraction == null) {
+            return;
+        }
+        specialInteractionByObjectId.put(normalizedObjectId, specialInteraction);
+    }
+
+    public void unregisterSpecialInteraction(String objectId) {
+        String normalizedObjectId = normalizeObjectId(objectId);
+        if (normalizedObjectId.isEmpty()) {
+            return;
+        }
+        specialInteractionByObjectId.remove(normalizedObjectId);
+    }
+
+    public void clearSpecialInteractions() {
+        specialInteractionByObjectId.clear();
     }
 
     private Entity findFacingTarget() {
@@ -239,6 +255,97 @@ public class InteractionSystem extends EntitySystem {
                 || Gdx.input.isKeyJustPressed(Input.Keys.ENTER);
     }
 
+    private boolean processTrippableInteraction() {
+        if (players == null || players.size() == 0 || interactibles == null || interactibles.size() == 0) {
+            activeTrippableTargets.clear();
+            return false;
+        }
+
+        Entity playerEntity = players.first();
+        Transform playerTransform = Transform.MAPPER.get(playerEntity);
+        if (playerTransform == null) {
+            activeTrippableTargets.clear();
+            return false;
+        }
+
+        Vector2 playerPoint = interactionOriginOf(playerTransform);
+        Set<Entity> currentlyInsideTrippableTargets = Collections.newSetFromMap(new IdentityHashMap<>());
+        Entity enteredTarget = null;
+
+        for (Entity entity : interactibles) {
+            Interactible interactible = Interactible.MAPPER.get(entity);
+            Transform targetTransform = Transform.MAPPER.get(entity);
+            if (interactible == null || targetTransform == null || !interactible.isTrippable()) {
+                continue;
+            }
+
+            Rectangle targetBounds = new Rectangle(
+                    targetTransform.getPosition().x,
+                    targetTransform.getPosition().y,
+                    targetTransform.getSize().x,
+                    targetTransform.getSize().y
+            );
+            if (!targetBounds.contains(playerPoint)) {
+                continue;
+            }
+
+            currentlyInsideTrippableTargets.add(entity);
+            if (!activeTrippableTargets.contains(entity) && enteredTarget == null) {
+                enteredTarget = entity;
+            }
+        }
+
+        activeTrippableTargets.retainAll(currentlyInsideTrippableTargets);
+        activeTrippableTargets.addAll(currentlyInsideTrippableTargets);
+
+        if (enteredTarget == null) {
+            return false;
+        }
+
+        startInteraction(playerEntity, enteredTarget);
+        return true;
+    }
+
+    private void startInteraction(Entity playerEntity, Entity targetEntity) {
+        if (playerEntity == null || targetEntity == null) {
+            return;
+        }
+
+        Interactible interactible = Interactible.MAPPER.get(targetEntity);
+        if (interactible == null) {
+            return;
+        }
+
+        String playerName = resolvePlayerName(playerEntity);
+        interactible.incrementInteractionCount();
+
+        Consumer<SpecialInteractionContext> specialInteraction = resolveSpecialInteraction(interactible);
+        SpecialInteractionContext specialContext = new SpecialInteractionContext(
+                playerEntity,
+                targetEntity,
+                safeText(interactible.getObjectId(), ""),
+                safeText(interactible.getObjectName(), "Object"),
+                interactible.getInteractionCount()
+        );
+
+        // Merchant interactions stay key-compatible with existing UI flow.
+        if (interactible.isMerchant()) {
+            isMerchantMode = true;
+            onMerchantInteraction.run();
+            return;
+        }
+
+        String dialogueSource = resolveDialogueSource(interactible);
+        List<DialogueEntry> resolvedFlow = resolveDialogueFlow(interactible, playerName, dialogueSource);
+        if (resolvedFlow.isEmpty()) {
+            runSpecialInteraction(specialInteraction, specialContext);
+            return;
+        }
+
+        queueSpecialInteractionAfterDialogue(specialInteraction, specialContext);
+        showDialogue(resolvedFlow, interactible.getDialoguePosition());
+    }
+
     private void showDialogue(List<DialogueEntry> flow, Interactible.DialoguePosition position) {
         this.dialogueFlow = flow;
         this.dialogueFlowIndex = 0;
@@ -248,6 +355,9 @@ public class InteractionSystem extends EntitySystem {
     }
 
     private void hideDialogue() {
+        Consumer<SpecialInteractionContext> specialInteractionToRun = pendingSpecialInteraction;
+        SpecialInteractionContext specialInteractionContextToRun = pendingSpecialInteractionContext;
+
         this.dialogueVisible = false;
         this.dialogueFlow = List.of();
         this.dialogueFlowIndex = 0;
@@ -257,6 +367,11 @@ public class InteractionSystem extends EntitySystem {
         this.dialogueVisibleChars = 0;
         this.typewriterCarry = 0f;
         dialogueSoundManager.stop();
+
+        pendingSpecialInteraction = null;
+        pendingSpecialInteractionContext = null;
+
+        runSpecialInteraction(specialInteractionToRun, specialInteractionContextToRun);
     }
 
     private void tickTypewriter(float deltaTime) {
@@ -538,6 +653,47 @@ public class InteractionSystem extends EntitySystem {
         return profile.getPlayerName();
     }
 
+    private Consumer<SpecialInteractionContext> resolveSpecialInteraction(Interactible interactible) {
+        String objectId = interactible == null ? null : interactible.getObjectId();
+        String normalizedObjectId = normalizeObjectId(objectId);
+        if (normalizedObjectId.isEmpty()) {
+            return null;
+        }
+        return specialInteractionByObjectId.get(normalizedObjectId);
+    }
+
+    private static String normalizeObjectId(String objectId) {
+        if (objectId == null) {
+            return "";
+        }
+        return objectId.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private void queueSpecialInteractionAfterDialogue(
+            Consumer<SpecialInteractionContext> specialInteraction,
+            SpecialInteractionContext context) {
+        pendingSpecialInteraction = specialInteraction;
+        pendingSpecialInteractionContext = context;
+    }
+
+    private void runSpecialInteraction(
+            Consumer<SpecialInteractionContext> specialInteraction,
+            SpecialInteractionContext context) {
+        if (specialInteraction == null || context == null) {
+            return;
+        }
+
+        try {
+            specialInteraction.accept(context);
+        } catch (Exception ex) {
+            Gdx.app.error(
+                    InteractionSystem.class.getSimpleName(),
+                    "Special interaction failed for ObjectId=" + context.objectId(),
+                    ex
+            );
+        }
+    }
+
     private record DialogueEntry(String name, String text) {
     }
 
@@ -549,6 +705,21 @@ public class InteractionSystem extends EntitySystem {
             }
             String resolved = objectNamesById.get(token.toLowerCase(Locale.ROOT));
             return resolved == null ? "{" + token + "}" : resolved;
+        }
+    }
+
+    public record SpecialInteractionContext(
+            Entity playerEntity,
+            Entity targetEntity,
+            String objectId,
+            String objectName,
+            int interactionCount) {
+        public SpecialInteractionContext {
+            Objects.requireNonNull(playerEntity, "playerEntity");
+            Objects.requireNonNull(targetEntity, "targetEntity");
+            objectId = objectId == null ? "" : objectId;
+            objectName = objectName == null || objectName.isBlank() ? "Object" : objectName;
+            interactionCount = Math.max(0, interactionCount);
         }
     }
 }

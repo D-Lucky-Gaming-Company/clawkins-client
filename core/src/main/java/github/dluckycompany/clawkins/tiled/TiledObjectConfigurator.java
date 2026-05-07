@@ -206,6 +206,7 @@ public class TiledObjectConfigurator {
                 }
                 String dialogueDirectory = getStringProperty(tileMapObject, "DialogueDirectory", "...");
                 boolean hasCollision = getBooleanProperty(tileMapObject, "hasCollision", true);
+                boolean isTrippable = getBooleanProperty(tileMapObject, "isTrippable", false);
                 String posRaw = getStringProperty(tileMapObject, "DialoguePosition", "BOTTOM");
                 Interactible.DialoguePosition dialoguePosition = parseDialoguePosition(posRaw);
 
@@ -214,7 +215,9 @@ public class TiledObjectConfigurator {
                     objectId,
                         dialogueDirectory,
                         hasCollision,
-                        dialoguePosition
+                        dialoguePosition,
+                        false,
+                        isTrippable
                 ));
                 Gdx.app.debug(TAG, "Configured as INTERACTIBLE: " + objectName + " collision=" + hasCollision);
             }
@@ -227,6 +230,7 @@ public class TiledObjectConfigurator {
                 }
                 String dialogueDirectory = getStringProperty(tileMapObject, "DialogueDirectory", "Welcome!");
                 boolean hasCollision = getBooleanProperty(tileMapObject, "hasCollision", true);
+                boolean isTrippable = getBooleanProperty(tileMapObject, "isTrippable", false);
                 String posRaw = getStringProperty(tileMapObject, "DialoguePosition", "BOTTOM");
                 Interactible.DialoguePosition dialoguePosition = parseDialoguePosition(posRaw);
 
@@ -236,7 +240,8 @@ public class TiledObjectConfigurator {
                         dialogueDirectory,
                         hasCollision,
                         dialoguePosition,
-                        true  // isMerchant = true
+                        true,  // isMerchant = true
+                        isTrippable
                 ));
                 Gdx.app.debug(TAG, "Configured as MERCHANT: " + objectName + " collision=" + hasCollision);
             }
