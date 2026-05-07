@@ -32,6 +32,7 @@ import github.dluckycompany.clawkins.component.Interactible;
 import github.dluckycompany.clawkins.component.Move;
 import github.dluckycompany.clawkins.component.Player;
 import github.dluckycompany.clawkins.component.PlayerProfile;
+import github.dluckycompany.clawkins.component.Prop;
 import github.dluckycompany.clawkins.component.Tiled;
 import github.dluckycompany.clawkins.component.Transform;
 import github.dluckycompany.clawkins.encounter.EncounterTrigger;
@@ -314,11 +315,35 @@ public class TiledObjectConfigurator {
                 Gdx.app.debug(TAG, "Configured as BARRIER (shape-based map collision)");
             }
             case PROP -> {
-                // Reserved type for future use, intentionally no behavior for now.
+                String objectIdFallback = buildPropObjectIdFallback(tileMapObject);
+                String objectId = getStringProperty(tileMapObject, "ObjectId", objectIdFallback);
+                if (objectId == null || objectId.isBlank()) {
+                    objectId = objectIdFallback;
+                }
+                applyPropFlipFromTileObject(tileMapObject, entity);
+                entity.add(new Prop(objectId));
+                Gdx.app.debug(TAG, "Configured as PROP (non-interactible cosmetic object)");
             }
             default -> Gdx.app.debug(TAG, "Unknown ObjectType for object name: " + tileMapObject.getName());
         }
         return true;
+    }
+
+    private static void applyPropFlipFromTileObject(TiledMapTileMapObject tileMapObject, Entity entity) {
+        if (tileMapObject == null || entity == null) {
+            return;
+        }
+        Transform transform = Transform.MAPPER.get(entity);
+        if (transform == null) {
+            return;
+        }
+
+        Vector2 scaling = transform.getScaling();
+        float scaleX = Math.max(0.0001f, Math.abs(scaling.x));
+        float scaleY = Math.max(0.0001f, Math.abs(scaling.y));
+
+        scaling.x = tileMapObject.isFlipHorizontally() ? -scaleX : scaleX;
+        scaling.y = tileMapObject.isFlipVertically() ? -scaleY : scaleY;
     }
 
     private boolean configureShapeByType(MapObject mapObject, ObjectType objectType, Entity entity) {
@@ -398,6 +423,13 @@ public class TiledObjectConfigurator {
         return normalizedName + "_" + x + "_" + y;
     }
 
+    private static String buildPropObjectIdFallback(MapObject object) {
+        Rectangle bounds = getObjectBounds(object);
+        int x = Math.round(bounds != null ? bounds.x : 0f);
+        int y = Math.round(bounds != null ? bounds.y : 0f);
+        return "prop_" + x + "_" + y;
+    }
+
     private static ObjectType readObjectType(MapObject object) {
         String rawType = getStringProperty(object, TYPE_KEY, "");
         if (!rawType.isBlank()) {
@@ -433,6 +465,7 @@ public class TiledObjectConfigurator {
             case "INTERACTIBLE" -> ObjectType.INTERACTIBLE;
             case "MERCHANT" -> ObjectType.MERCHANT;
             case "BARRIER" -> ObjectType.BARRIER;
+            case "PROP" -> ObjectType.PROP;
             default -> ObjectType.UNDEFINED;
         };
     }
