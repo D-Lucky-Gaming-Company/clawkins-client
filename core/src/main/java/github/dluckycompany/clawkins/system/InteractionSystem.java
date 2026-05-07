@@ -22,16 +22,23 @@ import com.badlogic.ashley.utils.ImmutableArray;
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input;
 import com.badlogic.gdx.files.FileHandle;
+import com.badlogic.gdx.maps.MapObject;
+import com.badlogic.gdx.maps.objects.CircleMapObject;
+import com.badlogic.gdx.maps.objects.EllipseMapObject;
+import com.badlogic.gdx.maps.objects.PolygonMapObject;
+import com.badlogic.gdx.maps.objects.RectangleMapObject;
 import com.badlogic.gdx.math.Rectangle;
 import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.utils.JsonReader;
 import com.badlogic.gdx.utils.JsonValue;
 
+import github.dluckycompany.clawkins.Main;
 import github.dluckycompany.clawkins.audio.DialogueSoundManager;
 import github.dluckycompany.clawkins.component.Interactible;
 import github.dluckycompany.clawkins.component.Player;
 import github.dluckycompany.clawkins.component.PlayerAnimation;
 import github.dluckycompany.clawkins.component.PlayerProfile;
+import github.dluckycompany.clawkins.component.Tiled;
 import github.dluckycompany.clawkins.component.Transform;
 import github.dluckycompany.clawkins.character.Clawkin;
 import github.dluckycompany.clawkins.encounter.EncounterZone;
@@ -41,6 +48,7 @@ public class InteractionSystem extends EntitySystem {
     private static final float PLAYER_INTERACT_ORIGIN_Y_FACTOR = 0.22f;
     private static final float FACING_DOT_THRESHOLD = 0.6f;
     private static final float TYPEWRITER_CHARS_PER_SECOND = 45f;
+    private static final float TRIPPABLE_REARM_DELAY_SECONDS = 0.25f;
     private static final String DIALOGUE_FLOW_KEY = "DialogueFlow";
     private static final String INTERACTIONS_KEY = "Interactions";
     private static final Pattern PLACEHOLDER_PATTERN = Pattern.compile("\\{([^{}]+)}");
@@ -67,6 +75,7 @@ public class InteractionSystem extends EntitySystem {
     private Consumer<SpecialInteractionContext> pendingSpecialInteraction;
     private SpecialInteractionContext pendingSpecialInteractionContext;
     private final Set<Entity> activeTrippableTargets = Collections.newSetFromMap(new IdentityHashMap<>());
+    private final Map<Entity, Float> trippableRearmTimers = new IdentityHashMap<>();
 
     @Override
     public void addedToEngine(Engine engine) {
@@ -79,6 +88,7 @@ public class InteractionSystem extends EntitySystem {
     public void removedFromEngine(Engine engine) {
         super.removedFromEngine(engine);
         activeTrippableTargets.clear();
+        trippableRearmTimers.clear();
         dialogueSoundManager.dispose();
     }
 
@@ -100,7 +110,7 @@ public class InteractionSystem extends EntitySystem {
             return;
         }
 
-        if (processTrippableInteraction()) {
+        if (processTrippableInteraction(deltaTime)) {
             return;
         }
 
@@ -184,21 +194,25 @@ public class InteractionSystem extends EntitySystem {
         float bestDistance = Float.MAX_VALUE;
 
         for (Entity entity : interactibles) {
+            Interactible interactible = Interactible.MAPPER.get(entity);
+            if (interactible != null && interactible.isTrippable() && activeTrippableTargets.contains(entity)) {
+                continue;
+            }
             Transform t = Transform.MAPPER.get(entity);
-            Rectangle targetBounds = new Rectangle(
-                    t.getPosition().x,
-                    t.getPosition().y,
-                    t.getSize().x,
-                    t.getSize().y
-            );
-            Vector2 targetPoint = closestPointOnRect(playerCenter, targetBounds);
+            if (t == null) {
+                continue;
+            }
+            boolean insideInfluenceArea = isWithinInfluenceArea(entity, playerCenter);
+            Vector2 targetPoint = insideInfluenceArea
+                    ? new Vector2(playerCenter)
+                    : closestPointOnInfluenceArea(entity, playerCenter);
             Vector2 toTarget = targetPoint.sub(playerCenter);
             float distance = toTarget.len();
-            if (distance > INTERACT_RANGE) {
+            if (!insideInfluenceArea && distance > INTERACT_RANGE) {
                 continue;
             }
 
-            if (distance == 0f) {
+            if (!insideInfluenceArea && distance == 0f) {
                 toTarget = centerOf(t).sub(playerCenter);
                 distance = toTarget.len();
                 if (distance == 0f) {
@@ -206,9 +220,11 @@ public class InteractionSystem extends EntitySystem {
                 }
             }
 
-            float dot = toTarget.nor().dot(facing);
-            if (dot < FACING_DOT_THRESHOLD) {
-                continue;
+            if (!insideInfluenceArea) {
+                float dot = toTarget.nor().dot(facing);
+                if (dot < FACING_DOT_THRESHOLD) {
+                    continue;
+                }
             }
 
             if (distance < bestDistance) {
@@ -240,6 +256,90 @@ public class InteractionSystem extends EntitySystem {
         return new Vector2(x, y);
     }
 
+    private static Vector2 closestPointOnInfluenceArea(Entity entity, Vector2 point) {
+        return closestPointOnRect(point, influenceBounds(entity));
+    }
+
+    private static boolean isWithinInfluenceArea(Entity entity, Vector2 point) {
+        Tiled tiled = Tiled.MAPPER.get(entity);
+        if (tiled != null && tiled.getMapObjectRef() != null) {
+            float tiledX = point.x / Main.UNIT_SCALE;
+            float tiledY = point.y / Main.UNIT_SCALE;
+            if (containsPoint(tiled.getMapObjectRef(), tiledX, tiledY)) {
+                return true;
+            }
+        }
+        return influenceBounds(entity).contains(point);
+    }
+
+    private static Rectangle influenceBounds(Entity entity) {
+        Transform transform = Transform.MAPPER.get(entity);
+        Rectangle fallback = new Rectangle(
+                transform.getPosition().x,
+                transform.getPosition().y,
+                transform.getSize().x,
+                transform.getSize().y
+        );
+        Tiled tiled = Tiled.MAPPER.get(entity);
+        if (tiled == null || tiled.getMapObjectRef() == null) {
+            return fallback;
+        }
+
+        Rectangle tiledBounds = mapObjectBounds(tiled.getMapObjectRef());
+        if (tiledBounds == null) {
+            return fallback;
+        }
+        return new Rectangle(
+                tiledBounds.x * Main.UNIT_SCALE,
+                tiledBounds.y * Main.UNIT_SCALE,
+                tiledBounds.width * Main.UNIT_SCALE,
+                tiledBounds.height * Main.UNIT_SCALE
+        );
+    }
+
+    private static Rectangle mapObjectBounds(MapObject mapObject) {
+        if (mapObject instanceof RectangleMapObject rectangleMapObject) {
+            return rectangleMapObject.getRectangle();
+        }
+        if (mapObject instanceof PolygonMapObject polygonMapObject) {
+            return polygonMapObject.getPolygon().getBoundingRectangle();
+        }
+        if (mapObject instanceof CircleMapObject circleMapObject) {
+            float radius = circleMapObject.getCircle().radius;
+            return new Rectangle(
+                    circleMapObject.getCircle().x - radius,
+                    circleMapObject.getCircle().y - radius,
+                    radius * 2f,
+                    radius * 2f
+            );
+        }
+        if (mapObject instanceof EllipseMapObject ellipseMapObject) {
+            return new Rectangle(
+                    ellipseMapObject.getEllipse().x,
+                    ellipseMapObject.getEllipse().y,
+                    ellipseMapObject.getEllipse().width,
+                    ellipseMapObject.getEllipse().height
+            );
+        }
+        return null;
+    }
+
+    private static boolean containsPoint(MapObject mapObject, float x, float y) {
+        if (mapObject instanceof PolygonMapObject polygonMapObject) {
+            return polygonMapObject.getPolygon().contains(x, y);
+        }
+        if (mapObject instanceof RectangleMapObject rectangleMapObject) {
+            return rectangleMapObject.getRectangle().contains(x, y);
+        }
+        if (mapObject instanceof CircleMapObject circleMapObject) {
+            return circleMapObject.getCircle().contains(x, y);
+        }
+        if (mapObject instanceof EllipseMapObject ellipseMapObject) {
+            return ellipseMapObject.getEllipse().contains(x, y);
+        }
+        return false;
+    }
+
     private static Vector2 directionVector(PlayerAnimation.Direction direction) {
         return switch (direction) {
             case NORTH -> new Vector2(0f, 1f);
@@ -255,9 +355,10 @@ public class InteractionSystem extends EntitySystem {
                 || Gdx.input.isKeyJustPressed(Input.Keys.ENTER);
     }
 
-    private boolean processTrippableInteraction() {
+    private boolean processTrippableInteraction(float deltaTime) {
         if (players == null || players.size() == 0 || interactibles == null || interactibles.size() == 0) {
             activeTrippableTargets.clear();
+            trippableRearmTimers.clear();
             return false;
         }
 
@@ -265,6 +366,7 @@ public class InteractionSystem extends EntitySystem {
         Transform playerTransform = Transform.MAPPER.get(playerEntity);
         if (playerTransform == null) {
             activeTrippableTargets.clear();
+            trippableRearmTimers.clear();
             return false;
         }
 
@@ -279,13 +381,7 @@ public class InteractionSystem extends EntitySystem {
                 continue;
             }
 
-            Rectangle targetBounds = new Rectangle(
-                    targetTransform.getPosition().x,
-                    targetTransform.getPosition().y,
-                    targetTransform.getSize().x,
-                    targetTransform.getSize().y
-            );
-            if (!targetBounds.contains(playerPoint)) {
+            if (!isWithinInfluenceArea(entity, playerPoint)) {
                 continue;
             }
 
@@ -295,13 +391,35 @@ public class InteractionSystem extends EntitySystem {
             }
         }
 
-        activeTrippableTargets.retainAll(currentlyInsideTrippableTargets);
-        activeTrippableTargets.addAll(currentlyInsideTrippableTargets);
+        if (!activeTrippableTargets.isEmpty()) {
+            List<Entity> rearmedTargets = new ArrayList<>();
+            for (Entity activeTarget : activeTrippableTargets) {
+                if (currentlyInsideTrippableTargets.contains(activeTarget)) {
+                    trippableRearmTimers.remove(activeTarget);
+                    continue;
+                }
+
+                float elapsedOutsideSeconds = trippableRearmTimers.getOrDefault(activeTarget, 0f)
+                        + Math.max(0f, deltaTime);
+                if (elapsedOutsideSeconds >= TRIPPABLE_REARM_DELAY_SECONDS) {
+                    rearmedTargets.add(activeTarget);
+                } else {
+                    trippableRearmTimers.put(activeTarget, elapsedOutsideSeconds);
+                }
+            }
+
+            for (Entity rearmedTarget : rearmedTargets) {
+                activeTrippableTargets.remove(rearmedTarget);
+                trippableRearmTimers.remove(rearmedTarget);
+            }
+        }
 
         if (enteredTarget == null) {
             return false;
         }
 
+        activeTrippableTargets.add(enteredTarget);
+        trippableRearmTimers.remove(enteredTarget);
         startInteraction(playerEntity, enteredTarget);
         return true;
     }
