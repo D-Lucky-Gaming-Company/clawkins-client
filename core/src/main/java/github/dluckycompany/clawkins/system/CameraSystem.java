@@ -43,6 +43,18 @@ public class CameraSystem extends IteratingSystem {
         camera.position.set(smoothedX, smoothedY, camera.position.z);
     }
 
+    /**
+     * Immediately places the camera on the same clamped target used by follow smoothing.
+     * Useful during map transitions to avoid one-frame camera correction.
+     */
+    public void snapTo(Transform transform) {
+        if (transform == null) {
+            return;
+        }
+        calcTargetPosition(transform.getPosition());
+        camera.position.set(targetPosition.x, targetPosition.y, camera.position.z);
+    }
+
     private void calcTargetPosition(Vector2 entityPosition) {
         float targetX = entityPosition.x;
         float camHalfW = camera.viewportWidth * 0.5f;
