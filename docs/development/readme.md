@@ -705,6 +705,10 @@ Properties are read from each `Interactible` object:
 - `hasCollision` (bool or `"True"/"False"` string)
   - Controls whether the interactible blocks movement.
   - Default: `true` when property is missing.
+- `isTrippable` (bool or `"True"/"False"` string)
+  - When `true`, entering the interactible bounds auto-starts interaction without key press.
+  - Triggers on zone-enter (not every frame while standing inside).
+  - Default: `false` when property is missing.
 - `DialoguePosition` (string, optional)
   - Allowed values: `TOP`, `BOTTOM` (case-insensitive parse).
   - Default: `BOTTOM` when missing/invalid.
@@ -716,6 +720,9 @@ Properties are read from each `Interactible` object:
 - Player must be:
   - close enough to the object (interaction range check), and
   - facing toward it (direction dot-product check from `PlayerAnimation.Direction`).
+- For `isTrippable=true` objects:
+  - key press is not required,
+  - interaction starts automatically when player enters the object bounds.
 
 ### 14.4 Dialogue behavior
 
@@ -797,3 +804,21 @@ Notes:
 - `tiled/TiledObjectConfigurator.java` (property parsing and defaults)
 - `system/MoveSystem.java` (entity blocking for solid interactibles)
 - `GameScreen.java` (system + overlay wiring)
+
+### 14.7 Special interactions by `ObjectId`
+
+Use this when an interactible needs behavior after dialogue (e.g. chest reward, door unlock, quest flag).
+
+- Register callback in `GameScreen.registerSpecialInteractions()`:
+  - `interactionSystem.registerSpecialInteraction("<objectId>", context -> { ... });`
+- Runtime order is fixed:
+  1. Player presses interact near target.
+  2. Dialogue flow runs first (if dialogue exists).
+  3. After dialogue closes, special interaction callback runs for matching `ObjectId`.
+- If no callback is registered for that `ObjectId`, interaction behaves as normal dialogue-only flow.
+- Callback receives `SpecialInteractionContext`:
+  - `playerEntity`
+  - `targetEntity`
+  - `objectId`
+  - `objectName`
+  - `interactionCount`

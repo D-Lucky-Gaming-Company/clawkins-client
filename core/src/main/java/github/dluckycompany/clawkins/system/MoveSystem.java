@@ -8,8 +8,6 @@ import com.badlogic.ashley.utils.ImmutableArray;
 import com.badlogic.gdx.maps.MapLayer;
 import com.badlogic.gdx.maps.MapObject;
 import com.badlogic.gdx.maps.MapObjects;
-import com.badlogic.gdx.maps.objects.CircleMapObject;
-import com.badlogic.gdx.maps.objects.EllipseMapObject;
 import com.badlogic.gdx.maps.objects.PolygonMapObject;
 import com.badlogic.gdx.maps.objects.RectangleMapObject;
 import com.badlogic.gdx.maps.tiled.TiledMap;
@@ -25,7 +23,6 @@ import github.dluckycompany.clawkins.component.Transform;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 
 /**
  * Applies movement to entities each frame.
@@ -50,16 +47,14 @@ public class MoveSystem extends IteratingSystem {
     private float mapWidth;
     private float mapHeight;
     private final List<TiledMapTileLayer> collisionLayers;
-    private final List<MapObject> barrierObjects;
     private final Rectangle tmpEntityHitbox;
     private final Rectangle tmpTileRect;
     private final Rectangle tmpSolidRect;
-    private ImmutableArray<Entity> solidInteractibles;
+    private ImmutableArray<Entity> solidEntities;
 
     public MoveSystem() {
         super(Family.all(Move.class, Transform.class).get());
         this.collisionLayers = new ArrayList<>();
-        this.barrierObjects = new ArrayList<>();
         this.tmpEntityHitbox = new Rectangle();
         this.tmpTileRect = new Rectangle();
         this.tmpSolidRect = new Rectangle();
@@ -68,7 +63,7 @@ public class MoveSystem extends IteratingSystem {
     @Override
     public void addedToEngine(Engine engine) {
         super.addedToEngine(engine);
-        this.solidInteractibles = engine.getEntitiesFor(Family.all(Interactible.class, Transform.class).get());
+        this.solidEntities = engine.getEntitiesFor(Family.all(Interactible.class, Transform.class).get());
     }
 
     @Override
@@ -129,18 +124,10 @@ public class MoveSystem extends IteratingSystem {
         this.mapHeight = height * tileH * Main.UNIT_SCALE;
 
         this.collisionLayers.clear();
-        this.barrierObjects.clear();
         for (MapLayer layer : tiledMap.getLayers()) {
             if (layer instanceof TiledMapTileLayer tileLayer) {
                 // Tile collision objects should block regardless of visual layer placement.
                 this.collisionLayers.add(tileLayer);
-            }
-            if (layer.getObjects() != null) {
-                for (MapObject mapObject : layer.getObjects()) {
-                    if ("barrier".equalsIgnoreCase(layer.getName()) || isBarrierObject(mapObject)) {
-                        barrierObjects.add(mapObject);
-                    }
-                }
             }
         }
     }
@@ -157,9 +144,6 @@ public class MoveSystem extends IteratingSystem {
         Rectangle entityHitbox = buildHitbox(x, y, width, height, mover, tmpEntityHitbox);
 
         if (isBlockedByMap(entityHitbox)) {
-            return true;
-        }
-        if (isBlockedByBarrierShape(entityHitbox)) {
             return true;
         }
         return isBlockedBySolidEntity(entityHitbox, mover);
@@ -236,14 +220,11 @@ public class MoveSystem extends IteratingSystem {
     }
 
     private boolean isBlockedBySolidEntity(Rectangle entityHitbox, Entity mover) {
-        return isBlockedBySolidInteractible(entityHitbox, mover);
-    }
-
-    private boolean isBlockedBySolidInteractible(Rectangle entityHitbox, Entity mover) {
-        if (solidInteractibles == null || solidInteractibles.size() == 0) {
+        if (solidEntities == null || solidEntities.size() == 0) {
             return false;
         }
-        for (Entity entity : solidInteractibles) {
+
+        for (Entity entity : solidEntities) {
             if (entity == mover) {
                 continue;
             }
@@ -266,79 +247,6 @@ public class MoveSystem extends IteratingSystem {
             }
         }
         return false;
-    }
-
-    private boolean isBlockedByBarrierShape(Rectangle entityHitbox) {
-        if (barrierObjects.isEmpty()) {
-            return false;
-        }
-
-        float probeCenterX = (entityHitbox.x + entityHitbox.width * 0.5f) / Main.UNIT_SCALE;
-        float probeBottomY = entityHitbox.y / Main.UNIT_SCALE;
-        float probeLeftX = (entityHitbox.x + entityHitbox.width * 0.2f) / Main.UNIT_SCALE;
-        float probeRightX = (entityHitbox.x + entityHitbox.width * 0.8f) / Main.UNIT_SCALE;
-        float probeMidY = (entityHitbox.y + entityHitbox.height * 0.5f) / Main.UNIT_SCALE;
-
-        for (MapObject barrierObject : barrierObjects) {
-            if (containsPoint(barrierObject, probeCenterX, probeBottomY)
-                    || containsPoint(barrierObject, probeLeftX, probeBottomY)
-                    || containsPoint(barrierObject, probeRightX, probeBottomY)
-                    || containsPoint(barrierObject, probeCenterX, probeMidY)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static boolean containsPoint(MapObject mapObject, float x, float y) {
-        if (mapObject instanceof PolygonMapObject polygonMapObject) {
-            return polygonMapObject.getPolygon().contains(x, y);
-        }
-        if (mapObject instanceof RectangleMapObject rectangleMapObject) {
-            return rectangleMapObject.getRectangle().contains(x, y);
-        }
-        if (mapObject instanceof CircleMapObject circleMapObject) {
-            return circleMapObject.getCircle().contains(x, y);
-        }
-        if (mapObject instanceof EllipseMapObject ellipseMapObject) {
-            return ellipseMapObject.getEllipse().contains(x, y);
-        }
-        return false;
-    }
-
-    private static boolean isBarrierObject(MapObject mapObject) {
-        String objectType = readObjectType(mapObject);
-        if (objectType == null || objectType.isBlank()) {
-            return false;
-        }
-        return "BARRIER".equals(objectType.trim().toUpperCase(Locale.ROOT));
-    }
-
-    private static String readObjectType(MapObject mapObject) {
-        if (mapObject == null || mapObject.getProperties() == null) {
-            return "";
-        }
-        Object objectType = mapObject.getProperties().get("ObjectType");
-        if (objectType != null) {
-            return String.valueOf(objectType);
-        }
-        Object tiledType = mapObject.getProperties().get("type");
-        if (tiledType != null) {
-            return String.valueOf(tiledType);
-        }
-        Object tiledTypePascal = mapObject.getProperties().get("Type");
-        if (tiledTypePascal != null) {
-            return String.valueOf(tiledTypePascal);
-        }
-        Object tiledClass = mapObject.getProperties().get("class");
-        if (tiledClass != null) {
-            return String.valueOf(tiledClass);
-        }
-        Object tiledClassPascal = mapObject.getProperties().get("Class");
-        if (tiledClassPascal != null) {
-            return String.valueOf(tiledClassPascal);
-        }
-        return "";
     }
 
     private float clampX(float x, float width, Entity mover) {
