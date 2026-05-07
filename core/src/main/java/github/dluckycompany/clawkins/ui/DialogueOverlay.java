@@ -2,6 +2,7 @@ package github.dluckycompany.clawkins.ui;
 
 import com.badlogic.gdx.graphics.g2d.Batch;
 import com.badlogic.gdx.utils.Disposable;
+import github.dluckycompany.clawkins.component.Interactible;
 import github.dluckycompany.clawkins.system.InteractionSystem;
 
 public class DialogueOverlay implements Disposable {
@@ -28,6 +29,10 @@ public class DialogueOverlay implements Disposable {
                 interactionSystem.getDialogueName(),
                 interactionSystem.getDialogueText(),
                 interactionSystem.getDialoguePosition());
+    }
+
+    public void renderPrompt(Batch batch, String text, Interactible.DialoguePosition position) {
+        dialogueBoxRenderer.render(batch, "", text, position);
     }
 
     @Override

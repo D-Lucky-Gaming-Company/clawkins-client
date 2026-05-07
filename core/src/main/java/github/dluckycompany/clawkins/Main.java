@@ -71,6 +71,7 @@ public class Main extends Game {
         audioService.registerMusic(MusicTrack.BOSS_CERBERUS, "audio/music/BOSS/boss_cerberus.mp3");
         audioService.registerMusic(MusicTrack.BOSS_SPARTACUS, "audio/music/BOSS/boss_spartacus.mp3");
         audioService.registerMusic(MusicTrack.BOSS_SANTIRAL, "audio/music/BOSS/boss_santiral.mp3");
+        audioService.registerMusic(MusicTrack.BOSS_BERTJR_DIA_FIRST_ENCOUNTER, "audio/music/BOSS/boss_bertjr_dia/first_encounter.mp3");
         audioService.registerSound(SoundEffect.CONFIRM, "audio/sfx/confirm.wav");
         audioService.registerSound(SoundEffect.CANCEL, "audio/sfx/cancel.wav");
         audioService.registerSound(SoundEffect.HIT, "audio/sfx/hit.wav");

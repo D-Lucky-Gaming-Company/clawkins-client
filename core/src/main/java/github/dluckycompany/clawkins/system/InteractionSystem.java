@@ -10,6 +10,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Consumer;
+import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -71,6 +72,7 @@ public class InteractionSystem extends EntitySystem {
     private Runnable onMerchantInteraction = () -> {};
     private boolean isMerchantMode = false;
     private Supplier<List<Clawkin>> clawkinPartySupplier = List::of;
+    private final Map<String, Predicate<SpecialInteractionContext>> preDialogueCheckByObjectId = new HashMap<>();
     private final Map<String, Consumer<SpecialInteractionContext>> specialInteractionByObjectId = new HashMap<>();
     private Consumer<SpecialInteractionContext> pendingSpecialInteraction;
     private SpecialInteractionContext pendingSpecialInteractionContext;
@@ -167,6 +169,22 @@ public class InteractionSystem extends EntitySystem {
         specialInteractionByObjectId.put(normalizedObjectId, specialInteraction);
     }
 
+    public void registerPreDialogueCheck(String objectId, Predicate<SpecialInteractionContext> preDialogueCheck) {
+        String normalizedObjectId = normalizeObjectId(objectId);
+        if (normalizedObjectId.isEmpty() || preDialogueCheck == null) {
+            return;
+        }
+        preDialogueCheckByObjectId.put(normalizedObjectId, preDialogueCheck);
+    }
+
+    public void unregisterPreDialogueCheck(String objectId) {
+        String normalizedObjectId = normalizeObjectId(objectId);
+        if (normalizedObjectId.isEmpty()) {
+            return;
+        }
+        preDialogueCheckByObjectId.remove(normalizedObjectId);
+    }
+
     public void unregisterSpecialInteraction(String objectId) {
         String normalizedObjectId = normalizeObjectId(objectId);
         if (normalizedObjectId.isEmpty()) {
@@ -177,6 +195,57 @@ public class InteractionSystem extends EntitySystem {
 
     public void clearSpecialInteractions() {
         specialInteractionByObjectId.clear();
+    }
+
+    public void clearPreDialogueChecks() {
+        preDialogueCheckByObjectId.clear();
+    }
+
+    public void rearmTrippableByObjectId(String objectId) {
+        String normalizedObjectId = normalizeObjectId(objectId);
+        if (normalizedObjectId.isEmpty() || interactibles == null || interactibles.size() == 0) {
+            return;
+        }
+        for (Entity entity : interactibles) {
+            Interactible interactible = Interactible.MAPPER.get(entity);
+            if (interactible == null || !interactible.isTrippable()) {
+                continue;
+            }
+            if (!normalizedObjectId.equals(normalizeObjectId(interactible.getObjectId()))) {
+                continue;
+            }
+            activeTrippableTargets.remove(entity);
+            trippableRearmTimers.remove(entity);
+        }
+    }
+
+    public void triggerInteractionByObjectId(String objectId) {
+        String normalizedObjectId = normalizeObjectId(objectId);
+        if (normalizedObjectId.isEmpty()
+                || players == null
+                || players.size() == 0
+                || interactibles == null
+                || interactibles.size() == 0) {
+            return;
+        }
+
+        Entity playerEntity = players.first();
+        for (Entity entity : interactibles) {
+            Interactible interactible = Interactible.MAPPER.get(entity);
+            if (interactible == null) {
+                continue;
+            }
+            if (!normalizedObjectId.equals(normalizeObjectId(interactible.getObjectId()))) {
+                continue;
+            }
+
+            if (interactible.isTrippable()) {
+                activeTrippableTargets.add(entity);
+                trippableRearmTimers.remove(entity);
+            }
+            startInteraction(playerEntity, entity);
+            return;
+        }
     }
 
     private Entity findFacingTarget() {
@@ -435,16 +504,21 @@ public class InteractionSystem extends EntitySystem {
         }
 
         String playerName = resolvePlayerName(playerEntity);
-        interactible.incrementInteractionCount();
+        int nextInteractionCount = Math.max(1, interactible.getInteractionCount() + 1);
 
+        Predicate<SpecialInteractionContext> preDialogueCheck = resolvePreDialogueCheck(interactible);
         Consumer<SpecialInteractionContext> specialInteraction = resolveSpecialInteraction(interactible);
         SpecialInteractionContext specialContext = new SpecialInteractionContext(
                 playerEntity,
                 targetEntity,
                 safeText(interactible.getObjectId(), ""),
                 safeText(interactible.getObjectName(), "Object"),
-                interactible.getInteractionCount()
+                nextInteractionCount
         );
+        if (!runPreDialogueCheck(preDialogueCheck, specialContext)) {
+            return;
+        }
+        interactible.incrementInteractionCount();
 
         // Merchant interactions stay key-compatible with existing UI flow.
         if (interactible.isMerchant()) {
@@ -780,6 +854,15 @@ public class InteractionSystem extends EntitySystem {
         return specialInteractionByObjectId.get(normalizedObjectId);
     }
 
+    private Predicate<SpecialInteractionContext> resolvePreDialogueCheck(Interactible interactible) {
+        String objectId = interactible == null ? null : interactible.getObjectId();
+        String normalizedObjectId = normalizeObjectId(objectId);
+        if (normalizedObjectId.isEmpty()) {
+            return null;
+        }
+        return preDialogueCheckByObjectId.get(normalizedObjectId);
+    }
+
     private static String normalizeObjectId(String objectId) {
         if (objectId == null) {
             return "";
@@ -809,6 +892,24 @@ public class InteractionSystem extends EntitySystem {
                     "Special interaction failed for ObjectId=" + context.objectId(),
                     ex
             );
+        }
+    }
+
+    private boolean runPreDialogueCheck(
+            Predicate<SpecialInteractionContext> preDialogueCheck,
+            SpecialInteractionContext context) {
+        if (preDialogueCheck == null || context == null) {
+            return true;
+        }
+        try {
+            return preDialogueCheck.test(context);
+        } catch (Exception ex) {
+            Gdx.app.error(
+                    InteractionSystem.class.getSimpleName(),
+                    "Pre-dialogue check failed for ObjectId=" + context.objectId(),
+                    ex
+            );
+            return true;
         }
     }
 
