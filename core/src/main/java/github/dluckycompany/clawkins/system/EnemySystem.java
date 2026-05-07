@@ -139,7 +139,7 @@ public class EnemySystem extends IteratingSystem {
             enemy.setChaseMemoryTimer(Math.max(0f, enemy.getChaseMemoryTimer() - deltaTime));
         }
 
-        if (isTerritorialStaticChaser(enemy)
+        if (isTerritorialChaser(enemy)
                 && distanceFromHome(transform, enemy) > enemy.getTerritorialChaseDistance()) {
             enemy.setReturningToHome(true);
         }
@@ -155,7 +155,7 @@ public class EnemySystem extends IteratingSystem {
                 && targetPlayer != null
                 && (seesPlayer || enemy.getChaseMemoryTimer() > 0f);
         if (hasChaseTarget) {
-            if (isTerritorialStaticChaser(enemy)
+            if (isTerritorialChaser(enemy)
                     && distanceFromHome(transform, enemy) >= enemy.getTerritorialChaseDistance()) {
                 enemy.setReturningToHome(true);
                 enemy.setChaseMemoryTimer(0f);
@@ -321,8 +321,8 @@ public class EnemySystem extends IteratingSystem {
         return distanceFromHome(nextX, nextY, transform, enemy) <= enemy.getTerritorialRoamRadius();
     }
 
-    private boolean isTerritorialStaticChaser(Enemy enemy) {
-        return enemy.isTerritorial() && !enemy.canRoam() && enemy.canChase();
+    private boolean isTerritorialChaser(Enemy enemy) {
+        return enemy.isTerritorial() && enemy.canChase();
     }
 
     private float returnSpeedFor(Enemy enemy) {
