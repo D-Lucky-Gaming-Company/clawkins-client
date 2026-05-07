@@ -162,6 +162,7 @@ Current object-to-entity mapping:
 - Enemy objects now support `alertPauseDuration` (float, seconds) to delay chase after player detection.
 - Runtime state flow is explicitly `ALERTED` -> pause -> `CHASING`.
 - Alert start now triggers `AudioEventType.ENEMY_ALERT_STARTED`, routed to `SoundEffect.ENEMY_ALERT`.
+- Tiled rule for enemy data: when object class is `Enemy`, keep enemy fields at top-level object properties and do not wrap them in nested `properties` class field.
 - Full technical details: see `docs/handoffs/2026-05-08-handover-enemy-alert-pause-and-sfx.md`.
 
 ### Add a new spawnable object from Tiled
