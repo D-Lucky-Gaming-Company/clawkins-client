@@ -40,7 +40,9 @@ import github.dluckycompany.clawkins.battle.BattleTransition;
 import github.dluckycompany.clawkins.battle.PlayerBattleState;
 import github.dluckycompany.clawkins.character.Clawkin;
 import github.dluckycompany.clawkins.component.MapTransitionZone;
+import github.dluckycompany.clawkins.component.Move;
 import github.dluckycompany.clawkins.component.Player;
+import github.dluckycompany.clawkins.component.PlayerAnimation;
 import github.dluckycompany.clawkins.component.Transform;
 import github.dluckycompany.clawkins.encounter.EncounterDetectionSystem;
 import github.dluckycompany.clawkins.encounter.EncounterEventBus;
@@ -139,6 +141,7 @@ public class GameScreen extends ScreenAdapter {
     private static final float AREA_TITLE_DURATION_SECONDS = 3f;
     private static final float AREA_TITLE_FADE_IN_SECONDS = 0f;
     private static final float AREA_TITLE_FADE_OUT_SECONDS = 2f;
+    private static final float END_ROAD_FORCE_MOVE_DURATION_SECONDS = 1f;
 
     private final Main game;
     private final Engine engine;
@@ -201,6 +204,7 @@ public class GameScreen extends ScreenAdapter {
     private String lastAreaDisplayKey;
 
     private SaveState pendingSaveState;
+    private ForcedMoveState activeForcedMove;
     
     // Virtual UI resolution (constant, independent of physical screen)
     private static final float VIRTUAL_UI_WIDTH = 800f;
@@ -396,12 +400,9 @@ public class GameScreen extends ScreenAdapter {
     private void registerSpecialInteractions() {
         // Register object-id based handlers here.
         // Flow: dialogue (if any) always finishes first, then this handler executes.
-        //
-        // Example:
-        // interactionSystem.registerSpecialInteraction("chest_tutorial_01", context -> {
-        //     playerBattleState.getWallet().addMoney(100);
-        //     hudWallet.updateDisplay();
-        // });
+        interactionSystem.registerSpecialInteraction("end_road", context -> {
+            startEndRoadForcedMove(context.playerEntity());
+        });
     }
 
     private void ensurePlayerEntityPresentAfterReturn() {
@@ -468,7 +469,7 @@ public class GameScreen extends ScreenAdapter {
 
         // Handle side-menu and submenu navigation while in exploration.
         if (!battleService.hasBattleSession() && !interactionSystem.isDialogueVisible() && !merchantShopVisible
-                && !mapTransitionFade.isTransitioning()) {
+                && !mapTransitionFade.isTransitioning() && !isSpecialMovementActive()) {
             MainSideMenuOverlay.Action menuAction = sideMenuOverlay.handleInput();
             switch (menuAction) {
                 case OPEN_CLAWKINS -> openTeamViewerSubmenu();
@@ -525,6 +526,7 @@ public class GameScreen extends ScreenAdapter {
 
         battleOverlay.update(battleService, delta);
         battleService.update(delta);
+        updateForcedMove(delta);
         syncAudioStates();
         syncSystemStates();
 
@@ -667,6 +669,16 @@ public class GameScreen extends ScreenAdapter {
     }
 
     private void syncSystemStates() {
+        if (isSpecialMovementActive()) {
+            explorationSystemsEnabled = false;
+            engine.getSystem(PlayerInputSystem.class).setProcessing(false);
+            interactionSystem.setProcessing(false);
+            engine.getSystem(MoveSystem.class).setProcessing(true);
+            engine.getSystem(EncounterDetectionSystem.class).setProcessing(false);
+            mapTransitionSystem.setProcessing(false);
+            return;
+        }
+
         boolean battleLocked = battleService.hasBattleSession();
         boolean dialogueLocked = interactionSystem.isDialogueVisible();
         boolean merchantLocked = merchantShopVisible;
@@ -684,6 +696,76 @@ public class GameScreen extends ScreenAdapter {
         engine.getSystem(MoveSystem.class).setProcessing(shouldEnableExploration);
         engine.getSystem(EncounterDetectionSystem.class).setProcessing(shouldEnableExploration);
         mapTransitionSystem.setProcessing(shouldEnableExploration);
+    }
+
+    private boolean isSpecialMovementActive() {
+        return activeForcedMove != null;
+    }
+
+    private void startEndRoadForcedMove(Entity playerEntity) {
+        if (playerEntity == null || isSpecialMovementActive()) {
+            return;
+        }
+        Move move = Move.MAPPER.get(playerEntity);
+        if (move == null) {
+            return;
+        }
+
+        activeForcedMove = new ForcedMoveState(playerEntity, END_ROAD_FORCE_MOVE_DURATION_SECONDS);
+        move.getDirection().set(0f, 1f);
+        move.setMaxSpeed(move.getBaseSpeed());
+
+        PlayerAnimation animation = PlayerAnimation.MAPPER.get(playerEntity);
+        if (animation != null) {
+            animation.setDirection(PlayerAnimation.Direction.NORTH);
+            animation.setMoving(true);
+        }
+    }
+
+    private void updateForcedMove(float delta) {
+        ForcedMoveState forcedMove = activeForcedMove;
+        if (forcedMove == null) {
+            return;
+        }
+
+        Move move = Move.MAPPER.get(forcedMove.playerEntity);
+        if (move == null) {
+            activeForcedMove = null;
+            return;
+        }
+
+        float dt = Math.max(0f, delta);
+        forcedMove.remainingDuration = Math.max(0f, forcedMove.remainingDuration - dt);
+
+        move.getDirection().set(0f, 1f);
+        move.setMaxSpeed(move.getBaseSpeed());
+
+        PlayerAnimation animation = PlayerAnimation.MAPPER.get(forcedMove.playerEntity);
+        if (animation != null) {
+            animation.setDirection(PlayerAnimation.Direction.NORTH);
+            animation.setMoving(true);
+        }
+
+        if (forcedMove.remainingDuration > 0f) {
+            return;
+        }
+
+        move.getDirection().setZero();
+        move.setMaxSpeed(move.getBaseSpeed());
+        if (animation != null) {
+            animation.setMoving(false);
+        }
+        activeForcedMove = null;
+    }
+
+    private static final class ForcedMoveState {
+        private final Entity playerEntity;
+        private float remainingDuration;
+
+        private ForcedMoveState(Entity playerEntity, float remainingDuration) {
+            this.playerEntity = playerEntity;
+            this.remainingDuration = Math.max(0f, remainingDuration);
+        }
     }
 
     private void beginMapTransition(String targetMapKey, String targetTransitionId) {
