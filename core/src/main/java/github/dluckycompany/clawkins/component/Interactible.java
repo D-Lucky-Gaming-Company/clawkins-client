@@ -15,6 +15,7 @@ public class Interactible implements Component {
     private final String objectId;
     private final String dialogueDirectory;
     private final boolean hasCollision;
+    private final boolean isTrippable;
     private final DialoguePosition dialoguePosition;
     private final boolean isMerchant;
     private int interactionCount;
@@ -25,7 +26,7 @@ public class Interactible implements Component {
             String dialogueDirectory,
             boolean hasCollision,
             DialoguePosition dialoguePosition) {
-        this(objectName, objectId, dialogueDirectory, hasCollision, dialoguePosition, false);
+        this(objectName, objectId, dialogueDirectory, hasCollision, dialoguePosition, false, false);
     }
 
     public Interactible(
@@ -35,10 +36,22 @@ public class Interactible implements Component {
             boolean hasCollision,
             DialoguePosition dialoguePosition,
             boolean isMerchant) {
+        this(objectName, objectId, dialogueDirectory, hasCollision, dialoguePosition, isMerchant, false);
+    }
+
+    public Interactible(
+            String objectName,
+            String objectId,
+            String dialogueDirectory,
+            boolean hasCollision,
+            DialoguePosition dialoguePosition,
+            boolean isMerchant,
+            boolean isTrippable) {
         this.objectName = objectName;
         this.objectId = objectId;
         this.dialogueDirectory = dialogueDirectory;
         this.hasCollision = hasCollision;
+        this.isTrippable = isTrippable;
         this.dialoguePosition = dialoguePosition;
         this.isMerchant = isMerchant;
         this.interactionCount = 0;
@@ -58,6 +71,10 @@ public class Interactible implements Component {
 
     public boolean hasCollision() {
         return hasCollision;
+    }
+
+    public boolean isTrippable() {
+        return isTrippable;
     }
 
     public DialoguePosition getDialoguePosition() {
