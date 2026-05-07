@@ -422,10 +422,16 @@ public class GameScreen extends ScreenAdapter {
             return;
         }
 
+        CameraSystem cameraSystem = engine.getSystem(CameraSystem.class);
+        if (cameraSystem != null) {
+            cameraSystem.snapTo(t);
+            game.getCamera().update();
+            return;
+        }
+
         OrthographicCamera camera = game.getCamera();
         Vector2 pos = t.getPosition();
-        Vector2 size = t.getSize();
-        camera.position.set(pos.x + size.x / 2f, pos.y + size.y / 2f + 1f, camera.position.z);
+        camera.position.set(pos.x, pos.y + 1f, camera.position.z);
         camera.update();
     }
 
@@ -816,9 +822,7 @@ public class GameScreen extends ScreenAdapter {
 
         pos.set(spawnX, spawnY);
 
-        OrthographicCamera camera = game.getCamera();
-        camera.position.set(spawnX + size.x / 2f, spawnY + size.y / 2f + 1f, camera.position.z);
-        camera.update();
+        centerCameraOnPlayer(playerEntity);
 
         Gdx.app.log("GameScreen", "Player repositioned to (" + spawnX + ", " + spawnY + ") in zone "
             + spawnBounds);
