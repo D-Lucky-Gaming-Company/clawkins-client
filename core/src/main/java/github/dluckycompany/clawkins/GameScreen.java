@@ -15,6 +15,8 @@ import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.OrthographicCamera;
 import com.badlogic.gdx.graphics.g2d.Batch;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
+import com.badlogic.gdx.graphics.g2d.GlyphLayout;
+import com.badlogic.gdx.graphics.g2d.freetype.FreeTypeFontGenerator;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.maps.tiled.TiledMap;
 import com.badlogic.gdx.math.Rectangle;
@@ -27,6 +29,7 @@ import com.badlogic.gdx.utils.viewport.Viewport;
 
 import github.dluckycompany.clawkins.asset.AssetService;
 import github.dluckycompany.clawkins.asset.MapAsset;
+import github.dluckycompany.clawkins.asset.MapAssetName;
 import github.dluckycompany.clawkins.audio.AudioEventType;
 import github.dluckycompany.clawkins.audio.AudioService;
 import github.dluckycompany.clawkins.battle.BattleOverlay;
@@ -125,6 +128,12 @@ import github.dluckycompany.clawkins.ui.TeamViewerScreen;
 public class GameScreen extends ScreenAdapter {
     // Transition anchor placed in lower torso/feet region for stable RPG-style placement.
     private static final float PLAYER_TRANSITION_ANCHOR_Y_FACTOR = 0.22f;
+    private static final String AREA_TITLE_FONT_PATH = "font/TheWildBreathOfZelda-15Lv.ttf";
+    private static final int AREA_TITLE_FONT_SIZE = 75;
+    private static final float AREA_TITLE_Y = 485f;
+    private static final float AREA_TITLE_DURATION_SECONDS = 3f;
+    private static final float AREA_TITLE_FADE_IN_SECONDS = 0f;
+    private static final float AREA_TITLE_FADE_OUT_SECONDS = 2f;
 
     private final Main game;
     private final Engine engine;
@@ -145,6 +154,8 @@ public class GameScreen extends ScreenAdapter {
     private final Stage hudStage;
     private final HudWallet hudWallet;
     private final BitmapFont uiFont;
+    private final BitmapFont areaTitleFont;
+    private final GlyphLayout areaTitleLayout;
     private final PlayerBattleState playerBattleState;
     
     // Merchant system
@@ -178,6 +189,10 @@ public class GameScreen extends ScreenAdapter {
     private String activeTransitionMap;
     private String activeTransitionId;
     private boolean mapTransitionSwapDone;
+    private String activeAreaTitle;
+    private float areaTitleTimer;
+    private MapAsset pendingAreaTitleAsset;
+    private String lastAreaTitleForSfx;
     
     // Virtual UI resolution (constant, independent of physical screen)
     private static final float VIRTUAL_UI_WIDTH = 800f;
@@ -236,6 +251,12 @@ public class GameScreen extends ScreenAdapter {
         this.hudStage = new Stage(new FitViewport(VIRTUAL_UI_WIDTH, VIRTUAL_UI_HEIGHT));
         this.shapeRenderer = new ShapeRenderer();
         this.uiFont = new BitmapFont();
+        this.areaTitleFont = createAreaTitleFont();
+        this.areaTitleLayout = new GlyphLayout();
+        this.activeAreaTitle = null;
+        this.areaTitleTimer = 0f;
+        this.pendingAreaTitleAsset = null;
+        this.lastAreaTitleForSfx = null;
         this.sideMenuOverlay = new MainSideMenuOverlay(inventoryStage, battleOverlay.getSkin(), uiFont, audioService);
         this.hudWallet = new HudWallet(playerBattleState.getWallet(), uiFont);
         this.hudWallet.setPosition(10, 10);
@@ -332,6 +353,7 @@ public class GameScreen extends ScreenAdapter {
         // This triggers: object parsing → entity spawning → map change notification to systems.
         TiledMap startMap = this.tiledService.loadMap(MapAsset.COTTAGE);
         this.tiledService.setMap(startMap);
+        this.lastAreaTitleForSfx = MapAssetName.fromAsset(MapAsset.COTTAGE);
         // Prevent frame-1 transition triggers from moving the player off the authored spawn.
         mapTransitionSystem.setCooldown(0f);
 
@@ -439,7 +461,17 @@ public class GameScreen extends ScreenAdapter {
                 performMapTransition(activeTransitionMap, activeTransitionId);
                 mapTransitionSwapDone = true;
             }
+            if (mapTransitionSwapDone) {
+                Entity transitionPlayer = findPlayerEntity();
+                if (transitionPlayer != null) {
+                    centerCameraOnPlayer(transitionPlayer);
+                }
+            }
         } else if (mapTransitionSwapDone) {
+            if (pendingAreaTitleAsset != null) {
+                showAreaTitle(pendingAreaTitleAsset);
+                pendingAreaTitleAsset = null;
+            }
             mapTransitionSwapDone = false;
             activeTransitionMap = null;
             activeTransitionId = null;
@@ -477,6 +509,7 @@ public class GameScreen extends ScreenAdapter {
         if (mapTransitionFade.isTransitioning()) {
             mapTransitionFade.render(batch);
         }
+        renderAreaTitle(uiDelta);
     }
 
     /**
@@ -579,6 +612,9 @@ public class GameScreen extends ScreenAdapter {
         if (uiFont != null) {
             uiFont.dispose();
         }
+        if (areaTitleFont != null) {
+            areaTitleFont.dispose();
+        }
         if (shapeRenderer != null) {
             shapeRenderer.dispose();
         }
@@ -671,6 +707,7 @@ public class GameScreen extends ScreenAdapter {
 
         TiledMap newMap = tiledService.loadMap(targetAsset);
         tiledService.setMap(newMap);
+        pendingAreaTitleAsset = targetAsset;
 
         Rectangle spawnBounds = findTransitionZoneBounds(targetTransitionId);
         if (spawnBounds == null) {
@@ -937,6 +974,73 @@ public class GameScreen extends ScreenAdapter {
         interactionSystem.closeMerchant();
         // Restore world input processor when closing merchant shop
         Gdx.input.setInputProcessor(null);
+    }
+
+    private BitmapFont createAreaTitleFont() {
+        if (!Gdx.files.internal(AREA_TITLE_FONT_PATH).exists()) {
+            Gdx.app.log("GameScreen", "Area title font missing: " + AREA_TITLE_FONT_PATH + ", using default font.");
+            return new BitmapFont();
+        }
+
+        FreeTypeFontGenerator generator = new FreeTypeFontGenerator(Gdx.files.internal(AREA_TITLE_FONT_PATH));
+        FreeTypeFontGenerator.FreeTypeFontParameter parameter = new FreeTypeFontGenerator.FreeTypeFontParameter();
+        parameter.size = AREA_TITLE_FONT_SIZE;
+        parameter.borderWidth = 2f;
+        parameter.borderColor = com.badlogic.gdx.graphics.Color.BLACK;
+        parameter.color = com.badlogic.gdx.graphics.Color.WHITE;
+        parameter.characters = FreeTypeFontGenerator.DEFAULT_CHARS;
+        BitmapFont font = generator.generateFont(parameter);
+        generator.dispose();
+        return font;
+    }
+
+    private void showAreaTitle(MapAsset targetAsset) {
+        String title = MapAssetName.fromAsset(targetAsset);
+        if (title == null || title.isBlank()) {
+            title = targetAsset.name().replace('_', ' ');
+        }
+
+        boolean shouldPlaySfx = lastAreaTitleForSfx != null && !lastAreaTitleForSfx.equals(title);
+        this.activeAreaTitle = title;
+        this.areaTitleTimer = AREA_TITLE_DURATION_SECONDS;
+        if (shouldPlaySfx) {
+            audioService.onEvent(AudioEventType.AREA_NAME_DISPLAY);
+        }
+        this.lastAreaTitleForSfx = title;
+    }
+
+    private void renderAreaTitle(float delta) {
+        if (activeAreaTitle == null || activeAreaTitle.isBlank()) {
+            return;
+        }
+        if (areaTitleTimer <= 0f) {
+            activeAreaTitle = null;
+            return;
+        }
+
+        areaTitleTimer = Math.max(0f, areaTitleTimer - delta);
+        float elapsed = AREA_TITLE_DURATION_SECONDS - areaTitleTimer;
+        float fadeInAlpha = AREA_TITLE_FADE_IN_SECONDS <= 0f ? 1f : Math.min(1f, elapsed / AREA_TITLE_FADE_IN_SECONDS);
+        float fadeOutAlpha = AREA_TITLE_FADE_OUT_SECONDS <= 0f ? 1f : Math.min(1f, areaTitleTimer / AREA_TITLE_FADE_OUT_SECONDS);
+        float alpha = Math.max(0f, Math.min(1f, Math.min(fadeInAlpha, fadeOutAlpha)));
+        if (alpha <= 0f) {
+            return;
+        }
+
+        inventoryStage.getViewport().apply();
+        inventoryStage.getCamera().update();
+        batch.setProjectionMatrix(inventoryStage.getCamera().combined);
+
+        areaTitleLayout.setText(areaTitleFont, activeAreaTitle);
+        float x = (VIRTUAL_UI_WIDTH - areaTitleLayout.width) * 0.5f;
+        float y = AREA_TITLE_Y;
+
+        batch.begin();
+        areaTitleFont.setColor(0f, 0f, 0f, alpha * 0.8f);
+        areaTitleFont.draw(batch, areaTitleLayout, x + 2f, y - 2f);
+        areaTitleFont.setColor(1f, 1f, 1f, alpha);
+        areaTitleFont.draw(batch, areaTitleLayout, x, y);
+        batch.end();
     }
 
     private boolean shouldPauseForUi() {
