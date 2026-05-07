@@ -5,7 +5,6 @@ import java.util.function.Consumer;
 import com.badlogic.gdx.maps.MapLayer;
 import com.badlogic.gdx.maps.MapObject;
 import com.badlogic.gdx.maps.tiled.TiledMap;
-import com.badlogic.gdx.maps.tiled.objects.TiledMapTileMapObject;
 
 import github.dluckycompany.clawkins.asset.AssetService;
 import github.dluckycompany.clawkins.asset.MapAsset;
@@ -18,8 +17,7 @@ import github.dluckycompany.clawkins.asset.MapAsset;
  * 1. You register a consumer via setLoadObjectConsumer()
  * 2. You call setMap(tiledMap)
  * 3. TiledService iterates through the map's layers
- * 4. For the "objects" layer, it calls your consumer for each
- * TiledMapTileMapObject
+ * 4. For supported object layers, it calls your consumer for each map object
  *
  * This is where the map data becomes game entities — the consumer
  * (TiledObjectConfigurator)
@@ -30,7 +28,7 @@ public class TiledService {
 
     private TiledMap currentMap;
     private Consumer<TiledMap> mapChangeConsumer;
-    private Consumer<TiledMapTileMapObject> loadObjectConsumer;
+    private Consumer<MapObject> loadObjectConsumer;
 
     public TiledService(AssetService assetService) {
         this.assetService = assetService;
@@ -77,20 +75,20 @@ public class TiledService {
     }
 
     /**
-     * Register a consumer for each game object found in the "objects" layer.
+     * Register a consumer for each game object found in supported object layers.
      * Typically this is TiledObjectConfigurator::onLoadObject.
      */
-    public void setLoadObjectConsumer(Consumer<TiledMapTileMapObject> loadObjectConsumer) {
+    public void setLoadObjectConsumer(Consumer<MapObject> loadObjectConsumer) {
         this.loadObjectConsumer = loadObjectConsumer;
     }
 
     /**
-     * Iterates through all map layers, dispatching objects from the "objects"
-     * layer.
+     * Iterates through all map layers, dispatching objects from supported object
+     * layers.
      */
     private void loadMapObjects(TiledMap tiledMap) {
         for (MapLayer layer : tiledMap.getLayers()) {
-            if ("objects".equals(layer.getName())) {
+            if (isSupportedObjectLayer(layer)) {
                 loadObjectLayer(layer);
             }
             // Other layer types (ground, background, foreground) are handled by
@@ -99,17 +97,22 @@ public class TiledService {
     }
 
     /**
-     * Processes each object in the "objects" layer.
-     * Only TiledMapTileMapObject is supported (objects placed from a tileset).
+     * Processes each object in a map object layer.
      */
     private void loadObjectLayer(MapLayer objectLayer) {
         if (loadObjectConsumer == null)
             return;
 
         for (MapObject mapObject : objectLayer.getObjects()) {
-            if (mapObject instanceof TiledMapTileMapObject tileMapObject) {
-                loadObjectConsumer.accept(tileMapObject);
-            }
+            loadObjectConsumer.accept(mapObject);
         }
+    }
+
+    private static boolean isSupportedObjectLayer(MapLayer layer) {
+        if (layer == null || layer.getObjects() == null || layer.getObjects().getCount() == 0) {
+            return false;
+        }
+        String name = layer.getName();
+        return "objects".equals(name) || "barrier".equals(name);
     }
 }

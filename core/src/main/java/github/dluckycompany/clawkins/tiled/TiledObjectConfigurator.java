@@ -9,6 +9,7 @@ import com.badlogic.ashley.core.Family;
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.g2d.TextureRegion;
+import com.badlogic.gdx.maps.MapObject;
 import com.badlogic.gdx.maps.MapProperties;
 import com.badlogic.gdx.maps.tiled.TiledMapTile;
 import com.badlogic.gdx.maps.tiled.objects.TiledMapTileMapObject;
@@ -19,6 +20,7 @@ import github.dluckycompany.clawkins.asset.AssetService;
 import github.dluckycompany.clawkins.battle.BattleSkill;
 import github.dluckycompany.clawkins.battle.PlayerBattleState;
 import github.dluckycompany.clawkins.character.Clawkin;
+import github.dluckycompany.clawkins.component.Barrier;
 import github.dluckycompany.clawkins.component.CameraFollow;
 import github.dluckycompany.clawkins.component.Enemy;
 import github.dluckycompany.clawkins.component.Graphic;
@@ -53,6 +55,7 @@ public class TiledObjectConfigurator {
         INTERACTIBLE,
         MERCHANT,
         ENEMY,
+        BARRIER,
         UNDEFINED
     }
 
@@ -63,9 +66,15 @@ public class TiledObjectConfigurator {
     }
 
     /**
-     * Called by TiledService for each object in the "objects" layer.
+     * Called by TiledService for each object in map object layers.
      * Creates and configures an entity from the map object's properties.
      */
+    public void onLoadObject(MapObject mapObject) {
+        if (mapObject instanceof TiledMapTileMapObject tileMapObject) {
+            onLoadObject(tileMapObject);
+        }
+    }
+
     public void onLoadObject(TiledMapTileMapObject tileMapObject) {
         Gdx.app.log(TAG, "onLoadObject called for: " + tileMapObject.getName() + " (type: " + tileMapObject.getProperties().get("type") + ")");
         
@@ -254,6 +263,11 @@ public class TiledObjectConfigurator {
                 ));
                 Gdx.app.debug(TAG, "Configured as MERCHANT: " + objectName + " collision=" + hasCollision);
             }
+            case BARRIER -> {
+                boolean hasCollision = getBooleanProperty(tileMapObject, "hasCollision", true);
+                entity.add(new Barrier(hasCollision));
+                Gdx.app.debug(TAG, "Configured as BARRIER collision=" + hasCollision);
+            }
             case PROP -> {
                 // Reserved type for future use, intentionally no behavior for now.
             }
@@ -330,6 +344,7 @@ public class TiledObjectConfigurator {
             case "ENEMY", "ENCOUNTERZONE" -> ObjectType.ENEMY;
             case "INTERACTIBLE" -> ObjectType.INTERACTIBLE;
             case "MERCHANT" -> ObjectType.MERCHANT;
+            case "BARRIER" -> ObjectType.BARRIER;
             default -> ObjectType.UNDEFINED;
         };
     }
