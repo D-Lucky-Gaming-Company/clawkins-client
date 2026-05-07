@@ -21,6 +21,8 @@ import com.badlogic.gdx.math.Rectangle;
 import com.badlogic.gdx.math.Vector2;
 
 import github.dluckycompany.clawkins.Main;
+import github.dluckycompany.clawkins.audio.AudioEventType;
+import github.dluckycompany.clawkins.audio.AudioService;
 import github.dluckycompany.clawkins.component.Enemy;
 import github.dluckycompany.clawkins.component.Interactible;
 import github.dluckycompany.clawkins.component.Move;
@@ -40,6 +42,7 @@ public class EnemySystem extends IteratingSystem {
 
     private ImmutableArray<Entity> players;
     private ImmutableArray<Entity> solidEntities;
+    private final AudioService audioService;
 
     private final List<TiledMapTileLayer> collisionLayers;
     private final Rectangle tmpRect = new Rectangle();
@@ -59,8 +62,9 @@ public class EnemySystem extends IteratingSystem {
     private static final float PLAYER_HITBOX_WIDTH_FACTOR = 0.26f;
     private static final float PLAYER_HITBOX_HEIGHT_FACTOR = 0.22f;
 
-    public EnemySystem() {
+    public EnemySystem(AudioService audioService) {
         super(Family.all(Enemy.class, Move.class, Transform.class).get());
+        this.audioService = audioService;
         this.collisionLayers = new ArrayList<>();
     }
 
@@ -115,17 +119,32 @@ public class EnemySystem extends IteratingSystem {
             enemy.setChaseMemoryTimer(Math.max(0f, enemy.getChaseMemoryTimer() - deltaTime));
         }
 
-        boolean shouldChase = enemy.canChase()
+        boolean hasChaseTarget = enemy.canChase()
                 && targetPlayer != null
                 && (seesPlayer || enemy.getChaseMemoryTimer() > 0f);
-        if (shouldChase) {
+        if (hasChaseTarget) {
+            Transform targetTransform = targetPlayer.getComponent(Transform.class);
+            if (enemy.getState() != Enemy.State.CHASING) {
+                if (enemy.getState() != Enemy.State.ALERTED) {
+                    beginAlertState(enemy, move, transform, targetTransform);
+                    return;
+                }
+
+                move.getDirection().setZero();
+                move.setMaxSpeed(0f);
+                if (targetTransform != null) {
+                    updateFacingDirection(enemy, centerOf(targetTransform), centerOf(transform));
+                }
+                enemy.setAlertPauseTimer(enemy.getAlertPauseTimer() - deltaTime);
+                if (enemy.getAlertPauseTimer() > 0f) {
+                    return;
+                }
+            }
+
             enemy.setState(Enemy.State.CHASING);
             enemy.setIdlingBetweenRoams(false);
             enemy.setIdleTimer(0f);
             move.setMaxSpeed(enemy.getChasingSpeed());
-            // Null-safe: targetPlayer is checked to be non-null in the condition, but
-            // getComponent can return null
-            Transform targetTransform = targetPlayer != null ? targetPlayer.getComponent(Transform.class) : null;
             if (targetTransform != null) {
                 updateChaseDirection(enemy, move, transform, targetTransform, entity);
                 updateFacingDirectionFromMove(enemy, move.getDirection());
@@ -133,13 +152,7 @@ public class EnemySystem extends IteratingSystem {
             return;
         }
 
-        if (targetPlayer != null && seesPlayer) {
-            enemy.setState(Enemy.State.ALERTED);
-            move.getDirection().setZero();
-            move.setMaxSpeed(0f);
-            updateFacingDirection(enemy, centerOf(targetPlayer.getComponent(Transform.class)), centerOf(transform));
-            return;
-        }
+        enemy.setAlertPauseTimer(0f);
 
         if (enemy.canRoam()) {
             handleRoamIdleCycle(enemy, move, transform, deltaTime, entity);
@@ -149,6 +162,19 @@ public class EnemySystem extends IteratingSystem {
         enemy.setState(Enemy.State.IDLE);
         move.getDirection().setZero();
         move.setMaxSpeed(0f);
+    }
+
+    private void beginAlertState(Enemy enemy, Move move, Transform enemyTransform, Transform targetTransform) {
+        enemy.setState(Enemy.State.ALERTED);
+        enemy.setAlertPauseTimer(enemy.getAlertPauseDuration());
+        move.getDirection().setZero();
+        move.setMaxSpeed(0f);
+        if (targetTransform != null) {
+            updateFacingDirection(enemy, centerOf(targetTransform), centerOf(enemyTransform));
+        }
+        if (audioService != null) {
+            audioService.onEvent(AudioEventType.ENEMY_ALERT_STARTED);
+        }
     }
 
     private void handleRoamIdleCycle(Enemy enemy, Move move, Transform transform, float deltaTime, Entity self) {

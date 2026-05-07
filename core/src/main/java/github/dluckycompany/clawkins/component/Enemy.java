@@ -22,6 +22,7 @@ public class Enemy implements Component {
     private final float chasingSpeed;
     private final float sightRange;
     private final float sightConeDotThreshold;
+    private final float alertPauseDuration;
 
     private final Vector2 facingDirection;
     private final Vector2 homePosition;
@@ -29,11 +30,19 @@ public class Enemy implements Component {
     private float roamInterval;
     private float idleTimer;
     private float chaseMemoryTimer;
+    private float alertPauseTimer;
     private boolean idlingBetweenRoams;
     private final float roamDecisionDistance;
     private final float chaseProbeDistance;
 
-    public Enemy(boolean canRoam, boolean canChase, float roamingSpeed, float chasingSpeed, float sightRange, float sightConeDotThreshold) {
+    public Enemy(
+            boolean canRoam,
+            boolean canChase,
+            float roamingSpeed,
+            float chasingSpeed,
+            float sightRange,
+            float sightConeDotThreshold,
+            float alertPauseDuration) {
         this.canRoam = canRoam;
         this.canChase = canChase;
         this.state = State.IDLE;
@@ -42,6 +51,7 @@ public class Enemy implements Component {
         this.chasingSpeed = chasingSpeed;
         this.sightRange = sightRange;
         this.sightConeDotThreshold = sightConeDotThreshold;
+        this.alertPauseDuration = Math.max(0f, alertPauseDuration);
         
         this.facingDirection = new Vector2(0, -1); // default facing down
         this.homePosition = new Vector2();
@@ -49,6 +59,7 @@ public class Enemy implements Component {
         this.roamInterval = 2.0f; // Change roam direction every 2 seconds
         this.idleTimer = 0f;
         this.chaseMemoryTimer = 0f;
+        this.alertPauseTimer = 0f;
         this.idlingBetweenRoams = false;
         this.roamDecisionDistance = 0.75f;
         this.chaseProbeDistance = 0.45f;
@@ -67,6 +78,7 @@ public class Enemy implements Component {
     public float getChasingSpeed() { return chasingSpeed; }
     public float getSightRange() { return sightRange; }
     public float getSightConeDotThreshold() { return sightConeDotThreshold; }
+    public float getAlertPauseDuration() { return alertPauseDuration; }
 
     public Vector2 getFacingDirection() { return facingDirection; }
     public void setFacingDirection(Vector2 direction) {
@@ -87,6 +99,9 @@ public class Enemy implements Component {
 
     public float getChaseMemoryTimer() { return chaseMemoryTimer; }
     public void setChaseMemoryTimer(float chaseMemoryTimer) { this.chaseMemoryTimer = chaseMemoryTimer; }
+
+    public float getAlertPauseTimer() { return alertPauseTimer; }
+    public void setAlertPauseTimer(float alertPauseTimer) { this.alertPauseTimer = Math.max(0f, alertPauseTimer); }
 
     public boolean isIdlingBetweenRoams() { return idlingBetweenRoams; }
     public void setIdlingBetweenRoams(boolean idlingBetweenRoams) { this.idlingBetweenRoams = idlingBetweenRoams; }
