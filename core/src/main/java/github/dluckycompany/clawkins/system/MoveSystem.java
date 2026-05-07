@@ -8,6 +8,8 @@ import com.badlogic.ashley.utils.ImmutableArray;
 import com.badlogic.gdx.maps.MapLayer;
 import com.badlogic.gdx.maps.MapObject;
 import com.badlogic.gdx.maps.MapObjects;
+import com.badlogic.gdx.maps.objects.CircleMapObject;
+import com.badlogic.gdx.maps.objects.EllipseMapObject;
 import com.badlogic.gdx.maps.objects.PolygonMapObject;
 import com.badlogic.gdx.maps.objects.RectangleMapObject;
 import com.badlogic.gdx.maps.tiled.TiledMap;
@@ -23,6 +25,7 @@ import github.dluckycompany.clawkins.component.Transform;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * Applies movement to entities each frame.
@@ -34,10 +37,11 @@ import java.util.List;
  * you'd replace this with a PhysicMoveSystem that sets body velocity instead.
  */
 public class MoveSystem extends IteratingSystem {
+    private static final float MAX_SWEEP_STEP_DISTANCE = 0.08f;
     private static final float HITBOX_WIDTH_FACTOR = 0.26f;
     private static final float HITBOX_HEIGHT_FACTOR = 0.22f;
-    private static final float ENEMY_HITBOX_WIDTH_FACTOR = 0.32f;
-    private static final float ENEMY_HITBOX_HEIGHT_FACTOR = 0.33f;
+    private static final float ENEMY_HITBOX_WIDTH_FACTOR = 0.28f;
+    private static final float ENEMY_HITBOX_HEIGHT_FACTOR = 0.24f;
     private static final float TILE_HITBOX_WIDTH_FACTOR = 0.80f;
     private static final float TILE_HITBOX_HEIGHT_FACTOR = 0.45f;
     private static final float SOLID_HITBOX_WIDTH_FACTOR = 0.80f;
@@ -46,14 +50,16 @@ public class MoveSystem extends IteratingSystem {
     private float mapWidth;
     private float mapHeight;
     private final List<TiledMapTileLayer> collisionLayers;
+    private final List<MapObject> barrierObjects;
     private final Rectangle tmpEntityHitbox;
     private final Rectangle tmpTileRect;
     private final Rectangle tmpSolidRect;
-    private ImmutableArray<Entity> solidEntities;
+    private ImmutableArray<Entity> solidInteractibles;
 
     public MoveSystem() {
         super(Family.all(Move.class, Transform.class).get());
         this.collisionLayers = new ArrayList<>();
+        this.barrierObjects = new ArrayList<>();
         this.tmpEntityHitbox = new Rectangle();
         this.tmpTileRect = new Rectangle();
         this.tmpSolidRect = new Rectangle();
@@ -62,7 +68,7 @@ public class MoveSystem extends IteratingSystem {
     @Override
     public void addedToEngine(Engine engine) {
         super.addedToEngine(engine);
-        this.solidEntities = engine.getEntitiesFor(Family.all(Interactible.class, Transform.class).get());
+        this.solidInteractibles = engine.getEntitiesFor(Family.all(Interactible.class, Transform.class).get());
     }
 
     @Override
@@ -79,19 +85,39 @@ public class MoveSystem extends IteratingSystem {
         Vector2 position = transform.getPosition();
         Vector2 size = transform.getSize();
 
-        float targetX = position.x + direction.x * speed * deltaTime;
-        float targetY = position.y + direction.y * speed * deltaTime;
+        float moveX = direction.x * speed * deltaTime;
+        float moveY = direction.y * speed * deltaTime;
+        int sweepSteps = sweepStepsFor(moveX, moveY);
+        if (sweepSteps <= 1) {
+            applySingleStep(entity, position, size, moveX, moveY);
+            return;
+        }
 
-        // Resolve X and Y independently so sliding against borders feels natural.
-        targetX = clampX(targetX, size.x, entity);
+        float stepX = moveX / sweepSteps;
+        float stepY = moveY / sweepSteps;
+        for (int i = 0; i < sweepSteps; i++) {
+            applySingleStep(entity, position, size, stepX, stepY);
+        }
+    }
+
+    private void applySingleStep(Entity entity, Vector2 position, Vector2 size, float moveX, float moveY) {
+        float targetX = clampX(position.x + moveX, size.x, entity);
         if (!isBlocked(targetX, position.y, size.x, size.y, entity)) {
             position.x = targetX;
         }
 
-        targetY = clampY(targetY, size.y, entity);
+        float targetY = clampY(position.y + moveY, size.y, entity);
         if (!isBlocked(position.x, targetY, size.x, size.y, entity)) {
             position.y = targetY;
         }
+    }
+
+    private static int sweepStepsFor(float moveX, float moveY) {
+        float longestAxisDistance = Math.max(Math.abs(moveX), Math.abs(moveY));
+        if (longestAxisDistance <= MAX_SWEEP_STEP_DISTANCE) {
+            return 1;
+        }
+        return Math.max(1, (int) Math.ceil(longestAxisDistance / MAX_SWEEP_STEP_DISTANCE));
     }
 
     public void setMap(TiledMap tiledMap) {
@@ -103,10 +129,18 @@ public class MoveSystem extends IteratingSystem {
         this.mapHeight = height * tileH * Main.UNIT_SCALE;
 
         this.collisionLayers.clear();
+        this.barrierObjects.clear();
         for (MapLayer layer : tiledMap.getLayers()) {
             if (layer instanceof TiledMapTileLayer tileLayer) {
                 // Tile collision objects should block regardless of visual layer placement.
                 this.collisionLayers.add(tileLayer);
+            }
+            if (layer.getObjects() != null) {
+                for (MapObject mapObject : layer.getObjects()) {
+                    if ("barrier".equalsIgnoreCase(layer.getName()) || isBarrierObject(mapObject)) {
+                        barrierObjects.add(mapObject);
+                    }
+                }
             }
         }
     }
@@ -123,6 +157,9 @@ public class MoveSystem extends IteratingSystem {
         Rectangle entityHitbox = buildHitbox(x, y, width, height, mover, tmpEntityHitbox);
 
         if (isBlockedByMap(entityHitbox)) {
+            return true;
+        }
+        if (isBlockedByBarrierShape(entityHitbox)) {
             return true;
         }
         return isBlockedBySolidEntity(entityHitbox, mover);
@@ -199,11 +236,14 @@ public class MoveSystem extends IteratingSystem {
     }
 
     private boolean isBlockedBySolidEntity(Rectangle entityHitbox, Entity mover) {
-        if (solidEntities == null || solidEntities.size() == 0) {
+        return isBlockedBySolidInteractible(entityHitbox, mover);
+    }
+
+    private boolean isBlockedBySolidInteractible(Rectangle entityHitbox, Entity mover) {
+        if (solidInteractibles == null || solidInteractibles.size() == 0) {
             return false;
         }
-
-        for (Entity entity : solidEntities) {
+        for (Entity entity : solidInteractibles) {
             if (entity == mover) {
                 continue;
             }
@@ -226,6 +266,79 @@ public class MoveSystem extends IteratingSystem {
             }
         }
         return false;
+    }
+
+    private boolean isBlockedByBarrierShape(Rectangle entityHitbox) {
+        if (barrierObjects.isEmpty()) {
+            return false;
+        }
+
+        float probeCenterX = (entityHitbox.x + entityHitbox.width * 0.5f) / Main.UNIT_SCALE;
+        float probeBottomY = entityHitbox.y / Main.UNIT_SCALE;
+        float probeLeftX = (entityHitbox.x + entityHitbox.width * 0.2f) / Main.UNIT_SCALE;
+        float probeRightX = (entityHitbox.x + entityHitbox.width * 0.8f) / Main.UNIT_SCALE;
+        float probeMidY = (entityHitbox.y + entityHitbox.height * 0.5f) / Main.UNIT_SCALE;
+
+        for (MapObject barrierObject : barrierObjects) {
+            if (containsPoint(barrierObject, probeCenterX, probeBottomY)
+                    || containsPoint(barrierObject, probeLeftX, probeBottomY)
+                    || containsPoint(barrierObject, probeRightX, probeBottomY)
+                    || containsPoint(barrierObject, probeCenterX, probeMidY)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean containsPoint(MapObject mapObject, float x, float y) {
+        if (mapObject instanceof PolygonMapObject polygonMapObject) {
+            return polygonMapObject.getPolygon().contains(x, y);
+        }
+        if (mapObject instanceof RectangleMapObject rectangleMapObject) {
+            return rectangleMapObject.getRectangle().contains(x, y);
+        }
+        if (mapObject instanceof CircleMapObject circleMapObject) {
+            return circleMapObject.getCircle().contains(x, y);
+        }
+        if (mapObject instanceof EllipseMapObject ellipseMapObject) {
+            return ellipseMapObject.getEllipse().contains(x, y);
+        }
+        return false;
+    }
+
+    private static boolean isBarrierObject(MapObject mapObject) {
+        String objectType = readObjectType(mapObject);
+        if (objectType == null || objectType.isBlank()) {
+            return false;
+        }
+        return "BARRIER".equals(objectType.trim().toUpperCase(Locale.ROOT));
+    }
+
+    private static String readObjectType(MapObject mapObject) {
+        if (mapObject == null || mapObject.getProperties() == null) {
+            return "";
+        }
+        Object objectType = mapObject.getProperties().get("ObjectType");
+        if (objectType != null) {
+            return String.valueOf(objectType);
+        }
+        Object tiledType = mapObject.getProperties().get("type");
+        if (tiledType != null) {
+            return String.valueOf(tiledType);
+        }
+        Object tiledTypePascal = mapObject.getProperties().get("Type");
+        if (tiledTypePascal != null) {
+            return String.valueOf(tiledTypePascal);
+        }
+        Object tiledClass = mapObject.getProperties().get("class");
+        if (tiledClass != null) {
+            return String.valueOf(tiledClass);
+        }
+        Object tiledClassPascal = mapObject.getProperties().get("Class");
+        if (tiledClassPascal != null) {
+            return String.valueOf(tiledClassPascal);
+        }
+        return "";
     }
 
     private float clampX(float x, float width, Entity mover) {

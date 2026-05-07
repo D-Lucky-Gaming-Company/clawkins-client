@@ -227,7 +227,7 @@ public class GameScreen extends ScreenAdapter {
         this.interactionSystem = new InteractionSystem();
         this.engine.addSystem(interactionSystem);
         this.engine.addSystem(new AnimationSystem());
-        this.engine.addSystem(new EnemySystem());
+        this.engine.addSystem(new EnemySystem(audioService));
         this.engine.addSystem(new MoveSystem());
         this.engine.addSystem(new CameraSystem(camera));
         this.engine.addSystem(new RenderSystem(batch, viewport, camera));
@@ -368,10 +368,10 @@ public class GameScreen extends ScreenAdapter {
         if (!loadedFromSave) {
             // Load the map and hand it to TiledService.
             // This triggers: object parsing → entity spawning → map change notification to systems.
-            TiledMap startMap = this.tiledService.loadMap(MapAsset.COTTAGE);
+            TiledMap startMap = this.tiledService.loadMap(MapAsset.COTTAGE_SAMPLE);
             this.tiledService.setMap(startMap);
-            this.lastAreaNameForSfx = resolveAreaName(MapAsset.COTTAGE);
-            this.lastAreaDisplayKey = buildAreaDisplayKey(MapAsset.COTTAGE);
+            this.lastAreaNameForSfx = resolveAreaName(MapAsset.COTTAGE_SAMPLE);
+            this.lastAreaDisplayKey = buildAreaDisplayKey(MapAsset.COTTAGE_SAMPLE);
             // Prevent frame-1 transition triggers from moving the player off the authored spawn.
             mapTransitionSystem.setCooldown(0f);
 
@@ -417,7 +417,7 @@ public class GameScreen extends ScreenAdapter {
 
         TiledMap currentMap = tiledService.getCurrentMap();
         if (currentMap == null) {
-            currentMap = tiledService.loadMap(MapAsset.COTTAGE);
+            currentMap = tiledService.loadMap(MapAsset.COTTAGE_SAMPLE);
         }
 
         tiledService.setMap(currentMap);
@@ -1102,7 +1102,7 @@ public class GameScreen extends ScreenAdapter {
         MapAsset targetAsset = MapAsset.fromKey(saveState.getMapKey());
         if (targetAsset == null) {
             Gdx.app.error("GameScreen", "Invalid map key: " + saveState.getMapKey() + ", defaulting to COTTAGE");
-            targetAsset = MapAsset.COTTAGE;
+            targetAsset = MapAsset.COTTAGE_SAMPLE;
         } else {
             Gdx.app.log("GameScreen", "Resolved map asset: " + targetAsset.name());
         }
@@ -1257,13 +1257,13 @@ public class GameScreen extends ScreenAdapter {
     private String resolveCurrentMapKey() {
         TiledMap map = tiledService.getCurrentMap();
         if (map == null) {
-            return MapAsset.COTTAGE.name();
+            return MapAsset.COTTAGE_SAMPLE.name();
         }
         Object asset = map.getProperties().get("mapAsset");
         if (asset instanceof MapAsset mapAsset) {
             return mapAsset.name();
         }
-        return MapAsset.COTTAGE.name();
+        return MapAsset.COTTAGE_SAMPLE.name();
     }
 
     private static BattleSkill.EffectType parseEffectType(String raw) {

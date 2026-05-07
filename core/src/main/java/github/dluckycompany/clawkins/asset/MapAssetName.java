@@ -5,19 +5,19 @@ import java.util.Map;
 
 public enum MapAssetName {
     NURSE_INTERIOR(MapAsset.NURSE_INTERIOR, "Nursery"),
-    NURSE_INTERIOR_1(MapAsset.NURSE_INTERIOR_1, "Nursery"),
     NURSE_INTERIOR_2(MapAsset.NURSE_INTERIOR_2, "Nursery"),
     NURSE_INTERIOR_3(MapAsset.NURSE_INTERIOR_3, "Nursery"),
-    COTTAGE(MapAsset.COTTAGE, "Cottage"),
-    SHOP(MapAsset.SHOP, "Shop"),
-    SHOP_1(MapAsset.SHOP_1, "Shop"),
-    SHOP_2(MapAsset.SHOP_2, "Shop"),
-    SHOP_3(MapAsset.SHOP_3, "Shop"),
-    MOUNTAIN(MapAsset.MOUNTAIN, "Mountain"),
+    NURSE_INTERIOR_4(MapAsset.NURSE_INTERIOR_4, "Nursery"),
+    COTTAGE_SAMPLE(MapAsset.COTTAGE_SAMPLE, "Cottage"),
+    SHOP_INTERIOR(MapAsset.SHOP_INTERIOR, "Shop"),
+    SHOP_INTERIOR_2(MapAsset.SHOP_INTERIOR_2, "Shop"),
+    SHOP_INTERIOR_3(MapAsset.SHOP_INTERIOR_3, "Shop"),
     MOUNTAIN_1(MapAsset.MOUNTAIN_1, "Mountain"),
     MOUNTAIN_2(MapAsset.MOUNTAIN_2, "Mountain"),
     MOUNTAIN_3(MapAsset.MOUNTAIN_3, "Mountain"),
-    CAVE(MapAsset.CAVE, "Cave"),
+    MOUNTAIN_4(MapAsset.MOUNTAIN_4, "Mountain"),
+    MOUNTAIN_5(MapAsset.MOUNTAIN_5, "Mountain"),
+    CAVE_ENTRANCE(MapAsset.CAVE_ENTRANCE, "Cave"),
     CAVE_1(MapAsset.CAVE_1, "Cave"),
     CAVE_2(MapAsset.CAVE_2, "Cave"),
     CAVE_3(MapAsset.CAVE_3, "Cave"),
@@ -30,12 +30,13 @@ public enum MapAssetName {
     MANSION_MAZE(MapAsset.MANSION_MAZE, "Mansion", "Maze"),
     MANSION_GARDEN(MapAsset.MANSION_GARDEN, "Mansion", "Garden"),
     MANSION_EXIT(MapAsset.MANSION_EXIT, "Mansion", "Exit"),
-    BACKALLEY(MapAsset.BACKALLEY, "Back Alley"),
+    BACKALLEY_1(MapAsset.BACKALLEY_1, "Back Alley"),
     BACKALLEY_2(MapAsset.BACKALLEY_2, "Back Alley"),
     BACKALLEY_3(MapAsset.BACKALLEY_3, "Back Alley"),
     BACKALLEY_4(MapAsset.BACKALLEY_4, "Back Alley"),
     BACKALLEY_EXIT(MapAsset.BACKALLEY_EXIT, "Back Alley"),
-    BACKALLEY_SECRET(MapAsset.BACKALLEY_SECRET, "Back Alley", "Secret");
+    BACKALLEY_SECRET(MapAsset.BACKALLEY_SECRET, "Back Alley", "Secret"),
+    TEST_WORLD(MapAsset.TEST_WORLD, "Test", "World");
 
     private static final Map<MapAsset, MapAssetName> BY_ASSET = new EnumMap<>(MapAsset.class);
 
