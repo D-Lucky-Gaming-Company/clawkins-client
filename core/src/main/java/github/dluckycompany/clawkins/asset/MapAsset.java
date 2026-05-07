@@ -9,7 +9,6 @@ import java.util.Locale;
 import java.util.Map;
 
 public enum MapAsset implements Asset<TiledMap>{
-    MAIN("main.tmx"),
     NURSE_INTERIOR("nurse_interior.tmx"),
     COTTAGE("cottage_sample.tmx"),
     FIELD("field.tmx"),

@@ -97,6 +97,7 @@ public class AudioService implements Disposable {
     public void onEvent(AudioEventType eventType) {
         switch (eventType) {
             case MAP_CHANGED -> playCurrentMapMusic(true);
+            case AREA_NAME_DISPLAY -> playSound(SoundEffect.AREA_NAME_DISPLAY);
             case ENCOUNTER_STARTED -> playSound(SoundEffect.ENCOUNTER);
             case BATTLE_STARTED -> playMusic(MusicTrack.BATTLE, true);
             case BATTLE_VICTORY -> playMusic(MusicTrack.VICTORY, false);
