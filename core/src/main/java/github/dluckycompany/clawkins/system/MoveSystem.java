@@ -756,18 +756,46 @@ public class MoveSystem extends IteratingSystem {
                 return Intersector.overlaps(circle, probe);
             }
             if (polygon != null) {
-                tmpProbeVertices[0] = probe.x;
-                tmpProbeVertices[1] = probe.y;
-                tmpProbeVertices[2] = probe.x + probe.width;
-                tmpProbeVertices[3] = probe.y;
-                tmpProbeVertices[4] = probe.x + probe.width;
-                tmpProbeVertices[5] = probe.y + probe.height;
-                tmpProbeVertices[6] = probe.x;
-                tmpProbeVertices[7] = probe.y + probe.height;
-                tmpProbePolygon.setVertices(tmpProbeVertices);
-                return Intersector.overlapConvexPolygons(polygon, tmpProbePolygon);
+                float[] vertices = polygon.getTransformedVertices();
+                if (vertices == null || vertices.length < 4) {
+                    return false;
+                }
+
+                for (int i = 0; i < vertices.length; i += 2) {
+                    int next = (i + 2) % vertices.length;
+                    float startX = vertices[i];
+                    float startY = vertices[i + 1];
+                    float endX = vertices[next];
+                    float endY = vertices[next + 1];
+                    if (segmentIntersectsRectangle(startX, startY, endX, endY, probe)) {
+                        return true;
+                    }
+                }
+                return false;
             }
             return false;
+        }
+
+        private static boolean segmentIntersectsRectangle(
+                float startX,
+                float startY,
+                float endX,
+                float endY,
+                Rectangle rect
+        ) {
+            if (rect.contains(startX, startY) || rect.contains(endX, endY)) {
+                return true;
+            }
+
+            float minX = rect.x;
+            float minY = rect.y;
+            float maxX = rect.x + rect.width;
+            float maxY = rect.y + rect.height;
+
+            return Intersector.intersectSegments(startX, startY, endX, endY, minX, minY, maxX, minY, null)
+                    || Intersector.intersectSegments(startX, startY, endX, endY, maxX, minY, maxX, maxY, null)
+                    || Intersector.intersectSegments(startX, startY, endX, endY, maxX, maxY, minX, maxY, null)
+                    || Intersector.intersectSegments(startX, startY, endX, endY, minX, maxY, minX, minY, null);
         }
     }
 
