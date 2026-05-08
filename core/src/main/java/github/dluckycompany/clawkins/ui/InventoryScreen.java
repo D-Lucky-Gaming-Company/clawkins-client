@@ -80,6 +80,8 @@ public class InventoryScreen implements Screen {
         List<Clawkin> party = previousGameScreen.getPlayerBattleState().getParty();
         Skin skin = previousGameScreen.getBattleOverlay().getSkin();
         github.dluckycompany.clawkins.item.Wallet wallet = previousGameScreen.getPlayerBattleState().getWallet();
+        boolean openedFromBattle = previousGameScreen.getBattleOverlay() != null
+                && previousGameScreen.getBattleOverlay().isInBattle();
 
         // ============================================================
         // CRITICAL: Initialize Skin with required fonts before creating dialogs
@@ -90,7 +92,7 @@ public class InventoryScreen implements Screen {
         Gdx.app.log("InventoryScreen", "Skin initialized with fonts");
 
         // Create InventoryUI with full-screen layout
-        inventoryUI = new InventoryUI(stage, font, playerInventory, party, skin, wallet, game.getAudioService());
+        inventoryUI = new InventoryUI(stage, font, playerInventory, party, skin, wallet, game.getAudioService(), openedFromBattle);
         inventoryUI.buildLayout();
         
         // Wire up back button to return to game screen
@@ -109,8 +111,11 @@ public class InventoryScreen implements Screen {
                     return true;
                 }
 
-                // ESC exits the inventory
-                if (keycode == Input.Keys.ESCAPE) {
+                // Unconfirm/back keys exit inventory when not consumed by InventoryUI first.
+                if (keycode == Input.Keys.ESCAPE
+                        || keycode == Input.Keys.X
+                        || keycode == Input.Keys.BACKSPACE
+                        || keycode == Input.Keys.BUTTON_B) {
                     returnToGameScreen();
                     return true;
                 }

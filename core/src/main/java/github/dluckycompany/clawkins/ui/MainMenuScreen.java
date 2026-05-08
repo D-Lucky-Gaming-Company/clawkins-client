@@ -25,6 +25,7 @@ import java.util.List;
 
 import github.dluckycompany.clawkins.audio.AudioService;
 import github.dluckycompany.clawkins.audio.SoundEffect;
+import github.dluckycompany.clawkins.input.InputConventions;
 import github.dluckycompany.clawkins.save.SaveStateManager;
 
 /**
@@ -145,8 +146,8 @@ public class MainMenuScreen implements Screen {
 
         handleMenuInput();
 
-        // Handle keyboard shortcut
-        if (Gdx.input.isKeyJustPressed(Keys.ESCAPE)) {
+        // Handle unselect/back shortcut using shared UI convention
+        if (isMenuCancelPressed()) {
             onExit.run();
         }
     }
@@ -376,23 +377,19 @@ public class MainMenuScreen implements Screen {
     }
 
     private boolean isMenuUpPressed() {
-        return Gdx.input.isKeyJustPressed(Keys.W)
-                || Gdx.input.isKeyJustPressed(Keys.UP)
-                || Gdx.input.isKeyJustPressed(Keys.DPAD_UP);
+        return InputConventions.isMenuUpJustPressed();
     }
 
     private boolean isMenuDownPressed() {
-        return Gdx.input.isKeyJustPressed(Keys.S)
-                || Gdx.input.isKeyJustPressed(Keys.DOWN)
-                || Gdx.input.isKeyJustPressed(Keys.DPAD_DOWN);
+        return InputConventions.isMenuDownJustPressed();
     }
 
     private boolean isMenuConfirmPressed() {
-        return Gdx.input.isKeyJustPressed(Keys.Z)
-                || Gdx.input.isKeyJustPressed(Keys.SPACE)
-                || Gdx.input.isKeyJustPressed(Keys.ENTER)
-                || Gdx.input.isKeyJustPressed(Keys.NUMPAD_ENTER)
-                || Gdx.input.isKeyJustPressed(Keys.BUTTON_A);
+        return InputConventions.isInteractJustPressed();
+    }
+
+    private boolean isMenuCancelPressed() {
+        return InputConventions.isCancelJustPressed();
     }
 
     private void moveSelection(int direction) {

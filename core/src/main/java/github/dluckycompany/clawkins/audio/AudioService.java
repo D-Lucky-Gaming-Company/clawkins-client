@@ -31,6 +31,7 @@ public class AudioService implements Disposable {
 
     private MusicTrack currentTrack;
     private Music currentMusic;
+    private float masterVolume = 1f;
     private float musicVolume = 0.6f;
     private float soundVolume = 0.8f;
     private boolean muted;
@@ -56,13 +57,14 @@ public class AudioService implements Disposable {
     }
 
     public void setMasterVolume(float volume) {
-        float clamped = Math.max(0f, Math.min(1f, volume));
-        setMusicVolume(clamped);
-        setSoundVolume(clamped);
+        masterVolume = Math.max(0f, Math.min(1f, volume));
+        if (currentMusic != null) {
+            currentMusic.setVolume(effectiveMusicVolume(currentTrack));
+        }
     }
 
     public float getMasterVolume() {
-        return musicVolume;
+        return masterVolume;
     }
 
     public float getMusicVolume() {
@@ -176,7 +178,7 @@ public class AudioService implements Disposable {
         if (muted) {
             return 0f;
         }
-        return musicVolume * musicTrackVolumeMultiplier(track);
+        return masterVolume * musicVolume * musicTrackVolumeMultiplier(track);
     }
 
     private float musicTrackVolumeMultiplier(MusicTrack track) {
@@ -187,7 +189,7 @@ public class AudioService implements Disposable {
     }
 
     private float effectiveSoundVolume() {
-        return muted ? 0f : soundVolume;
+        return muted ? 0f : masterVolume * soundVolume;
     }
 
     private float effectiveSoundVolume(SoundEffect effect) {

@@ -43,6 +43,7 @@ import github.dluckycompany.clawkins.component.Tiled;
 import github.dluckycompany.clawkins.component.Transform;
 import github.dluckycompany.clawkins.character.Clawkin;
 import github.dluckycompany.clawkins.encounter.EncounterZone;
+import github.dluckycompany.clawkins.input.InputConventions;
 
 public class InteractionSystem extends EntitySystem {
     private static final float INTERACT_RANGE = 1.2f;
@@ -423,9 +424,7 @@ public class InteractionSystem extends EntitySystem {
     }
 
     private static boolean isInteractionPressed() {
-        return Gdx.input.isKeyJustPressed(Input.Keys.Z)
-                || Gdx.input.isKeyJustPressed(Input.Keys.SPACE)
-                || Gdx.input.isKeyJustPressed(Input.Keys.ENTER);
+        return InputConventions.isInteractJustPressed();
     }
 
     private boolean processTrippableInteraction(float deltaTime) {

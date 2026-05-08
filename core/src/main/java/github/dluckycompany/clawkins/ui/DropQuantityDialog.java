@@ -3,6 +3,7 @@ package github.dluckycompany.clawkins.ui;
 import java.util.function.Consumer;
 
 import com.badlogic.gdx.Gdx;
+import com.badlogic.gdx.Input;
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.math.Interpolation;
@@ -79,7 +80,7 @@ public class DropQuantityDialog extends Dialog {
         this.font = retrievedFont;
         
         setModal(true);
-        setMovable(true);
+        setMovable(false);
         setResizable(false);
         
         buildUI();
@@ -305,21 +306,21 @@ public class DropQuantityDialog extends Dialog {
         // Apply high-fidelity rounded button styles matching the "Paper-on-Wood" theme
         TextButton.TextButtonStyle roundedButtonStyle = getRoundedButtonStyle();
         
-        TextButton confirmBtn = new TextButton("Confirm", roundedButtonStyle);
-        confirmBtn.getLabel().setFontScale(1.4f);
+        TextButton confirmButton = new TextButton("Confirm", roundedButtonStyle);
+        confirmButton.getLabel().setFontScale(1.4f);
         
         // Apply fade effect for smooth interaction feedback
-        applyTextButtonFade(confirmBtn);
+        applyTextButtonFade(confirmButton);
         
-        TextButton cancelBtn = new TextButton("Cancel", roundedButtonStyle);
-        cancelBtn.getLabel().setFontScale(1.4f);
+        TextButton cancelButton = new TextButton("Cancel", roundedButtonStyle);
+        cancelButton.getLabel().setFontScale(1.4f);
         
         // Apply fade effect for smooth interaction feedback
-        applyTextButtonFade(cancelBtn);
+        applyTextButtonFade(cancelButton);
         
         // Add buttons to dialog with proper spacing
-        button(confirmBtn, DIALOG_CONFIRMED).padRight(10);
-        button(cancelBtn, DIALOG_CANCELLED);
+        button(confirmButton, DIALOG_CONFIRMED).padRight(10);
+        button(cancelButton, DIALOG_CANCELLED);
         
         // Update title color to match palette
         // CRITICAL: Do NOT set title table background (causes black bar)
@@ -334,10 +335,6 @@ public class DropQuantityDialog extends Dialog {
         // CRITICAL: Pack the dialog to calculate proper size from content
         // This ensures the dialog is sized to fit all content, not just a fixed 280x200
         pack();
-        
-        // Center the dialog on screen
-        setPosition(Math.round((Gdx.graphics.getWidth() - getWidth()) / 2f),
-                   Math.round((Gdx.graphics.getHeight() - getHeight()) / 2f));
         
         // Black stroke border is now included in the window background (createRoundedPanelWithStroke)
         // No need for separate addModalBorder() overlay
@@ -391,7 +388,49 @@ public class DropQuantityDialog extends Dialog {
     public int getSelectedQuantity() {
         return selectedQuantity;
     }
-    
+
+    public boolean handleNavigationKey(int keycode) {
+        switch (keycode) {
+            case Input.Keys.A:
+            case Input.Keys.LEFT:
+                adjustQuantity(-1);
+                return true;
+            case Input.Keys.D:
+            case Input.Keys.RIGHT:
+                adjustQuantity(1);
+                return true;
+            case Input.Keys.W:
+            case Input.Keys.UP:
+            case Input.Keys.S:
+            case Input.Keys.DOWN:
+            case Input.Keys.ENTER:
+            case Input.Keys.NUMPAD_ENTER:
+            case Input.Keys.Z:
+            case Input.Keys.SPACE:
+            case Input.Keys.BUTTON_A:
+                result(DIALOG_CONFIRMED);
+                hide(null);
+                return true;
+            case Input.Keys.X:
+            case Input.Keys.ESCAPE:
+            case Input.Keys.BACKSPACE:
+            case Input.Keys.BUTTON_B:
+                result(DIALOG_CANCELLED);
+                hide(null);
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private void adjustQuantity(int delta) {
+        int next = Math.max(1, Math.min(maxQuantity, selectedQuantity + delta));
+        if (next != selectedQuantity) {
+            selectedQuantity = next;
+            updateQuantityLabel();
+        }
+    }
+
     /**
      * Override Dialog.result() to handle callback execution.
      * This is called automatically when Dialog.button() action is triggered.

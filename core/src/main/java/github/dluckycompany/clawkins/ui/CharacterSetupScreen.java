@@ -31,6 +31,7 @@ import github.dluckycompany.clawkins.GameScreen;
 import github.dluckycompany.clawkins.Main;
 import github.dluckycompany.clawkins.audio.AudioService;
 import github.dluckycompany.clawkins.audio.SoundEffect;
+import github.dluckycompany.clawkins.input.InputConventions;
 import github.dluckycompany.clawkins.model.Gender;
 import github.dluckycompany.clawkins.model.PlayerProfile;
 
@@ -999,35 +1000,23 @@ public class CharacterSetupScreen implements Screen {
     }
 
     private boolean isMenuUpPressed() {
-        return Gdx.input.isKeyJustPressed(Keys.W)
-                || Gdx.input.isKeyJustPressed(Keys.UP)
-                || Gdx.input.isKeyJustPressed(Keys.DPAD_UP);
+        return InputConventions.isMenuUpJustPressed();
     }
 
     private boolean isMenuDownPressed() {
-        return Gdx.input.isKeyJustPressed(Keys.S)
-                || Gdx.input.isKeyJustPressed(Keys.DOWN)
-                || Gdx.input.isKeyJustPressed(Keys.DPAD_DOWN);
+        return InputConventions.isMenuDownJustPressed();
     }
 
     private boolean isMenuLeftPressed() {
-        return Gdx.input.isKeyJustPressed(Keys.A)
-                || Gdx.input.isKeyJustPressed(Keys.LEFT)
-                || Gdx.input.isKeyJustPressed(Keys.DPAD_LEFT);
+        return InputConventions.isMenuLeftJustPressed();
     }
 
     private boolean isMenuRightPressed() {
-        return Gdx.input.isKeyJustPressed(Keys.D)
-                || Gdx.input.isKeyJustPressed(Keys.RIGHT)
-                || Gdx.input.isKeyJustPressed(Keys.DPAD_RIGHT);
+        return InputConventions.isMenuRightJustPressed();
     }
 
     private boolean isMenuConfirmPressed() {
-        return Gdx.input.isKeyJustPressed(Keys.Z)
-                || Gdx.input.isKeyJustPressed(Keys.SPACE)
-                || Gdx.input.isKeyJustPressed(Keys.ENTER)
-                || Gdx.input.isKeyJustPressed(Keys.NUMPAD_ENTER)
-                || Gdx.input.isKeyJustPressed(Keys.BUTTON_A);
+        return InputConventions.isInteractJustPressed();
     }
 
     private boolean isNameInputNavigateBackwardPressed() {

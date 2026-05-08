@@ -11,6 +11,7 @@ import com.badlogic.gdx.math.Interpolation;
 import com.badlogic.gdx.scenes.scene2d.InputEvent;
 import com.badlogic.gdx.scenes.scene2d.Stage;
 import com.badlogic.gdx.scenes.scene2d.actions.Actions;
+import com.badlogic.gdx.scenes.scene2d.ui.Dialog;
 import com.badlogic.gdx.scenes.scene2d.ui.Image;
 import com.badlogic.gdx.scenes.scene2d.ui.ImageButton;
 import com.badlogic.gdx.scenes.scene2d.ui.Label;
@@ -20,10 +21,12 @@ import com.badlogic.gdx.scenes.scene2d.ui.Table;
 import com.badlogic.gdx.scenes.scene2d.ui.TextButton;
 import com.badlogic.gdx.scenes.scene2d.utils.ClickListener;
 import com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable;
+import com.badlogic.gdx.utils.Align;
 
 import github.dluckycompany.clawkins.audio.AudioService;
 import github.dluckycompany.clawkins.audio.SoundEffect;
 import github.dluckycompany.clawkins.character.Clawkin;
+import github.dluckycompany.clawkins.input.InputConventions;
 import github.dluckycompany.clawkins.item.Inventory;
 import github.dluckycompany.clawkins.item.Item;
 import github.dluckycompany.clawkins.item.ItemTextureManager;
@@ -60,6 +63,7 @@ public class InventoryUI {
     private final Skin skin;
     private final Wallet wallet;
     private final AudioService audioService;
+    private final boolean battleContext;
 
     // Main layout table
     private Table rootTable;
@@ -81,6 +85,9 @@ public class InventoryUI {
     private TextButton useBtnRef;
     private TextButton dropBtnRef;
     private PartySelectionDialog activePartyDialog;
+    private DropQuantityDialog activeDropDialog;
+    private Dialog activeModalDialog;
+    private Runnable activeModalOnClose;
 
     // Callbacks
     private Runnable onItemDropped;
@@ -100,8 +107,16 @@ public class InventoryUI {
     private static final Color PANEL_DIVIDER = Color.valueOf("#1F1A13");     // Dark Coffee / Deep Brown
     private static final Color TEXT_PRIMARY = Color.valueOf("#1F1A13");      // Dark Coffee / Deep Brown
     private static final Color TEXT_HIGHLIGHT = Color.valueOf("#E7DAC7");    // Beige (for highlights)
+    private static final Color TEXT_MUTED = Color.valueOf("#5A4B39");        // Muted dark brown for helper text
     private static final Color BUTTON_BG = Color.valueOf("#C19253");         // Tan (button background)
     private static final Color BUTTON_TEXT = Color.valueOf("#1F1A13");       // Dark Brown (button text)
+    private static final Color ROW_SELECTED_BG = Color.valueOf("#ECCD61");   // Warm yellow selected state
+    private static final Color ROW_HOVER_BG = Color.valueOf("#CFA66B");      // Slightly lighter tan hover
+    private static final Color ACTION_SELECTED_TINT = Color.valueOf("#ECCD61");
+    private static final Color HEALTH_ITEM_TINT = new Color(0.34f, 0.78f, 0.45f, 0.22f);
+    private static final Color STAT_BOOST_ITEM_TINT = new Color(0.86f, 0.34f, 0.34f, 0.20f);
+    private static final Color DEFENSE_ITEM_TINT = new Color(0.33f, 0.53f, 0.92f, 0.24f);
+    private static final Color MODAL_BG = Color.valueOf("#E7DAC7");
 
     // UI dimensions (relative to viewport)
     private static final float PADDING = 20f;
@@ -111,7 +126,7 @@ public class InventoryUI {
     /**
      * Constructor
      */
-    public InventoryUI(Stage stage, BitmapFont font, Inventory inventory, List<Clawkin> party, Skin skin, Wallet wallet, AudioService audioService) {
+    public InventoryUI(Stage stage, BitmapFont font, Inventory inventory, List<Clawkin> party, Skin skin, Wallet wallet, AudioService audioService, boolean battleContext) {
         this.stage = stage;
         this.font = font;
         this.inventory = inventory;
@@ -119,6 +134,7 @@ public class InventoryUI {
         this.skin = skin;
         this.wallet = wallet;
         this.audioService = audioService;
+        this.battleContext = battleContext;
         
         // Load button assets from PNG files
         loadButtonAssets();
@@ -358,15 +374,11 @@ public class InventoryUI {
         // ============ LEFT COLUMN (35%): Item Details - BEIGE with Rounded Corners ============
         detailPanel = new Table();
         // Apply rounded corner background (12px radius)
-        detailPanel.setBackground(RoundedPanelDrawable.createRoundedPanel(PANEL_LEFT_BG, 12));
+        detailPanel.setBackground(RoundedPanelDrawable.createRoundedPanelWithStroke(PANEL_LEFT_BG, 12, 1));
         detailPanel.pad(PADDING + 6);  // Extra padding for rounded corner clearance
         detailPanel.top().left();
         
-        Label selectPrompt = new Label("Select an item to view details", 
-            new Label.LabelStyle(font, TEXT_PRIMARY));
-        selectPrompt.setFontScale(1.4f);
-        selectPrompt.setWrap(true);
-        detailPanel.add(selectPrompt).expand().fill();
+        showSelectionPrompt();
         
         // Add left panel to content table (35% width)
         contentTable.add(detailPanel).width(280).expandY().fillY();
@@ -379,7 +391,7 @@ public class InventoryUI {
         // ============ RIGHT COLUMN (65%): Item List - TAN with Rounded Corners ============
         Table rightColumn = new Table();
         // Apply rounded corner background (12px radius)
-        rightColumn.setBackground(RoundedPanelDrawable.createRoundedPanel(PANEL_RIGHT_BG, 12));
+        rightColumn.setBackground(RoundedPanelDrawable.createRoundedPanelWithStroke(PANEL_RIGHT_BG, 12, 1));
         rightColumn.top().left();
         rightColumn.pad(16f);  // Extra padding for rounded corner clearance
         
@@ -440,9 +452,12 @@ public class InventoryUI {
         dropBtnRef = null;
 
         if (inventory == null || inventory.getAllItems().isEmpty()) {
-            Label emptyLabel = new Label("No items", new Label.LabelStyle(font, TEXT_PRIMARY));
-            emptyLabel.setFontScale(1.8f);
-            itemListContainer.add(emptyLabel).pad(20f).row();
+            Label emptyLabel = new Label("No items in your bag.", new Label.LabelStyle(font, TEXT_PRIMARY));
+            emptyLabel.setFontScale(1.5f);
+            itemListContainer.add(emptyLabel).padTop(24f).row();
+            Label emptyHint = new Label("Find, buy, or loot items to fill this list.", new Label.LabelStyle(font, TEXT_MUTED));
+            emptyHint.setFontScale(1.0f);
+            itemListContainer.add(emptyHint).padTop(6f).row();
         } else {
             // Add each item as a clickable row with rounded background
             for (int i = 0; i < inventory.getAllItems().size(); i++) {
@@ -453,7 +468,6 @@ public class InventoryUI {
 
             if (!navigableItems.isEmpty()) {
                 selectedIndex = 0;
-                selectItem(navigableItems.get(0), navigableRows.get(0));
             }
         }
         
@@ -469,13 +483,13 @@ public class InventoryUI {
     private void createClickableItemRow(Item item, int quantity, int index) {
         final Table itemRow = new Table();
         // Apply rounded corner background instead of sharp rectangle (8px radius)
-        itemRow.setBackground(RoundedPanelDrawable.createRoundedPanel(BUTTON_BG, 8));
+        itemRow.setBackground(createItemRowDefaultBackground());
         itemRow.pad(8f);  // Increased padding for rounded corner clearance
         itemRow.setTouchable(com.badlogic.gdx.scenes.scene2d.Touchable.enabled);
 
         // Create a container table for image with rounded corners
         Table imageContainer = new Table();
-        imageContainer.setBackground(RoundedPanelDrawable.createRoundedPanel(PANEL_LEFT_BG, 6));  // 6px radius beige rounded
+        imageContainer.setBackground(RoundedPanelDrawable.createRoundedPanelWithStroke(getItemTintColor(item), 6, 1));
         imageContainer.pad(5f);
         
         // Load and display item image
@@ -508,6 +522,9 @@ public class InventoryUI {
             public void clicked(InputEvent event, float x, float y) {
                 selectedIndex = index;
                 selectItem(item, itemRow);
+                actionMode = true;
+                actionIndex = 0;
+                updateActionButtonHighlight();
                 // Play selection sound on click
                 if (audioService != null) {
                     audioService.playSound(SoundEffect.UI_SELECT);
@@ -519,6 +536,16 @@ public class InventoryUI {
                 // Play hover sound only when entering a different item
                 if (selectedIndex != index && audioService != null) {
                     audioService.playSound(SoundEffect.UI_HOVER);
+                }
+                if (selectedItemRow != itemRow) {
+                    itemRow.setBackground(RoundedPanelDrawable.createRoundedPanelWithStroke(ROW_HOVER_BG, 8, 1));
+                }
+            }
+
+            @Override
+            public void exit(InputEvent event, float x, float y, int pointer, com.badlogic.gdx.scenes.scene2d.Actor toActor) {
+                if (selectedItemRow != itemRow) {
+                    itemRow.setBackground(createItemRowDefaultBackground());
                 }
             }
         });
@@ -535,13 +562,13 @@ public class InventoryUI {
     private void selectItem(Item item, Table itemRow) {
         // Clear previous selection highlight (back to rounded tan)
         if (selectedItemRow != null) {
-            selectedItemRow.setBackground(RoundedPanelDrawable.createRoundedPanel(BUTTON_BG, 8));
+            selectedItemRow.setBackground(createItemRowDefaultBackground());
         }
 
         // Set new selection (highlight with rounded beige)
         selectedItem = item;
         selectedItemRow = itemRow;
-        selectedItemRow.setBackground(RoundedPanelDrawable.createRoundedPanel(TEXT_HIGHLIGHT, 8));  // Beige rounded highlight
+        selectedItemRow.setBackground(createItemRowSelectedBackground());
 
         if (itemScrollPane != null && selectedItemRow != null) {
             itemScrollPane.scrollTo(
@@ -566,18 +593,33 @@ public class InventoryUI {
         if (activePartyDialog != null) {
             return activePartyDialog.handleNavigationKey(keycode);
         }
+        if (activeDropDialog != null) {
+            return activeDropDialog.handleNavigationKey(keycode);
+        }
+        if (activeModalDialog != null) {
+            if (isInteractKey(keycode) || isCancelKey(keycode)) {
+                closeActiveModalDialog();
+            }
+            return true;
+        }
 
         switch (keycode) {
             case Input.Keys.W, Input.Keys.UP -> {
-                actionMode = false;
-                updateActionButtonHighlight();
-                navigateSelection(-1);
+                if (actionMode) {
+                    actionIndex = 0;
+                    updateActionButtonHighlight();
+                } else {
+                    navigateSelection(-1);
+                }
                 return true;
             }
             case Input.Keys.S, Input.Keys.DOWN -> {
-                actionMode = false;
-                updateActionButtonHighlight();
-                navigateSelection(1);
+                if (actionMode) {
+                    actionIndex = 1;
+                    updateActionButtonHighlight();
+                } else {
+                    navigateSelection(1);
+                }
                 return true;
             }
             case Input.Keys.A, Input.Keys.LEFT -> {
@@ -623,10 +665,71 @@ public class InventoryUI {
                 }
                 return true;
             }
+            case Input.Keys.X, Input.Keys.ESCAPE, Input.Keys.BACKSPACE, Input.Keys.BUTTON_B -> {
+                handleCancelInput();
+                return true;
+            }
             default -> {
                 return false;
             }
         }
+    }
+
+    private void handleCancelInput() {
+        // Step back from action button focus to item selection.
+        if (actionMode) {
+            actionMode = false;
+            updateActionButtonHighlight();
+            if (audioService != null) {
+                audioService.playSound(SoundEffect.UI_BACK);
+            }
+            return;
+        }
+
+        // Deselect current item and return to neutral details state.
+        if (selectedItem != null || selectedItemRow != null) {
+            deselectCurrentItem();
+            if (audioService != null) {
+                audioService.playSound(SoundEffect.UI_BACK);
+            }
+            return;
+        }
+
+        // No active selection left: close inventory.
+        if (onBackPressed != null) {
+            if (audioService != null) {
+                audioService.playSound(SoundEffect.UI_BACK);
+            }
+            onBackPressed.run();
+        }
+    }
+
+    private void deselectCurrentItem() {
+        if (selectedItemRow != null) {
+            selectedItemRow.setBackground(createItemRowDefaultBackground());
+        }
+        selectedItem = null;
+        selectedItemRow = null;
+        actionMode = false;
+        actionIndex = 0;
+        useBtnRef = null;
+        dropBtnRef = null;
+        showSelectionPrompt();
+    }
+
+    private void showSelectionPrompt() {
+        detailPanel.clearChildren();
+        detailPanel.top().left();
+        Label selectPrompt = new Label("Select an item to view details",
+            new Label.LabelStyle(font, TEXT_PRIMARY));
+        selectPrompt.setFontScale(1.4f);
+        selectPrompt.setWrap(true);
+        Label selectHint = new Label("Use W/S or Arrow Keys. Press Z/Enter to choose, X to back.",
+            new Label.LabelStyle(font, TEXT_MUTED));
+        selectHint.setFontScale(0.95f);
+        selectHint.setWrap(true);
+        detailPanel.add(selectPrompt).expandX().fillX().padBottom(8f).row();
+        detailPanel.add(selectHint).expandX().fillX().top();
     }
 
     private void navigateSelection(int delta) {
@@ -661,7 +764,7 @@ public class InventoryUI {
         // Item image container (centered with rounded corners)
         // Wraps the item icon in a rounded rectangular background for visual hierarchy
         Table imageContainer = new Table();
-        imageContainer.setBackground(RoundedPanelDrawable.createRoundedPanel(PANEL_DIVIDER, 8));  // 8px radius dark brown rounded
+        imageContainer.setBackground(RoundedPanelDrawable.createRoundedPanelWithStroke(PANEL_DIVIDER, 8, 1));  // subtle framed icon card
         imageContainer.pad(10f);
         imageContainer.center();
         
@@ -693,7 +796,7 @@ public class InventoryUI {
         // USE button (tan background with rounded corners, dark brown text)
         TextButton useBtn = new TextButton("USE", 
             new TextButton.TextButtonStyle(
-                RoundedPanelDrawable.createRoundedPanel(BUTTON_BG, 8),
+                RoundedPanelDrawable.createRoundedPanelWithStrokeAndGrain(BUTTON_BG, 8, 1, 0.85f),
                 null,  // No down drawable - fade animation handles highlighting
                 null,  // No checked drawable
                 font
@@ -726,7 +829,7 @@ public class InventoryUI {
         // DROP button (tan background with rounded corners, dark brown text)
         TextButton dropBtn = new TextButton("DROP",
             new TextButton.TextButtonStyle(
-                RoundedPanelDrawable.createRoundedPanel(BUTTON_BG, 8),
+                RoundedPanelDrawable.createRoundedPanelWithStrokeAndGrain(BUTTON_BG, 8, 1, 0.85f),
                 null,  // No down drawable - fade animation handles highlighting
                 null,  // No checked drawable
                 font
@@ -765,27 +868,46 @@ public class InventoryUI {
         if (audioService != null) {
             audioService.playSound(SoundEffect.UI_SELECT);
         }
-        
-        if (selectedItem != null && party != null && !party.isEmpty()) {
-            PartySelectionDialog dialog = new PartySelectionDialog(
-                party,
-                selectedItem,
-                inventory,
-                skin,
-                font
-            );
-            dialog.pad(20f);
-
-            dialog.setOnItemApplied(() -> {
-                refreshItemList();
-                selectedItem = null;
-                selectedItemRow = null;
-            });
-
-            dialog.setOnClosed(() -> activePartyDialog = null);
-            activePartyDialog = dialog;
-            dialog.show(stage);
+        if (selectedItem == null) {
+            return;
         }
+
+        if (!isUseAllowedInCurrentContext(selectedItem)) {
+            showUsePermissionDialog(
+                "Use Not Allowed",
+                buildUseDeniedMessage(selectedItem)
+            );
+            return;
+        }
+
+        openPartySelectionDialog();
+    }
+
+    private void openPartySelectionDialog() {
+        if (selectedItem == null || party == null || party.isEmpty()) {
+            return;
+        }
+
+        PartySelectionDialog dialog = new PartySelectionDialog(
+            party,
+            selectedItem,
+            inventory,
+            skin,
+            font,
+            audioService,
+            battleContext
+        );
+        dialog.pad(20f);
+
+        dialog.setOnItemApplied(() -> {
+            refreshItemList();
+            selectedItem = null;
+            selectedItemRow = null;
+        });
+
+        dialog.setOnClosed(() -> activePartyDialog = null);
+        activePartyDialog = dialog;
+        dialog.show(stage, null);
     }
 
     private void triggerDropAction() {
@@ -801,6 +923,7 @@ public class InventoryUI {
                     minusDrawable, plusDrawable, exitDrawable);
                 dialog.pad(20f);
                 dialog.show(stage);
+                activeDropDialog = dialog;
 
                 dialog.setConfirmCallback((dropAmount) -> {
                     // Play confirm sound on drop
@@ -812,6 +935,7 @@ public class InventoryUI {
                     if (removed) {
                         com.badlogic.gdx.Gdx.app.log("InventoryUI",
                             "[Item Drop] Dropped " + dropAmount + "x " + selectedItem.getName());
+                        showDropResultDialog("Dropped " + dropAmount + "x " + selectedItem.getName() + ".");
 
                         refreshItemList();
                         selectedItem = null;
@@ -824,6 +948,7 @@ public class InventoryUI {
                         com.badlogic.gdx.Gdx.app.error("InventoryUI",
                             "Failed to drop " + dropAmount + "x " + selectedItem.getName());
                     }
+                    activeDropDialog = null;
                 });
 
                 dialog.setCancelCallback(() -> {
@@ -832,7 +957,7 @@ public class InventoryUI {
                         audioService.playSound(SoundEffect.UI_BACK);
                     }
                     Gdx.app.log("InventoryUI", "[Item Drop] Cancelled by user");
-                    refreshItemList();
+                    activeDropDialog = null;
                 });
             }
         }
@@ -849,8 +974,147 @@ public class InventoryUI {
             return;
         }
 
-        useBtnRef.setColor(actionIndex == 0 ? Color.valueOf("#A07A46") : Color.WHITE);
-        dropBtnRef.setColor(actionIndex == 1 ? Color.valueOf("#A07A46") : Color.WHITE);
+        useBtnRef.setColor(actionIndex == 0 ? ACTION_SELECTED_TINT : Color.WHITE);
+        dropBtnRef.setColor(actionIndex == 1 ? ACTION_SELECTED_TINT : Color.WHITE);
+    }
+
+    private com.badlogic.gdx.scenes.scene2d.utils.NinePatchDrawable createItemRowDefaultBackground() {
+        return RoundedPanelDrawable.createRoundedPanelWithStroke(BUTTON_BG, 8, 1);
+    }
+
+    private com.badlogic.gdx.scenes.scene2d.utils.NinePatchDrawable createItemRowSelectedBackground() {
+        return RoundedPanelDrawable.createRoundedPanelWithStroke(ROW_SELECTED_BG, 8, 1);
+    }
+
+    private boolean isUseAllowedInCurrentContext(Item item) {
+        if (item == null) {
+            return false;
+        }
+        if (battleContext) {
+            return item.isUsableInBattle();
+        }
+        return item.getType() == Item.ItemType.POTION;
+    }
+
+    private String buildUseDeniedMessage(Item item) {
+        if (item == null) {
+            return "This item cannot be used right now.";
+        }
+        if (battleContext) {
+            return item.getName() + " cannot be used in combat.";
+        }
+        return item.getName() + " can only be used in combat.";
+    }
+
+    private Color getItemTintColor(Item item) {
+        if (item == null) {
+            return PANEL_LEFT_BG;
+        }
+        String itemId = item.getId() == null ? "" : item.getId().toLowerCase();
+        if (itemId.contains("defense")) {
+            return DEFENSE_ITEM_TINT;
+        }
+        return switch (item.getType()) {
+            case POTION -> HEALTH_ITEM_TINT;
+            case STAT_BOOSTER -> STAT_BOOST_ITEM_TINT;
+            case REVIVE -> STAT_BOOST_ITEM_TINT;
+        };
+    }
+
+    private void showUsePermissionDialog(String title, String message) {
+        showUsePermissionDialog(title, message, null);
+    }
+
+    private void showUsePermissionDialog(String title, String message, Runnable onClose) {
+        Dialog dialog = new Dialog(title, skin) {
+            @Override
+            public void hide() {
+                hide(null);
+            }
+
+            @Override
+            protected void result(Object object) {
+                Runnable callback = activeModalOnClose;
+                activeModalDialog = null;
+                activeModalOnClose = null;
+                if (callback != null) callback.run();
+            }
+        };
+        dialog.setModal(true);
+        dialog.setMovable(false);
+        dialog.getTitleLabel().setColor(TEXT_PRIMARY);
+        dialog.getTitleLabel().setFontScale(1.05f);
+        dialog.getContentTable().setBackground(
+            RoundedPanelDrawable.createRoundedPanelWithStroke(MODAL_BG, 10, 2)
+        );
+        dialog.getContentTable().pad(8f);
+
+        Label body = new Label(message, new Label.LabelStyle(font, TEXT_PRIMARY));
+        body.setWrap(true);
+        body.setFontScale(1.0f);
+        body.setAlignment(Align.center);
+
+        dialog.getContentTable().add(body).width(360f).pad(14f);
+        TextButton okButton = new TextButton(
+            "OK",
+            new TextButton.TextButtonStyle(
+                RoundedPanelDrawable.createRoundedPanelWithStroke(BUTTON_BG, 8, 2),
+                RoundedPanelDrawable.createRoundedPanelWithStroke(ROW_HOVER_BG, 8, 2),
+                RoundedPanelDrawable.createRoundedPanelWithStroke(PANEL_DIVIDER, 8, 2),
+                font
+            )
+        );
+        okButton.getLabel().setColor(BUTTON_TEXT);
+        okButton.getLabel().setFontScale(1.0f);
+        dialog.button(okButton, true);
+        dialog.getButtonTable().pad(6f, 12f, 10f, 12f);
+        activeModalDialog = dialog;
+        activeModalOnClose = onClose;
+        dialog.show(stage, null);
+    }
+
+    private void showDropResultDialog(String message) {
+        Dialog dialog = new Dialog("Drop Confirmed", skin) {
+            @Override
+            protected void result(Object object) {
+                activeModalDialog = null;
+                activeModalOnClose = null;
+            }
+        };
+        dialog.setModal(true);
+        dialog.setMovable(false);
+
+        Label body = new Label(message, new Label.LabelStyle(font, TEXT_PRIMARY));
+        body.setWrap(true);
+        body.setFontScale(1.1f);
+
+        dialog.getContentTable().add(body).width(430f).pad(16f);
+        dialog.button("OK");
+        activeModalDialog = dialog;
+        activeModalOnClose = null;
+        dialog.show(stage);
+    }
+
+    private void closeActiveModalDialog() {
+        if (activeModalDialog == null) {
+            return;
+        }
+        Dialog dialog = activeModalDialog;
+        Runnable callback = activeModalOnClose;
+        activeModalDialog = null;
+        activeModalOnClose = null;
+        dialog.hide(null);
+        if (callback != null) {
+            callback.run();
+        }
+    }
+
+    private boolean isInteractKey(int keycode) {
+        return InputConventions.isInteractKey(keycode);
+    }
+
+    private boolean isCancelKey(int keycode) {
+        return InputConventions.isCancelKey(keycode);
     }
 
     /**
