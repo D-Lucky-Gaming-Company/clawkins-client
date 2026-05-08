@@ -1382,7 +1382,7 @@ public class GameScreen extends ScreenAdapter {
         inventoryStage.clear();
 
         List<Clawkin> party = playerBattleState.getParty();
-        teamViewerScreen = new TeamViewerScreen(inventoryStage, party, uiFont);
+        teamViewerScreen = new TeamViewerScreen(inventoryStage, party, uiFont, audioService);
         teamViewerScreen.setOnBackPressed(this::returnToSidebarFromSubmenu);
         teamViewerScreen.setActiveFighterIndex(playerBattleState.getActiveClawkinIndex());
         teamViewerScreen.setOnActiveFighterSet(idx -> playerBattleState.setActiveClawkinIndex(idx));

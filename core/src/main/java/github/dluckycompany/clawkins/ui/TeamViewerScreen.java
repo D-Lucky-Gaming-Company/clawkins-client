@@ -19,6 +19,8 @@ import com.badlogic.gdx.scenes.scene2d.ui.Table;
 import com.badlogic.gdx.scenes.scene2d.utils.ClickListener;
 import com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable;
 
+import github.dluckycompany.clawkins.audio.AudioService;
+import github.dluckycompany.clawkins.audio.SoundEffect;
 import github.dluckycompany.clawkins.character.Clawkin;
 
 /**
@@ -61,6 +63,7 @@ public class TeamViewerScreen implements InputProcessor {
     private final Stage stage;
     private final BitmapFont font;
     private final List<Clawkin> party;
+    private final AudioService audioService;
     
     // Root layout hierarchy (Vertical Table - no Stack)
     private final Table rootTable;          // Full-screen tan background + vertical layout
@@ -73,6 +76,7 @@ public class TeamViewerScreen implements InputProcessor {
     
     // State management
     private int currentSelectedIndex = 0;
+    private int lastSelectedIndex = -1;  // For debouncing navigation SFX
     private int activeFighterIndex = -1;   // index of the clawkin currently set as active fighter (-1 = none)
     private Label footerMessageLabel;
     private Label cancelOptionLabel;
@@ -81,6 +85,7 @@ public class TeamViewerScreen implements InputProcessor {
     private TextureRegionDrawable backDrawable;
     private boolean actionMenuOpen = false;
     private int selectedActionIndex = 1; // default to SWITCH
+    private int lastActionIndex = -1;  // For debouncing action menu navigation SFX
     
     // Previous input processor (for restoration)
     private final InputProcessor previousInputProcessor;
@@ -104,11 +109,13 @@ public class TeamViewerScreen implements InputProcessor {
      * @param stage The LibGDX Stage to render into (must use FitViewport with proper dimensions)
      * @param party List of Clawkin party members (0-3 members)
      * @param font BitmapFont for text rendering
+     * @param audioService AudioService for playing UI sounds
      */
-    public TeamViewerScreen(Stage stage, List<Clawkin> party, BitmapFont font) {
+    public TeamViewerScreen(Stage stage, List<Clawkin> party, BitmapFont font, AudioService audioService) {
         this.stage = stage;
         this.font = font;
         this.party = new ArrayList<>(party != null ? party : new ArrayList<>());
+        this.audioService = audioService;
         
         // Initialize layout tables
         this.rootTable = new Table();
@@ -214,12 +221,20 @@ public class TeamViewerScreen implements InputProcessor {
                 @Override
                 public void enter(InputEvent event, float x, float y, int pointer, com.badlogic.gdx.scenes.scene2d.Actor fromActor) {
                     // Hover: visually indicate this card can be selected
+                    // Play hover sound only when entering a different card
+                    if (currentSelectedIndex != finalSlotIndex && audioService != null) {
+                        audioService.playSound(SoundEffect.UI_HOVER);
+                    }
                     selectSlot(finalSlotIndex);
                 }
                 
                 @Override
                 public void clicked(InputEvent event, float x, float y) {
                     // Click: select slot and open action menu for this clawkin.
+                    // Play select sound
+                    if (audioService != null) {
+                        audioService.playSound(SoundEffect.UI_SELECT);
+                    }
                     selectSlot(finalSlotIndex);
                     openActionMenuForCurrentSelection();
                 }
@@ -256,6 +271,10 @@ public class TeamViewerScreen implements InputProcessor {
                 @Override
                 public void clicked(InputEvent event, float x, float y) {
                     Gdx.app.log("TeamViewerScreen", "[INPUT] Back button clicked");
+                    // Play back sound
+                    if (audioService != null) {
+                        audioService.playSound(SoundEffect.UI_BACK);
+                    }
                     // CRITICAL FIX: Call exitTeamViewer() immediately
                     // Do NOT defer via animation callback - it never executes when delta=0 (paused game)
                     exitTeamViewer();
@@ -286,6 +305,10 @@ public class TeamViewerScreen implements InputProcessor {
             @Override
             public void clicked(InputEvent event, float x, float y) {
                 if (!actionMenuOpen) return;
+                // Play cancel sound
+                if (audioService != null) {
+                    audioService.playSound(SoundEffect.UI_BACK);
+                }
                 selectedActionIndex = ActionOption.CANCEL.ordinal();
                 executeSelectedAction();
             }
@@ -294,6 +317,10 @@ public class TeamViewerScreen implements InputProcessor {
             @Override
             public void clicked(InputEvent event, float x, float y) {
                 if (!actionMenuOpen) return;
+                // Play select sound
+                if (audioService != null) {
+                    audioService.playSound(SoundEffect.UI_SELECT);
+                }
                 selectedActionIndex = ActionOption.SWITCH.ordinal();
                 executeSelectedAction();
             }
@@ -302,6 +329,10 @@ public class TeamViewerScreen implements InputProcessor {
             @Override
             public void clicked(InputEvent event, float x, float y) {
                 if (!actionMenuOpen) return;
+                // Play select sound
+                if (audioService != null) {
+                    audioService.playSound(SoundEffect.UI_SELECT);
+                }
                 selectedActionIndex = ActionOption.SUMMARY.ordinal();
                 executeSelectedAction();
             }
@@ -655,20 +686,44 @@ public class TeamViewerScreen implements InputProcessor {
         if (actionMenuOpen) {
             switch (keycode) {
                 case Input.Keys.A, Input.Keys.LEFT -> {
-                    selectedActionIndex = (selectedActionIndex + ActionOption.values().length - 1) % ActionOption.values().length;
+                    int newIndex = (selectedActionIndex + ActionOption.values().length - 1) % ActionOption.values().length;
+                    // Play navigation sound only when action changes
+                    if (newIndex != lastActionIndex && audioService != null) {
+                        audioService.playSound(SoundEffect.UI_HOVER);
+                        lastActionIndex = newIndex;
+                    }
+                    selectedActionIndex = newIndex;
                     updateActionOptionVisuals();
                     return true;
                 }
                 case Input.Keys.D, Input.Keys.RIGHT -> {
-                    selectedActionIndex = (selectedActionIndex + 1) % ActionOption.values().length;
+                    int newIndex = (selectedActionIndex + 1) % ActionOption.values().length;
+                    // Play navigation sound only when action changes
+                    if (newIndex != lastActionIndex && audioService != null) {
+                        audioService.playSound(SoundEffect.UI_HOVER);
+                        lastActionIndex = newIndex;
+                    }
+                    selectedActionIndex = newIndex;
                     updateActionOptionVisuals();
                     return true;
                 }
                 case Input.Keys.ENTER, Input.Keys.Z, Input.Keys.SPACE -> {
+                    // Play appropriate sound based on selected action
+                    if (audioService != null) {
+                        if (selectedActionIndex == ActionOption.CANCEL.ordinal()) {
+                            audioService.playSound(SoundEffect.UI_BACK);
+                        } else {
+                            audioService.playSound(SoundEffect.UI_SELECT);
+                        }
+                    }
                     executeSelectedAction();
                     return true;
                 }
                 case Input.Keys.ESCAPE, Input.Keys.X -> {
+                    // Play cancel sound
+                    if (audioService != null) {
+                        audioService.playSound(SoundEffect.UI_BACK);
+                    }
                     closeActionMenu();
                     return true;
                 }
@@ -681,23 +736,43 @@ public class TeamViewerScreen implements InputProcessor {
         switch (keycode) {
             case Input.Keys.W, Input.Keys.UP, Input.Keys.A, Input.Keys.LEFT -> {
                 // Navigate previous card (wrap around)
-                selectSlot((currentSelectedIndex - 1 + MAX_PARTY_SIZE) % MAX_PARTY_SIZE);
+                int newIndex = (currentSelectedIndex - 1 + MAX_PARTY_SIZE) % MAX_PARTY_SIZE;
+                // Play navigation sound only when selection changes
+                if (newIndex != lastSelectedIndex && audioService != null) {
+                    audioService.playSound(SoundEffect.UI_HOVER);
+                    lastSelectedIndex = newIndex;
+                }
+                selectSlot(newIndex);
                 return true;
             }
 
             case Input.Keys.S, Input.Keys.DOWN, Input.Keys.D, Input.Keys.RIGHT -> {
                 // Navigate next card (wrap around)
-                selectSlot((currentSelectedIndex + 1) % MAX_PARTY_SIZE);
+                int newIndex = (currentSelectedIndex + 1) % MAX_PARTY_SIZE;
+                // Play navigation sound only when selection changes
+                if (newIndex != lastSelectedIndex && audioService != null) {
+                    audioService.playSound(SoundEffect.UI_HOVER);
+                    lastSelectedIndex = newIndex;
+                }
+                selectSlot(newIndex);
                 return true;
             }
 
             case Input.Keys.ENTER, Input.Keys.Z, Input.Keys.SPACE -> {
+                // Play select sound
+                if (audioService != null) {
+                    audioService.playSound(SoundEffect.UI_SELECT);
+                }
                 openActionMenuForCurrentSelection();
                 return true;
             }
 
             case Input.Keys.ESCAPE -> {
                 Gdx.app.log("TeamViewerScreen", "[INPUT] ESCAPE key pressed");
+                // Play back sound
+                if (audioService != null) {
+                    audioService.playSound(SoundEffect.UI_BACK);
+                }
                 // CRITICAL FIX: Call exitTeamViewer() immediately
                 // Do NOT defer via animation callback - it never executes when delta=0 (paused game)
                 exitTeamViewer();

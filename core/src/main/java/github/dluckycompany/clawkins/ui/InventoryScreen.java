@@ -90,7 +90,7 @@ public class InventoryScreen implements Screen {
         Gdx.app.log("InventoryScreen", "Skin initialized with fonts");
 
         // Create InventoryUI with full-screen layout
-        inventoryUI = new InventoryUI(stage, font, playerInventory, party, skin, wallet);
+        inventoryUI = new InventoryUI(stage, font, playerInventory, party, skin, wallet, game.getAudioService());
         inventoryUI.buildLayout();
         
         // Wire up back button to return to game screen

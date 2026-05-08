@@ -340,8 +340,8 @@ public class MainSideMenuOverlay {
         }
 
         settingsPanel = new Table();
-        settingsPanel.setSize(460f, 320f);
-        settingsPanel.setPosition((VIRTUAL_UI_WIDTH - 460f) * 0.5f, (VIRTUAL_UI_HEIGHT - 320f) * 0.5f);
+        settingsPanel.setSize(460f, 360f);
+        settingsPanel.setPosition((VIRTUAL_UI_WIDTH - 460f) * 0.5f, (VIRTUAL_UI_HEIGHT - 360f) * 0.5f);
         settingsPanel.setBackground(RoundedPanelDrawable.createRoundedPanelWithStroke(
             Color.valueOf("#ECE8DF"), 10, 1));
         settingsPanel.pad(16);
@@ -352,15 +352,34 @@ public class MainSideMenuOverlay {
         title.setFontScale(SETTINGS_TITLE_SCALE);
         settingsPanel.add(title).left().row();
 
-        Label audioLabel = new Label("Audio Volume", new Label.LabelStyle(font, Color.valueOf("#3B342A")));
+        // Volume label with current value display
+        final Label audioLabel = new Label("Audio Volume: 100%", new Label.LabelStyle(font, Color.valueOf("#3B342A")));
         audioLabel.setFontScale(SETTINGS_LABEL_SCALE);
-        settingsPanel.add(audioLabel).left().row();
-        masterVolumeSlider = new Slider(0f, 1f, 0.01f, false, skin);
+        settingsPanel.add(audioLabel).left().padTop(10).row();
+        
+        // Create custom slider style with visible knob and track
+        masterVolumeSlider = new Slider(0f, 1f, 0.01f, false, createSliderStyle());
+        
+        // Track last slider value to debounce sound
+        final float[] lastSliderValue = {masterVolumeSlider.getValue()};
+        
         masterVolumeSlider.addListener(event -> {
-            audioService.setMasterVolume(masterVolumeSlider.getValue());
+            float currentValue = masterVolumeSlider.getValue();
+            audioService.setMasterVolume(currentValue);
+            
+            // Update label with percentage
+            int percentage = Math.round(currentValue * 100);
+            audioLabel.setText("Audio Volume: " + percentage + "%");
+            
+            // Play sound only when value changes significantly (debounce)
+            if (Math.abs(currentValue - lastSliderValue[0]) > 0.05f) {
+                soundHelper.playSound(SoundEffect.UI_HOVER);
+                lastSliderValue[0] = currentValue;
+            }
+            
             return false;
         });
-        settingsPanel.add(masterVolumeSlider).width(410f).height(34f).left().row();
+        settingsPanel.add(masterVolumeSlider).width(410f).height(40f).left().padBottom(15).row();
 
         Table actions = new Table();
         actions.left();
@@ -410,5 +429,32 @@ public class MainSideMenuOverlay {
 
     private float getSidebarY() {
         return (VIRTUAL_UI_HEIGHT - MENU_PANEL_HEIGHT) * 0.5f;
+    }
+    
+    /**
+     * Create a custom slider style with visible knob and track.
+     * Uses pixel-art JRPG aesthetic with clear visual feedback.
+     */
+    private Slider.SliderStyle createSliderStyle() {
+        Slider.SliderStyle style = new Slider.SliderStyle();
+        
+        // Track background (unfilled portion) - light gray
+        style.background = createDrawable(Color.valueOf("#9B8B7E"), 8f, 410f);
+        
+        // Track foreground (filled portion) - warm tan to show progress
+        style.knobBefore = createDrawable(Color.valueOf("#C19253"), 8f, 410f);
+        
+        // Knob (draggable thumb) - dark brown circle
+        style.knob = createDrawable(Color.valueOf("#4A4338"), 24f, 24f);
+        
+        return style;
+    }
+    
+    /**
+     * Create a simple colored drawable for slider components.
+     */
+    private ColorDrawable createDrawable(Color color, float height, float width) {
+        // Note: ColorDrawable doesn't use height/width parameters, but they're kept for API clarity
+        return new ColorDrawable(color);
     }
 }
