@@ -26,6 +26,8 @@ import com.badlogic.gdx.utils.viewport.FitViewport;
 
 import github.dluckycompany.clawkins.GameScreen;
 import github.dluckycompany.clawkins.Main;
+import github.dluckycompany.clawkins.audio.AudioService;
+import github.dluckycompany.clawkins.audio.SoundEffect;
 import github.dluckycompany.clawkins.model.Gender;
 import github.dluckycompany.clawkins.model.PlayerProfile;
 
@@ -102,6 +104,9 @@ public class CharacterSetupScreen implements Screen {
     private String playerName;
     private PlayerProfile profile;
     private boolean isTransitioning;
+    
+    // Hover debounce tracking
+    private TextButton lastHoveredButton;
     
     // Virtual UI resolution (fixed, independent of physical screen)
     private static final float VIRTUAL_UI_WIDTH = 800f;
@@ -299,37 +304,34 @@ public class CharacterSetupScreen implements Screen {
         
         // Create Male button
         TextButton maleButton = new TextButton("Male", buttonStyle);
-        maleButton.addListener(new ClickListener() {
-            @Override
-            public void clicked(InputEvent event, float x, float y) {
-                if (isTransitioning) return;
-                Gdx.app.log("CharacterSetup", "Male selected");
-                selectedGender = Gender.MALE;
-                transitionToNameInput();
-            }
+        addButtonSoundEffects(maleButton, () -> {
+            if (isTransitioning) return;
+            AudioService audio = game.getAudioService();
+            if (audio != null) audio.playSound(SoundEffect.UI_SELECT);
+            Gdx.app.log("CharacterSetup", "Male selected");
+            selectedGender = Gender.MALE;
+            transitionToNameInput();
         });
         
         // Create Female button
         TextButton femaleButton = new TextButton("Female", buttonStyle);
-        femaleButton.addListener(new ClickListener() {
-            @Override
-            public void clicked(InputEvent event, float x, float y) {
-                if (isTransitioning) return;
-                Gdx.app.log("CharacterSetup", "Female selected");
-                selectedGender = Gender.FEMALE;
-                transitionToNameInput();
-            }
+        addButtonSoundEffects(femaleButton, () -> {
+            if (isTransitioning) return;
+            AudioService audio = game.getAudioService();
+            if (audio != null) audio.playSound(SoundEffect.UI_SELECT);
+            Gdx.app.log("CharacterSetup", "Female selected");
+            selectedGender = Gender.FEMALE;
+            transitionToNameInput();
         });
         
         // Create Back button
         TextButton backButton = new TextButton("Back", buttonStyle);
-        backButton.addListener(new ClickListener() {
-            @Override
-            public void clicked(InputEvent event, float x, float y) {
-                if (isTransitioning) return;
-                Gdx.app.log("CharacterSetup", "Back to main menu");
-                game.setScreen(MainMenuScreen.class);
-            }
+        addButtonSoundEffects(backButton, () -> {
+            if (isTransitioning) return;
+            AudioService audio = game.getAudioService();
+            if (audio != null) audio.playSound(SoundEffect.UI_BACK);
+            Gdx.app.log("CharacterSetup", "Back to main menu");
+            game.setScreen(MainMenuScreen.class);
         });
         
         // Fixed button sizing for consistent layout
@@ -408,24 +410,20 @@ public class CharacterSetupScreen implements Screen {
         
         // Create Back button
         TextButton backButton = new TextButton("Back", buttonStyle);
-        backButton.addListener(new ClickListener() {
-            @Override
-            public void clicked(InputEvent event, float x, float y) {
-                if (isTransitioning) return;
-                Gdx.app.log("CharacterSetup", "Back to gender selection");
-                transitionToGenderSelection();
-            }
+        addButtonSoundEffects(backButton, () -> {
+            if (isTransitioning) return;
+            AudioService audio = game.getAudioService();
+            if (audio != null) audio.playSound(SoundEffect.UI_BACK);
+            Gdx.app.log("CharacterSetup", "Back to gender selection");
+            transitionToGenderSelection();
         });
         
         // Create Start button
         TextButton startButton = new TextButton("Start", buttonStyle);
-        startButton.addListener(new ClickListener() {
-            @Override
-            public void clicked(InputEvent event, float x, float y) {
-                if (isTransitioning) return;
-                Gdx.app.log("CharacterSetup", "Start button clicked");
-                completeSetup();
-            }
+        addButtonSoundEffects(startButton, () -> {
+            if (isTransitioning) return;
+            Gdx.app.log("CharacterSetup", "Start button clicked");
+            completeSetup();
         });
         
         // Fixed sizing for consistent layout
@@ -708,9 +706,15 @@ public class CharacterSetupScreen implements Screen {
         
         // Validate name
         if (!validateName(enteredName)) {
-            // Validation failed, error already shown
+            // Validation failed, error already shown, play error sound
+            AudioService audio = game.getAudioService();
+            if (audio != null) audio.playSound(SoundEffect.UI_ERROR);
             return;
         }
+        
+        // Play success sound
+        AudioService audio = game.getAudioService();
+        if (audio != null) audio.playSound(SoundEffect.UI_SELECT);
         
         // Trim the name and store in playerName field
         playerName = enteredName.trim();
@@ -807,5 +811,37 @@ public class CharacterSetupScreen implements Screen {
      */
     public PlayerProfile getPlayerProfile() {
         return profile;
+    }
+    
+    // -----------------------------------------------------------------------
+    // Sound Effects Helper
+    // -----------------------------------------------------------------------
+
+    /**
+     * Adds sound effects to a button with hover debouncing.
+     * Plays hover sound once when mouse enters, and click sound on click.
+     *
+     * @param button the button to add sound effects to
+     * @param onClickAction the action to run when clicked (should include sound)
+     */
+    private void addButtonSoundEffects(TextButton button, Runnable onClickAction) {
+        button.addListener(new ClickListener() {
+            @Override
+            public void clicked(InputEvent event, float x, float y) {
+                onClickAction.run();
+            }
+
+            @Override
+            public void enter(InputEvent event, float x, float y, int pointer, com.badlogic.gdx.scenes.scene2d.Actor fromActor) {
+                // Only play hover sound if this is a different button than last hovered
+                if (lastHoveredButton != button && !button.isDisabled()) {
+                    lastHoveredButton = button;
+                    AudioService audio = game.getAudioService();
+                    if (audio != null) {
+                        audio.playSound(SoundEffect.UI_HOVER);
+                    }
+                }
+            }
+        });
     }
 }

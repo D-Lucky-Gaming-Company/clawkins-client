@@ -4,7 +4,6 @@ import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input;
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
-import com.badlogic.gdx.scenes.scene2d.InputEvent;
 import com.badlogic.gdx.scenes.scene2d.Stage;
 import com.badlogic.gdx.scenes.scene2d.actions.Actions;
 import com.badlogic.gdx.scenes.scene2d.ui.Label;
@@ -12,9 +11,9 @@ import com.badlogic.gdx.scenes.scene2d.ui.Skin;
 import com.badlogic.gdx.scenes.scene2d.ui.Slider;
 import com.badlogic.gdx.scenes.scene2d.ui.Table;
 import com.badlogic.gdx.scenes.scene2d.ui.TextButton;
-import com.badlogic.gdx.scenes.scene2d.utils.ClickListener;
 
 import github.dluckycompany.clawkins.audio.AudioService;
+import github.dluckycompany.clawkins.audio.SoundEffect;
 
 /**
  * Main side-menu + settings submenu controller rendered on a shared UI stage.
@@ -62,6 +61,7 @@ public class MainSideMenuOverlay {
     private final Skin skin;
     private final BitmapFont font;
     private final AudioService audioService;
+    private final UiSoundHelper soundHelper;
 
     private boolean sideMenuVisible;
     private boolean sideMenuAnimating;
@@ -80,6 +80,7 @@ public class MainSideMenuOverlay {
         this.skin = skin;
         this.font = font;
         this.audioService = audioService;
+        this.soundHelper = new UiSoundHelper(audioService);
     }
 
     public Action handleInput() {
@@ -112,12 +113,14 @@ public class MainSideMenuOverlay {
         if (isMenuUpPressed()) {
             selectedIndex = (selectedIndex + MENU_OPTIONS.length - 1) % MENU_OPTIONS.length;
             updateSelectionVisuals();
+            soundHelper.playSound(SoundEffect.UI_HOVER);
             return Action.NONE;
         }
 
         if (isMenuDownPressed()) {
             selectedIndex = (selectedIndex + 1) % MENU_OPTIONS.length;
             updateSelectionVisuals();
+            soundHelper.playSound(SoundEffect.UI_HOVER);
             return Action.NONE;
         }
 
@@ -200,30 +203,36 @@ public class MainSideMenuOverlay {
     private Action activateSelectedOption() {
         return switch (selectedIndex) {
             case 0 -> {
+                soundHelper.playSound(SoundEffect.UI_SELECT);
                 closeSidebar(false);
                 activeSubmenu = Submenu.CLAWKINS;
                 yield Action.OPEN_CLAWKINS;
             }
             case 1 -> {
+                soundHelper.playSound(SoundEffect.UI_SELECT);
                 closeSidebar(false);
                 activeSubmenu = Submenu.INVENTORY;
                 yield Action.OPEN_INVENTORY;
             }
             case 2 -> {
+                soundHelper.playSound(SoundEffect.UI_SELECT);
                 showSettingsSubmenu();
                 yield Action.NONE;
             }
             case 3 -> {
+                soundHelper.playSound(SoundEffect.UI_SELECT);
                 closeSidebar(false);
                 activeSubmenu = Submenu.NONE;
                 yield Action.OPEN_SAVE_STATE;
             }
             case 4 -> {
+                soundHelper.playSound(SoundEffect.UI_SELECT);
                 closeSidebar(false);
                 activeSubmenu = Submenu.NONE;
                 yield Action.OPEN_LOAD_STATE;
             }
             case 5 -> {
+                soundHelper.playSound(SoundEffect.UI_SELECT);
                 closeSidebar(false);
                 activeSubmenu = Submenu.NONE;
                 yield Action.EXIT_GAME;
@@ -358,22 +367,16 @@ public class MainSideMenuOverlay {
 
         muteButton = new TextButton("Mute: OFF", skin);
         muteButton.getLabel().setFontScale(SETTINGS_BUTTON_SCALE);
-        muteButton.addListener(new ClickListener() {
-            @Override
-            public void clicked(InputEvent event, float x, float y) {
-                audioService.setMuted(!audioService.isMuted());
-                refreshSettingsValues();
-            }
+        soundHelper.addButtonSounds(muteButton, () -> {
+            audioService.setMuted(!audioService.isMuted());
+            refreshSettingsValues();
         });
 
         TextButton backButton = new TextButton("Back", skin);
         backButton.getLabel().setFontScale(SETTINGS_BUTTON_SCALE);
-        backButton.addListener(new ClickListener() {
-            @Override
-            public void clicked(InputEvent event, float x, float y) {
-                returnToSidebarFromSubmenu();
-            }
-        });
+        soundHelper.addButtonSounds(backButton, () -> {
+            returnToSidebarFromSubmenu();
+        }, SoundEffect.UI_BACK);
 
         actions.add(muteButton).height(44f).padRight(10);
         actions.add(backButton).height(44f);
