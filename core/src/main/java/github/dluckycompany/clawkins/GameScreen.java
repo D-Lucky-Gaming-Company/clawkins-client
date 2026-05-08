@@ -1340,16 +1340,16 @@ public class GameScreen extends ScreenAdapter {
         spawnX = Math.max(0f, Math.min(spawnX, worldW - size.x));
         spawnY = Math.max(0f, Math.min(spawnY, worldH - size.y));
 
-        // If trigger overlaps blocked space, find closest free point inside the trigger area.
+        // Find the closest free point whose player anchor sits inside the trigger area.
         MoveSystem moveSystem = engine.getSystem(MoveSystem.class);
-        if (moveSystem != null && moveSystem.isBlockedPosition(spawnX, spawnY, size.x, size.y, playerEntity)) {
+        if (moveSystem != null) {
             Vector2 safeSpawn = findClosestSafeSpawnInZone(
-                spawnBounds, size, worldW, worldH, targetX, targetY, moveSystem, playerEntity);
+                spawnBounds, size, worldW, worldH, moveSystem, playerEntity);
             if (safeSpawn != null) {
                 spawnX = safeSpawn.x;
                 spawnY = safeSpawn.y;
-            } else {
-                Gdx.app.log("GameScreen", "No non-colliding spawn found inside transition zone "
+            } else if (moveSystem.isBlockedPosition(spawnX, spawnY, size.x, size.y, playerEntity)) {
+                Gdx.app.log("GameScreen", "No non-colliding spawn found for transition zone "
                     + spawnBounds + "; using clamped fallback position.");
             }
         }
@@ -1367,37 +1367,43 @@ public class GameScreen extends ScreenAdapter {
             Vector2 playerSize,
             float worldW,
             float worldH,
-            float targetCenterX,
-            float targetCenterY,
             MoveSystem moveSystem,
             Entity playerEntity) {
-        float minX = Math.max(0f, zone.x);
-        float maxX = Math.min(worldW - playerSize.x, zone.x + zone.width - playerSize.x);
-        float minY = Math.max(0f, zone.y);
-        float maxY = Math.min(worldH - playerSize.y, zone.y + zone.height - playerSize.y);
-
-        if (maxX < minX || maxY < minY) {
+        if (zone.width <= 0f || zone.height <= 0f || playerSize.x <= 0f || playerSize.y <= 0f) {
             return null;
         }
 
-        float stepX = Math.max(0.05f, Math.min(playerSize.x * 0.25f, Math.max(0.05f, (maxX - minX) / 8f)));
-        float stepY = Math.max(0.05f, Math.min(playerSize.y * 0.25f, Math.max(0.05f, (maxY - minY) / 8f)));
+        float targetAnchorX = zone.x + zone.width * 0.5f;
+        float targetAnchorY = zone.y + zone.height * 0.5f;
+        float minAnchorX = zone.x;
+        float maxAnchorX = zone.x + zone.width;
+        float minAnchorY = zone.y;
+        float maxAnchorY = zone.y + zone.height;
+
+        float stepX = Math.max(0.04f, Math.min(playerSize.x * 0.20f, Math.max(0.04f, zone.width / 10f)));
+        float stepY = Math.max(0.04f, Math.min(playerSize.y * 0.20f, Math.max(0.04f, zone.height / 10f)));
 
         Vector2 best = null;
         float bestDist2 = Float.MAX_VALUE;
 
-        for (float y = minY; y <= maxY + 0.0001f; y += stepY) {
-            float cy = Math.min(y, maxY);
-            for (float x = minX; x <= maxX + 0.0001f; x += stepX) {
-                float cx = Math.min(x, maxX);
+        for (float anchorY = minAnchorY; anchorY <= maxAnchorY + 0.0001f; anchorY += stepY) {
+            float clampedAnchorY = Math.min(anchorY, maxAnchorY);
+            for (float anchorX = minAnchorX; anchorX <= maxAnchorX + 0.0001f; anchorX += stepX) {
+                float clampedAnchorX = Math.min(anchorX, maxAnchorX);
+                float candidateX = clampedAnchorX - playerSize.x * 0.5f;
+                float candidateY = clampedAnchorY - playerSize.y * PLAYER_TRANSITION_ANCHOR_Y_FACTOR;
+
+                float cx = Math.max(0f, Math.min(candidateX, worldW - playerSize.x));
+                float cy = Math.max(0f, Math.min(candidateY, worldH - playerSize.y));
+
                 if (moveSystem.isBlockedPosition(cx, cy, playerSize.x, playerSize.y, playerEntity)) {
                     continue;
                 }
 
-                float centerX = cx + playerSize.x * 0.5f;
-                float centerY = cy + playerSize.y * PLAYER_TRANSITION_ANCHOR_Y_FACTOR;
-                float dx = centerX - targetCenterX;
-                float dy = centerY - targetCenterY;
+                float landedAnchorX = cx + playerSize.x * 0.5f;
+                float landedAnchorY = cy + playerSize.y * PLAYER_TRANSITION_ANCHOR_Y_FACTOR;
+                float dx = landedAnchorX - targetAnchorX;
+                float dy = landedAnchorY - targetAnchorY;
                 float dist2 = dx * dx + dy * dy;
 
                 if (dist2 < bestDist2) {
@@ -1407,6 +1413,69 @@ public class GameScreen extends ScreenAdapter {
                     } else {
                         best.set(cx, cy);
                     }
+                }
+            }
+        }
+
+        // Fallback: if the trigger box has no safe position, search outward for the
+        // closest non-colliding point just outside the trigger bounds.
+        if (best == null) {
+            float maxSearchRadius = Math.max(
+                    Math.max(zone.width, zone.height) * 2f,
+                    Math.max(playerSize.x, playerSize.y) * 6f);
+            int ringCount = Math.max(1, (int) Math.ceil(maxSearchRadius / Math.min(stepX, stepY)));
+
+            for (int ring = 1; ring <= ringCount; ring++) {
+                float padX = ring * stepX;
+                float padY = ring * stepY;
+                float ringMinX = minAnchorX - padX;
+                float ringMaxX = maxAnchorX + padX;
+                float ringMinY = minAnchorY - padY;
+                float ringMaxY = maxAnchorY + padY;
+
+                for (float anchorY = ringMinY; anchorY <= ringMaxY + 0.0001f; anchorY += stepY) {
+                    float clampedRingY = Math.min(anchorY, ringMaxY);
+                    for (float anchorX = ringMinX; anchorX <= ringMaxX + 0.0001f; anchorX += stepX) {
+                        float clampedRingX = Math.min(anchorX, ringMaxX);
+
+                        boolean outsideZone = clampedRingX < minAnchorX
+                                || clampedRingX > maxAnchorX
+                                || clampedRingY < minAnchorY
+                                || clampedRingY > maxAnchorY;
+                        if (!outsideZone) {
+                            continue;
+                        }
+
+                        float candidateX = clampedRingX - playerSize.x * 0.5f;
+                        float candidateY = clampedRingY - playerSize.y * PLAYER_TRANSITION_ANCHOR_Y_FACTOR;
+
+                        float cx = Math.max(0f, Math.min(candidateX, worldW - playerSize.x));
+                        float cy = Math.max(0f, Math.min(candidateY, worldH - playerSize.y));
+
+                        if (moveSystem.isBlockedPosition(cx, cy, playerSize.x, playerSize.y, playerEntity)) {
+                            continue;
+                        }
+
+                        float landedAnchorX = cx + playerSize.x * 0.5f;
+                        float landedAnchorY = cy + playerSize.y * PLAYER_TRANSITION_ANCHOR_Y_FACTOR;
+                        float dx = landedAnchorX - targetAnchorX;
+                        float dy = landedAnchorY - targetAnchorY;
+                        float dist2 = dx * dx + dy * dy;
+
+                        if (dist2 < bestDist2) {
+                            bestDist2 = dist2;
+                            if (best == null) {
+                                best = new Vector2(cx, cy);
+                            } else {
+                                best.set(cx, cy);
+                            }
+                        }
+                    }
+                }
+
+                // First ring with any valid candidate is already the nearest outside band.
+                if (best != null) {
+                    break;
                 }
             }
         }

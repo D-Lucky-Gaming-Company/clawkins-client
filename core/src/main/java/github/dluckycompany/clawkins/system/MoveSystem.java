@@ -48,7 +48,7 @@ public class MoveSystem extends IteratingSystem {
     private static final float COLLISION_CONTACT_NUDGE = 0.0005f;
     private static final float HITBOX_WIDTH_FACTOR = 0.25f;
     private static final float HITBOX_HEIGHT_FACTOR = 0.25f;
-    private static final float HITBOX_Y_OFFSET_FACTOR = 0.22f;
+    private static final float HITBOX_Y_OFFSET_FACTOR = 0.16f;
     private static final float ENEMY_HITBOX_WIDTH_FACTOR = 0.28f;
     private static final float ENEMY_HITBOX_HEIGHT_FACTOR = 0.24f;
     private static final float TILE_HITBOX_WIDTH_FACTOR = 1f;
