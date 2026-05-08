@@ -499,7 +499,7 @@ public class GameScreen extends ScreenAdapter {
                                 EncounterEventType.START_ENCOUNTER,
                                 ENCOUNTER_BERT_JR_ID,
                                 "tutorial_boss_bert_jr",
-                                600,
+                                150,
                                 25,
                                 35,
                                 35,
