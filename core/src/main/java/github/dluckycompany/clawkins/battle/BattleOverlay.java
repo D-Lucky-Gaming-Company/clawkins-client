@@ -223,6 +223,13 @@ public class BattleOverlay implements Disposable {
                 }
             }
         });
+        
+        // Clawkin icon clicked -> Show switch confirmation
+        battleHud.setOnClawkinSelected(() -> {
+            if (battleHud.canSwitchToHighlighted()) {
+                showSwitchConfirmation();
+            }
+        });
     }
 
     /** Forward resize events so the Stage viewport stays correct. */
@@ -290,8 +297,13 @@ public class BattleOverlay implements Disposable {
 
         if (dialogueVisible) {
             updateTypewriter(delta);
-            // Check for interaction (Z/Space/Enter) OR cancel (X/Escape)
-            if (isInteractionPressed() || Gdx.input.isKeyJustPressed(Keys.X) || Gdx.input.isKeyJustPressed(Keys.ESCAPE)) {
+            // Check for keyboard interaction OR cancel
+            // For mouse clicks, only advance if NOT clicking on a UI element
+            boolean keyboardInteraction = Gdx.input.isKeyJustPressed(Keys.Z) || Gdx.input.isKeyJustPressed(Keys.SPACE);
+            boolean cancelPressed = Gdx.input.isKeyJustPressed(Keys.X) || Gdx.input.isKeyJustPressed(Keys.ESCAPE);
+            boolean mouseClickedOutsideUI = Gdx.input.justTouched() && !isClickOnUIElement();
+            
+            if (keyboardInteraction || cancelPressed || mouseClickedOutsideUI) {
                 handleDialogueAdvance(battleService);
             }
             return;
@@ -810,6 +822,31 @@ public class BattleOverlay implements Disposable {
     private static boolean isInteractionPressed() {
         return Gdx.input.isKeyJustPressed(Keys.Z)
                 || Gdx.input.isKeyJustPressed(Keys.SPACE);
+    }
+    
+    /**
+     * Checks if the current mouse position is over a UI element.
+     * Used to prevent dialog advancement when clicking buttons.
+     */
+    private boolean isClickOnUIElement() {
+        if (battleHud == null || !battleHud.isVisible()) {
+            return false;
+        }
+        
+        // Get mouse coordinates
+        int screenX = Gdx.input.getX();
+        int screenY = Gdx.input.getY();
+        
+        // Check if the Stage hit any actor at this position
+        // The Stage's hit() method will return an actor if one was hit
+        com.badlogic.gdx.math.Vector2 stageCoords = battleHud.getStage().screenToStageCoordinates(
+            new com.badlogic.gdx.math.Vector2(screenX, screenY)
+        );
+        
+        com.badlogic.gdx.scenes.scene2d.Actor hitActor = battleHud.getStage().hit(stageCoords.x, stageCoords.y, true);
+        
+        // If we hit an actor (button, icon, etc.), return true
+        return hitActor != null;
     }
 
 }
