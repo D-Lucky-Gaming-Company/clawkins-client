@@ -10,6 +10,8 @@ public class SaveState {
     private String displayName;
     private String createdAt;
     private String mapKey;
+    private String playerName;
+    private String playerGender;
     private float playerX;
     private float playerY;
     private long money;
@@ -50,6 +52,22 @@ public class SaveState {
 
     public void setMapKey(String mapKey) {
         this.mapKey = mapKey;
+    }
+
+    public String getPlayerName() {
+        return playerName;
+    }
+
+    public void setPlayerName(String playerName) {
+        this.playerName = playerName;
+    }
+
+    public String getPlayerGender() {
+        return playerGender;
+    }
+
+    public void setPlayerGender(String playerGender) {
+        this.playerGender = playerGender;
     }
 
     public float getPlayerX() {
