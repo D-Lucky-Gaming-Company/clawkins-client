@@ -78,7 +78,7 @@ public class Main extends Game {
         audioService.registerSound(SoundEffect.HIT, "audio/sfx/hit.wav");
         audioService.registerSound(SoundEffect.BATTLE_ATTACK, "audio/soundEffects/SFX_RPGMaker2000/Attack1.wav");
         audioService.registerSound(SoundEffect.BATTLE_DEFEND, "audio/soundEffects/SFX_RPGMaker2000/Barrier.wav");
-        audioService.registerSound(SoundEffect.BATTLE_HEAL, "audio/soundEffects/SFX_RPGMaker2000/Recovery1.wav");
+        audioService.registerSound(SoundEffect.BATTLE_HEAL, "audio/soundEffects/SFX_RPGMAKER2000/Recovery3.wav");
         audioService.registerSound(SoundEffect.BATTLE_SPECIAL, "audio/soundEffects/SFX_RPGMaker2000/Teleport1.wav");
         audioService.registerSound(SoundEffect.BATTLE_SWITCH, "audio/soundEffects/SFX_RPGMaker2000/Teleport2.wav");
         audioService.registerSound(SoundEffect.BATTLE_ESCAPE, "audio/soundEffects/SFX_RPGMaker2000/Escape.wav");
@@ -116,7 +116,16 @@ public class Main extends Game {
      */
     private void startNewGame() {
         Gdx.app.log("Main", "Start New Game");
+        rebuildGameScreenForFreshSession();
         setScreen(CharacterSetupScreen.class);
+    }
+
+    private void rebuildGameScreenForFreshSession() {
+        Screen existingGameScreen = screenCache.remove(GameScreen.class);
+        if (existingGameScreen != null) {
+            existingGameScreen.dispose();
+        }
+        addScreen(new GameScreen(this));
     }
 
     /**

@@ -20,9 +20,12 @@ import com.badlogic.gdx.scenes.scene2d.ui.TextButton.TextButtonStyle;
 import com.badlogic.gdx.scenes.scene2d.utils.ClickListener;
 import com.badlogic.gdx.scenes.scene2d.utils.NinePatchDrawable;
 import com.badlogic.gdx.utils.viewport.FitViewport;
+import java.util.ArrayList;
+import java.util.List;
 
 import github.dluckycompany.clawkins.audio.AudioService;
 import github.dluckycompany.clawkins.audio.SoundEffect;
+import github.dluckycompany.clawkins.input.InputConventions;
 import github.dluckycompany.clawkins.save.SaveStateManager;
 
 /**
@@ -80,6 +83,9 @@ public class MainMenuScreen implements Screen {
     
     // Hover debounce tracking
     private TextButton lastHoveredButton;
+    private final List<TextButton> menuButtons = new ArrayList<>();
+    private final List<Runnable> menuActions = new ArrayList<>();
+    private int selectedButtonIndex = 0;
 
     // -----------------------------------------------------------------------
     // Constructor
@@ -138,8 +144,10 @@ public class MainMenuScreen implements Screen {
         stage.act(delta);
         stage.draw();
 
-        // Handle keyboard shortcuts
-        if (Gdx.input.isKeyJustPressed(Keys.ESCAPE)) {
+        handleMenuInput();
+
+        // Handle unselect/back shortcut using shared UI convention
+        if (isMenuCancelPressed()) {
             onExit.run();
         }
     }
@@ -182,7 +190,7 @@ public class MainMenuScreen implements Screen {
      * @param button the button to add sound effects to
      * @param onClickAction the action to run when clicked (should include sound)
      */
-    private void addButtonSoundEffects(TextButton button, Runnable onClickAction) {
+    private void addButtonSoundEffects(TextButton button, Runnable onClickAction, Runnable onHoverAction) {
         button.addListener(new ClickListener() {
             @Override
             public void clicked(InputEvent event, float x, float y) {
@@ -197,6 +205,9 @@ public class MainMenuScreen implements Screen {
                     if (audioService != null) {
                         audioService.playSound(SoundEffect.UI_HOVER);
                     }
+                }
+                if (onHoverAction != null) {
+                    onHoverAction.run();
                 }
             }
         });
@@ -232,7 +243,7 @@ public class MainMenuScreen implements Screen {
             if (audioService != null) audioService.playSound(SoundEffect.UI_SELECT);
             Gdx.app.log("MainMenu", "NEW GAME clicked");
             onNewGame.run();
-        });
+        }, () -> setSelectedButtonByReference(newGameBtn));
 
         boolean hasSaves = saveStateManager != null && saveStateManager.hasSaveStates();
         TextButton continueBtn = new TextButton("CONTINUE", buttonStyle);
@@ -245,14 +256,41 @@ public class MainMenuScreen implements Screen {
             if (audioService != null) audioService.playSound(SoundEffect.UI_SELECT);
             Gdx.app.log("MainMenu", "CONTINUE clicked");
             onContinue.run();
-        });
+        }, () -> setSelectedButtonByReference(continueBtn));
 
         TextButton exitBtn = new TextButton("EXIT GAME", buttonStyle);
         addButtonSoundEffects(exitBtn, () -> {
             if (audioService != null) audioService.playSound(SoundEffect.UI_SELECT);
             Gdx.app.log("MainMenu", "EXIT GAME clicked");
             onExit.run();
+        }, () -> setSelectedButtonByReference(exitBtn));
+
+        menuButtons.clear();
+        menuActions.clear();
+        menuButtons.add(newGameBtn);
+        menuButtons.add(continueBtn);
+        menuButtons.add(exitBtn);
+        menuActions.add(() -> {
+            if (audioService != null) audioService.playSound(SoundEffect.UI_SELECT);
+            Gdx.app.log("MainMenu", "NEW GAME clicked");
+            onNewGame.run();
         });
+        menuActions.add(() -> {
+            if (continueBtn.isDisabled()) {
+                if (audioService != null) audioService.playSound(SoundEffect.UI_ERROR);
+                return;
+            }
+            if (audioService != null) audioService.playSound(SoundEffect.UI_SELECT);
+            Gdx.app.log("MainMenu", "CONTINUE clicked");
+            onContinue.run();
+        });
+        menuActions.add(() -> {
+            if (audioService != null) audioService.playSound(SoundEffect.UI_SELECT);
+            Gdx.app.log("MainMenu", "EXIT GAME clicked");
+            onExit.run();
+        });
+        selectedButtonIndex = findFirstEnabledButtonIndex();
+        updateSelectedButtonVisuals();
 
         // Fixed button sizing using virtual dimensions - consistent with CharacterSetupScreen approach
         float btnWidth = 300f;
@@ -280,34 +318,168 @@ public class MainMenuScreen implements Screen {
      * Creates a gold/orange styled button with rounded appearance.
      */
     private TextButtonStyle createButtonStyle() {
-        // Create button background textures (up, over, down)
+        // Create button background textures (up, over, down, checked/selected)
         Pixmap upPixmap = createRoundedRectangle(200, 50, Color.valueOf("#C58A2B"));
         Pixmap overPixmap = createRoundedRectangle(200, 50, Color.valueOf("#D4A035"));
         Pixmap downPixmap = createRoundedRectangle(200, 50, Color.valueOf("#A66F1F"));
+        Pixmap checkedPixmap = createRoundedRectangle(200, 50, Color.valueOf("#E0BF4A"));
+        Pixmap checkedOverPixmap = createRoundedRectangle(200, 50, Color.valueOf("#ECCD61"));
 
         Texture upTexture = new Texture(upPixmap);
         Texture overTexture = new Texture(overPixmap);
         Texture downTexture = new Texture(downPixmap);
+        Texture checkedTexture = new Texture(checkedPixmap);
+        Texture checkedOverTexture = new Texture(checkedOverPixmap);
 
         upPixmap.dispose();
         overPixmap.dispose();
         downPixmap.dispose();
+        checkedPixmap.dispose();
+        checkedOverPixmap.dispose();
 
         // Create 9-patch for stretching
         NinePatch upPatch = new NinePatch(upTexture, 10, 10, 10, 10);
         NinePatch overPatch = new NinePatch(overTexture, 10, 10, 10, 10);
         NinePatch downPatch = new NinePatch(downTexture, 10, 10, 10, 10);
+        NinePatch checkedPatch = new NinePatch(checkedTexture, 10, 10, 10, 10);
+        NinePatch checkedOverPatch = new NinePatch(checkedOverTexture, 10, 10, 10, 10);
 
         TextButtonStyle style = new TextButtonStyle();
         style.up = new NinePatchDrawable(upPatch);
         style.over = new NinePatchDrawable(overPatch);
         style.down = new NinePatchDrawable(downPatch);
+        style.checked = new NinePatchDrawable(checkedPatch);
+        style.checkedOver = new NinePatchDrawable(checkedOverPatch);
+        style.checkedDown = new NinePatchDrawable(checkedPatch);
         style.font = buttonFont;
         style.fontColor = Color.BLACK;
         style.downFontColor = Color.valueOf("#2B2B2B");
         style.overFontColor = Color.BLACK;
+        style.checkedFontColor = Color.valueOf("#1F1A13");
 
         return style;
+    }
+
+    private void handleMenuInput() {
+        if (menuButtons.isEmpty()) {
+            return;
+        }
+
+        if (isMenuUpPressed()) {
+            moveSelection(-1);
+        } else if (isMenuDownPressed()) {
+            moveSelection(1);
+        }
+
+        if (isMenuConfirmPressed()) {
+            triggerSelectedButton();
+        }
+    }
+
+    private boolean isMenuUpPressed() {
+        return InputConventions.isMenuUpJustPressed();
+    }
+
+    private boolean isMenuDownPressed() {
+        return InputConventions.isMenuDownJustPressed();
+    }
+
+    private boolean isMenuConfirmPressed() {
+        return InputConventions.isInteractJustPressed();
+    }
+
+    private boolean isMenuCancelPressed() {
+        return InputConventions.isCancelJustPressed();
+    }
+
+    private void moveSelection(int direction) {
+        if (menuButtons.isEmpty()) {
+            return;
+        }
+
+        int size = menuButtons.size();
+        int nextIndex = selectedButtonIndex;
+        for (int i = 0; i < size; i++) {
+            nextIndex = (nextIndex + direction + size) % size;
+            TextButton candidate = menuButtons.get(nextIndex);
+            if (candidate != null && !candidate.isDisabled()) {
+                setSelectedButton(nextIndex, true);
+                return;
+            }
+        }
+    }
+
+    private void triggerSelectedButton() {
+        if (selectedButtonIndex < 0 || selectedButtonIndex >= menuButtons.size()) {
+            return;
+        }
+
+        TextButton selectedButton = menuButtons.get(selectedButtonIndex);
+        if (selectedButton == null) {
+            return;
+        }
+
+        if (selectedButton.isDisabled()) {
+            if (audioService != null) {
+                audioService.playSound(SoundEffect.UI_ERROR);
+            }
+            return;
+        }
+
+        if (selectedButtonIndex < menuActions.size()) {
+            Runnable action = menuActions.get(selectedButtonIndex);
+            if (action != null) {
+                action.run();
+            }
+        }
+    }
+
+    private void setSelectedButtonByReference(TextButton button) {
+        if (button == null || button.isDisabled()) {
+            return;
+        }
+        int index = menuButtons.indexOf(button);
+        if (index >= 0) {
+            setSelectedButton(index, false);
+        }
+    }
+
+    private void setSelectedButton(int index, boolean playHoverSound) {
+        if (menuButtons.isEmpty()) {
+            return;
+        }
+        if (index < 0 || index >= menuButtons.size()) {
+            return;
+        }
+        if (selectedButtonIndex == index) {
+            return;
+        }
+
+        selectedButtonIndex = index;
+        updateSelectedButtonVisuals();
+
+        if (playHoverSound && audioService != null) {
+            audioService.playSound(SoundEffect.UI_HOVER);
+        }
+    }
+
+    private void updateSelectedButtonVisuals() {
+        for (int i = 0; i < menuButtons.size(); i++) {
+            TextButton button = menuButtons.get(i);
+            if (button != null) {
+                button.setChecked(i == selectedButtonIndex);
+            }
+        }
+    }
+
+    private int findFirstEnabledButtonIndex() {
+        for (int i = 0; i < menuButtons.size(); i++) {
+            TextButton button = menuButtons.get(i);
+            if (button != null && !button.isDisabled()) {
+                return i;
+            }
+        }
+        return 0;
     }
 
     /**

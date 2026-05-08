@@ -2,6 +2,7 @@ package github.dluckycompany.clawkins.ui;
 
 import com.badlogic.gdx.scenes.scene2d.Actor;
 import com.badlogic.gdx.scenes.scene2d.InputEvent;
+import com.badlogic.gdx.scenes.scene2d.ui.Skin;
 import com.badlogic.gdx.scenes.scene2d.ui.TextButton;
 import com.badlogic.gdx.scenes.scene2d.utils.ClickListener;
 
@@ -30,6 +31,33 @@ public class UiSoundHelper {
      */
     public void addButtonSounds(TextButton button, Runnable onClickAction) {
         addButtonSounds(button, onClickAction, SoundEffect.UI_SELECT);
+    }
+
+    /**
+     * Creates a button and automatically binds the default UI sound behavior.
+     *
+     * @param label button label
+     * @param skin skin to use for the button
+     * @param onClickAction action to run on click
+     * @return configured button
+     */
+    public TextButton createButton(String label, Skin skin, Runnable onClickAction) {
+        return createButton(label, skin, onClickAction, SoundEffect.UI_SELECT);
+    }
+
+    /**
+     * Creates a button and binds a custom click sound.
+     *
+     * @param label button label
+     * @param skin skin to use for the button
+     * @param onClickAction action to run on click
+     * @param clickSound custom click sound
+     * @return configured button
+     */
+    public TextButton createButton(String label, Skin skin, Runnable onClickAction, SoundEffect clickSound) {
+        TextButton button = new TextButton(label, skin);
+        addButtonSounds(button, onClickAction, clickSound);
+        return button;
     }
     
     /**

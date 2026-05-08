@@ -31,6 +31,7 @@ import github.dluckycompany.clawkins.audio.SoundEffect;
 import github.dluckycompany.clawkins.asset.AssetService;
 import github.dluckycompany.clawkins.character.Clawkin;
 import github.dluckycompany.clawkins.component.Interactible;
+import github.dluckycompany.clawkins.input.InputConventions;
 import github.dluckycompany.clawkins.ui.DialogueBoxRenderer;
 
 /**
@@ -63,7 +64,9 @@ public class BattleOverlay implements Disposable {
         PLAYER_RESULT,
         ENEMY_RESULT,
         RUN_CONFIRMATION,
-        SWITCH_CONFIRMATION
+        SWITCH_CONFIRMATION,
+        SKILL_CONFIRMATION,
+        SKILL_STATS
     }
 
     private static final int SKIN_FONT_SIZE = 12;
@@ -79,6 +82,8 @@ public class BattleOverlay implements Disposable {
 
     /** Stored from init — used during HP sync to access active clawkin. */
     private PlayerBattleState playerBattleState;
+    /** Cached service reference for syncing inventory-applied HP updates. */
+    private BattleService battleService;
 
     /** Scene2D Skin for UI widgets */
     private Skin skin;
@@ -101,9 +106,12 @@ public class BattleOverlay implements Disposable {
     private static final float DIALOGUE_TYPEWRITER_CHARS_PER_SECOND = 44f;
     private final DialogueSoundManager dialogueSoundManager = new DialogueSoundManager();
     private BattleActionSfxHandler battleActionSfxHandler;
+    private int skillConfirmationOptionIndex = 0; // 0=Yes, 1=No, 2=Stats
 
     /** True when inventory is open from battle. */
     private boolean inventoryOpen = false;
+    /** Small input guard after returning from inventory to avoid key bleed-through. */
+    private int postInventoryInputBlockFrames = 0;
 
     // -----------------------------------------------------------------------
     // Construction
@@ -134,6 +142,7 @@ public class BattleOverlay implements Disposable {
      */
     public void init(AssetService assetService, BattleService battleService, PlayerBattleState playerBattleStateArg) {
         this.playerBattleState = playerBattleStateArg;
+        this.battleService = battleService;
         this.battleActionSfxHandler = new BattleActionSfxHandler(game != null ? game.getAudioService() : null);
         // Create a minimal Skin with default styles for UI components
         this.skin = new Skin();
@@ -204,8 +213,8 @@ public class BattleOverlay implements Disposable {
         // Button3 -> Utility / Heal effect
         battleHud.setOnSpecial(() -> submitPlayerSkillAndOpenDialogue(battleService, 3));
 
-        // Button4 -> Special Attack
-        battleHud.setOnItem(() -> submitPlayerSkillAndOpenDialogue(battleService, 3));
+        // Button4 -> Reserved evolved skill slot (not implemented yet)
+        battleHud.setOnItem(this::showEvolvedSkillUnavailable);
 
         // Inventory button -> Open inventory screen
         battleHud.setOnInventory(() -> openInventoryScreen());
@@ -221,6 +230,19 @@ public class BattleOverlay implements Disposable {
                     }
                     openDialogue(null, machine.getLastLog(), machine.getLastLogSpans(), DialogueFlowPhase.PLAYER_RESULT);
                 }
+            }
+        });
+        
+        // Clawkin icon clicked -> Show switch confirmation
+        battleHud.setOnClawkinSelected(() -> {
+            if (battleHud.canSwitchToHighlighted()) {
+                showSwitchConfirmation();
+            }
+        });
+
+        battleHud.setOnSkillSelectionChanged(() -> {
+            if (game != null && game.getAudioService() != null) {
+                game.getAudioService().playSound(SoundEffect.UI_SELECT);
             }
         });
     }
@@ -289,26 +311,60 @@ public class BattleOverlay implements Disposable {
         syncHudHpFromBattleState(battle);
 
         if (dialogueVisible) {
+            if (dialogueFlowPhase == DialogueFlowPhase.SKILL_CONFIRMATION || dialogueFlowPhase == DialogueFlowPhase.SKILL_STATS) {
+                handleSkillOverlayInput(battleService);
+                return;
+            }
             updateTypewriter(delta);
-            // Check for interaction (Z/Space/Enter) OR cancel (X/Escape)
-            if (isInteractionPressed() || Gdx.input.isKeyJustPressed(Keys.X) || Gdx.input.isKeyJustPressed(Keys.ESCAPE)) {
+            // Check for keyboard interaction OR cancel
+            // For mouse clicks, only advance if NOT clicking on a UI element
+            boolean keyboardInteraction = Gdx.input.isKeyJustPressed(Keys.Z) || Gdx.input.isKeyJustPressed(Keys.SPACE);
+            boolean cancelPressed = Gdx.input.isKeyJustPressed(Keys.X) || Gdx.input.isKeyJustPressed(Keys.ESCAPE);
+            boolean mouseClickedOutsideUI = Gdx.input.justTouched() && !isClickOnUIElement();
+            
+            if (keyboardInteraction || cancelPressed || mouseClickedOutsideUI) {
                 handleDialogueAdvance(battleService);
             }
             return;
         }
 
         if (battle.canAcceptPlayerAction()) {
+            if (postInventoryInputBlockFrames > 0) {
+                postInventoryInputBlockFrames--;
+                return;
+            }
             // Keyboard input for battle actions
             if (Gdx.input.isKeyJustPressed(Keys.NUM_1)) {
-                battleHud.triggerAttack();
+                if (battleHud.isSkillSlotEnabled(0)) {
+                    battleHud.setSelectedSkillIndex(0, true);
+                    battleHud.triggerAttack();
+                }
             } else if (Gdx.input.isKeyJustPressed(Keys.NUM_2)) {
-                battleHud.triggerDefend();
+                if (battleHud.isSkillSlotEnabled(1)) {
+                    battleHud.setSelectedSkillIndex(1, true);
+                    battleHud.triggerDefend();
+                }
             } else if (Gdx.input.isKeyJustPressed(Keys.NUM_3)) {
-                battleHud.triggerSpecial();
+                if (battleHud.isSkillSlotEnabled(2)) {
+                    battleHud.setSelectedSkillIndex(2, true);
+                    battleHud.triggerSpecial();
+                }
             } else if (Gdx.input.isKeyJustPressed(Keys.NUM_4)) {
-                battleHud.triggerItem();
-            } else if (isInteractionPressed()) {
-                battleHud.triggerAttack();
+                if (battleHud.isSkillSlotEnabled(3)) {
+                    battleHud.setSelectedSkillIndex(3, true);
+                    battleHud.triggerItem();
+                }
+            } else if (Gdx.input.isKeyJustPressed(Keys.ENTER)) {
+                // Confirm Clawkin switch
+                if (battleHud.canSwitchToHighlighted()) {
+                    showSwitchConfirmation();
+                }
+            } else if (isBattleSkillSelectLeftPressed()) {
+                battleHud.moveSelectedSkill(-1);
+            } else if (isBattleSkillSelectRightPressed()) {
+                battleHud.moveSelectedSkill(1);
+            } else if (isBattleSkillConfirmPressed()) {
+                showSkillConfirmation(battleService);
             } else if (Gdx.input.isKeyJustPressed(Keys.E)) {
                 // Toggle inventory
                 toggleInventory();
@@ -323,11 +379,6 @@ public class BattleOverlay implements Disposable {
             } else if (Gdx.input.isKeyJustPressed(Keys.DOWN)) {
                 // Navigate Clawkin selection down
                 battleHud.moveSelectionDown();
-            } else if (Gdx.input.isKeyJustPressed(Keys.ENTER)) {
-                // Confirm Clawkin switch
-                if (battleHud.canSwitchToHighlighted()) {
-                    showSwitchConfirmation();
-                }
             }
             return;
         }
@@ -486,8 +537,28 @@ public class BattleOverlay implements Disposable {
     }
 
     private void renderDialogueBox(Batch batch) {
+        if (battleHud == null || battleHud.getStage() == null) {
+            return;
+        }
+        if (dialogueFlowPhase == DialogueFlowPhase.SKILL_STATS) {
+            dialogueBoxRenderer.renderPromptMarkupLarge(
+                    batch,
+                    battleHud.getStage().getViewport(),
+                    dialogueFullText,
+                    Interactible.DialoguePosition.BOTTOM);
+            return;
+        }
+        if (dialogueFlowPhase == DialogueFlowPhase.SKILL_CONFIRMATION) {
+            dialogueBoxRenderer.renderPromptMarkup(
+                    batch,
+                    battleHud.getStage().getViewport(),
+                    dialogueFullText,
+                    Interactible.DialoguePosition.BOTTOM);
+            return;
+        }
         dialogueBoxRenderer.renderBattleLog(
                 batch,
+                battleHud.getStage().getViewport(),
                 dialogueSpeakerName,
                 dialogueFullText,
                 dialogueSpans,
@@ -596,6 +667,11 @@ public class BattleOverlay implements Disposable {
         dialogueSpans = spans == null ? List.of() : List.copyOf(spans);
         dialogueVisibleChars = 0f;
         dialogueSoundManager.stop();
+    }
+
+    private void openDialogueInstant(String speakerName, String text, List<BattleTextSpan> spans, DialogueFlowPhase phase) {
+        openDialogue(speakerName, text, spans, phase);
+        dialogueVisibleChars = dialogueFullText.length();
     }
 
     private void updateTypewriter(float delta) {
@@ -722,6 +798,218 @@ public class BattleOverlay implements Disposable {
         openDialogue(null, confirmText, List.of(), DialogueFlowPhase.SWITCH_CONFIRMATION);
     }
 
+    private void showSkillConfirmation(BattleService battleService) {
+        if (battleHud != null && battleHud.getSelectedSkillIndex() == 3) {
+            showEvolvedSkillUnavailable();
+            return;
+        }
+        skillConfirmationOptionIndex = 0;
+        String text = buildSkillConfirmationText(battleService);
+        openDialogueInstant(null, text, List.of(), DialogueFlowPhase.SKILL_CONFIRMATION);
+    }
+
+    private void showEvolvedSkillUnavailable() {
+        openDialogueInstant(
+                null,
+                "Evolved skill is not implemented yet.\n\n[Z/Space/X] Close",
+                List.of(),
+                DialogueFlowPhase.NONE
+        );
+    }
+
+    private void showSkillStats(BattleService battleService) {
+        String text = buildSkillStatsText(battleService);
+        openDialogueInstant(null, text, List.of(), DialogueFlowPhase.SKILL_STATS);
+    }
+
+    private void handleSkillOverlayInput(BattleService battleService) {
+        if (dialogueFlowPhase == DialogueFlowPhase.SKILL_CONFIRMATION) {
+            if (InputConventions.isMenuLeftJustPressed()) {
+                moveSkillConfirmationSelection(-1);
+                return;
+            }
+            if (InputConventions.isMenuRightJustPressed()) {
+                moveSkillConfirmationSelection(1);
+                return;
+            }
+            if (isBattleSkillConfirmPressed()) {
+                applySkillConfirmationSelection(battleService);
+                return;
+            }
+            if (InputConventions.isCancelJustPressed()) {
+                resetDialogueFlow();
+            }
+            return;
+        }
+
+        if (dialogueFlowPhase == DialogueFlowPhase.SKILL_STATS) {
+            if (InputConventions.isCancelJustPressed()) {
+                // Close current child overlay only, return to parent skill confirmation.
+                showSkillConfirmation(battleService);
+            }
+        }
+    }
+
+    private void moveSkillConfirmationSelection(int delta) {
+        int next = (skillConfirmationOptionIndex + delta + 3) % 3;
+        if (next == skillConfirmationOptionIndex) {
+            return;
+        }
+        skillConfirmationOptionIndex = next;
+        if (game != null && game.getAudioService() != null) {
+            game.getAudioService().playSound(SoundEffect.UI_HOVER);
+        }
+        dialogueFullText = buildSkillConfirmationText(null);
+        dialogueVisibleChars = dialogueFullText.length();
+    }
+
+    private void applySkillConfirmationSelection(BattleService battleService) {
+        switch (skillConfirmationOptionIndex) {
+            case 0 -> submitSelectedSkillFromOverlay(battleService);
+            case 1 -> resetDialogueFlow();
+            case 2 -> showSkillStats(battleService);
+            default -> resetDialogueFlow();
+        }
+    }
+
+    private void submitSelectedSkillFromOverlay(BattleService battleService) {
+        if (battleService == null || battleHud == null) {
+            resetDialogueFlow();
+            return;
+        }
+        int slot = battleHud.getSelectedSkillIndex() + 1;
+        // Close confirmation layer first so skill submit path is not blocked by dialogueVisible guard.
+        resetDialogueFlow();
+        submitPlayerSkillAndOpenDialogue(battleService, slot);
+    }
+
+    private String buildSkillConfirmationText(BattleService battleService) {
+        BattleSkill skill = resolveSelectedSkill(battleService);
+        String skillName = skill == null || skill.getName() == null || skill.getName().isBlank()
+                ? "Skill"
+                : skill.getName();
+        String skillDescription = skill == null || skill.getSummaryDescription().isBlank()
+                ? "Use this skill?"
+                : skill.getSummaryDescription();
+
+        String yes = skillConfirmationOptionIndex == 0 ? "[#F4D175]YES[]" : "[#8A8479]YES[]";
+        String no = skillConfirmationOptionIndex == 1 ? "[#F4D175]NO[]" : "[#8A8479]NO[]";
+        String stats = skillConfirmationOptionIndex == 2 ? "[#F4D175]STATS[]" : "[#8A8479]STATS[]";
+
+        return "[#ECCD61]" + skillName + "[]\n"
+                + "[#D6CBB8]" + skillDescription + "[]\n\n"
+                + yes + "   " + no + "   " + stats
+                + "\n[#8A8479][Left/Right] Select  [Z/Space] Confirm  [X] Back[]";
+    }
+
+    private String buildSkillStatsText(BattleService battleService) {
+        BattleSkill skill = resolveSelectedSkill(battleService);
+        Clawkin clawkin = resolveActiveClawkin();
+
+        if (skill == null) {
+            return "No skill selected.\n\n[X] Back";
+        }
+
+        String skillName = skill.getName() == null || skill.getName().isBlank() ? "Skill" : skill.getName();
+        String scaleExpr = skill.getEffectStatScale() == null || skill.getEffectStatScale().isBlank()
+                ? "-"
+                : skill.getEffectStatScale();
+        String darkTone = toneForSkill(skill, true);
+        String brightTone = toneForSkill(skill, false);
+
+        if (clawkin == null) {
+            return "[#F4D175]" + skillName + " — Stats[]\n"
+                    + "[#D6CBB8]Type " + skill.getEffectType() + "  Scale " + scaleExpr + "[]\n"
+                    + "[" + brightTone + "]Power +" + skill.getEffectBaseStat() + "[]\n"
+                    + "[" + darkTone + "]Dur " + skill.getEffectDurationTurns() + "T  CD " + skill.getTurnCooldown() + "T[]\n\n"
+                    + "[#8A8479][X] Back[]";
+        }
+
+        String clawkinName = clawkin.getName() == null || clawkin.getName().isBlank() ? "Clawkin" : clawkin.getName();
+        int scaleContribution = resolveSkillScaleValue(skill, clawkin);
+        int totalEstimate = Math.max(1, skill.getEffectBaseStat() + scaleContribution);
+
+        String scaleLineColor = "#D6CBB8";
+        if (skill.getEffectType() == BattleSkill.EffectType.ATTACK) {
+            scaleLineColor = "#82B1FF";
+        } else if (skill.getEffectType() == BattleSkill.EffectType.DEFENSE) {
+            scaleLineColor = "#82B1FF";
+        } else if (skill.getEffectType() == BattleSkill.EffectType.HEAL) {
+            scaleLineColor = "#7CE7A1";
+        }
+
+        return "[#F4D175]" + skillName + " — Stats[]\n"
+                + "[#D6CBB8][#ECCD61]" + clawkinName + "[] [#C0B6A6]Lv " + clawkin.getLevel() + "[]\n"
+                + "[#8FA7C4]ATK " + clawkin.getBaseAttack() + "  DEF " + clawkin.getBaseDefense() + "  SPD " + clawkin.getBaseSpeed() + "[]\n"
+                + "[" + darkTone + "]Base " + scaleContribution + " + Skill +" + skill.getEffectBaseStat() + "[]\n"
+                + "[" + brightTone + "]Output " + totalEstimate + "[]\n"
+                + "[" + scaleLineColor + "]Type " + skill.getEffectType() + "  Scale " + scaleExpr + "[]\n"
+                + "[" + darkTone + "]Dur " + skill.getEffectDurationTurns() + "T  CD " + skill.getTurnCooldown() + "T[]\n"
+                + "\n"
+                + "[#8A8479][X] Back[]";
+    }
+
+    private BattleSkill resolveSelectedSkill(BattleService battleService) {
+        if (battleHud == null) {
+            return null;
+        }
+        int slotIndex = battleHud.getSelectedSkillIndex();
+        if (battleService != null) {
+            BattleStateMachine machine = battleService.getBattleStateMachine();
+            if (machine != null) {
+                return machine.playerSkill(slotIndex + 1);
+            }
+        }
+        Clawkin active = resolveActiveClawkin();
+        if (active == null) {
+            return null;
+        }
+        List<BattleSkill> skills = active.getSkills();
+        if (slotIndex < 0 || slotIndex >= skills.size()) {
+            return skills.isEmpty() ? null : skills.getFirst();
+        }
+        return skills.get(slotIndex);
+    }
+
+    private Clawkin resolveActiveClawkin() {
+        if (playerBattleState == null) {
+            return null;
+        }
+        return playerBattleState.getActiveClawkin();
+    }
+
+    private int resolveSkillScaleValue(BattleSkill skill, Clawkin clawkin) {
+        if (skill == null || clawkin == null) {
+            return 0;
+        }
+        String scaleExpr = skill.getEffectStatScale();
+        if (scaleExpr == null || scaleExpr.isBlank()) {
+            return 0;
+        }
+        String expr = scaleExpr.toLowerCase();
+        if ("attack[self]".equals(expr)) {
+            return clawkin.getBaseAttack();
+        }
+        if ("defense[self]".equals(expr)) {
+            return clawkin.getBaseDefense();
+        }
+        if ("speed[self]".equals(expr)) {
+            return clawkin.getBaseSpeed();
+        }
+        return 0;
+    }
+
+    private String toneForSkill(BattleSkill skill, boolean darker) {
+        if (skill == null || skill.getEffectType() == null) {
+            return darker ? "#9E9E9E" : "#E0E0E0";
+        }
+        return switch (skill.getEffectType()) {
+            case DAMAGE, ATTACK -> darker ? "#8B1E1E" : "#FF4D4D";
+            case DEFENSE -> darker ? "#1E3A8A" : "#4DA3FF";
+            case HEAL -> darker ? "#1E7A39" : "#57F28E";
+        };
+    }
+
     /**
      * Performs the actual Clawkin switch after confirmation.
      * Updates the active Clawkin in the player battle state.
@@ -777,10 +1065,40 @@ public class BattleOverlay implements Disposable {
      */
     public void resumeFromInventory() {
         if (inBattle && battleHud != null) {
+            syncActiveClawkinHpIntoBattleState();
             // Restore battle HUD input
             battleHud.show();
+            if (battleService != null && battleService.getBattleStateMachine() != null) {
+                syncHudHpFromBattleState(battleService.getBattleStateMachine());
+            }
+            inventoryOpen = false;
+            // Block 1-2 frames so the close key used in inventory does not trigger run prompt in battle.
+            postInventoryInputBlockFrames = 2;
             Gdx.app.log("BattleOverlay", "Resumed battle from inventory");
         }
+    }
+
+    /**
+     * Inventory applies item effects on party clawkin instances.
+     * During battle, BattleStateMachine's active ally is the source of truth per frame,
+     * so we must copy active clawkin HP back into the active ally before HUD sync.
+     */
+    private void syncActiveClawkinHpIntoBattleState() {
+        if (battleService == null || playerBattleState == null) {
+            return;
+        }
+        BattleStateMachine machine = battleService.getBattleStateMachine();
+        if (machine == null) {
+            return;
+        }
+
+        BattleUnit activeAlly = machine.firstAlly();
+        Clawkin activeClawkin = playerBattleState.getActiveClawkin();
+        if (activeAlly == null || activeClawkin == null) {
+            return;
+        }
+
+        activeAlly.setHp(activeClawkin.getCurrentHp());
     }
 
     /**
@@ -808,8 +1126,44 @@ public class BattleOverlay implements Disposable {
     // -----------------------------------------------------------------------
 
     private static boolean isInteractionPressed() {
-        return Gdx.input.isKeyJustPressed(Keys.Z)
-                || Gdx.input.isKeyJustPressed(Keys.SPACE);
+        return InputConventions.isInteractJustPressed();
+    }
+
+    private static boolean isBattleSkillConfirmPressed() {
+        return Gdx.input.isKeyJustPressed(Keys.Z) || Gdx.input.isKeyJustPressed(Keys.SPACE);
+    }
+
+    private static boolean isBattleSkillSelectLeftPressed() {
+        return Gdx.input.isKeyJustPressed(Keys.LEFT) || Gdx.input.isKeyJustPressed(Keys.DPAD_LEFT);
+    }
+
+    private static boolean isBattleSkillSelectRightPressed() {
+        return Gdx.input.isKeyJustPressed(Keys.RIGHT) || Gdx.input.isKeyJustPressed(Keys.DPAD_RIGHT);
+    }
+    
+    /**
+     * Checks if the current mouse position is over a UI element.
+     * Used to prevent dialog advancement when clicking buttons.
+     */
+    private boolean isClickOnUIElement() {
+        if (battleHud == null || !battleHud.isVisible()) {
+            return false;
+        }
+        
+        // Get mouse coordinates
+        int screenX = Gdx.input.getX();
+        int screenY = Gdx.input.getY();
+        
+        // Check if the Stage hit any actor at this position
+        // The Stage's hit() method will return an actor if one was hit
+        com.badlogic.gdx.math.Vector2 stageCoords = battleHud.getStage().screenToStageCoordinates(
+            new com.badlogic.gdx.math.Vector2(screenX, screenY)
+        );
+        
+        com.badlogic.gdx.scenes.scene2d.Actor hitActor = battleHud.getStage().hit(stageCoords.x, stageCoords.y, true);
+        
+        // If we hit an actor (button, icon, etc.), return true
+        return hitActor != null;
     }
 
 }

@@ -105,6 +105,9 @@ Current object-to-entity mapping:
   - Left: `A` or Left Arrow
   - Right: `D` or Right Arrow
 - Diagonal movement is normalized.
+- Menu/dialogue key conventions are centralized in:
+  - `core/src/main/java/github/dluckycompany/clawkins/input/InputConventions.java`
+  - Use this helper for interact/cancel and menu direction checks instead of duplicating per-screen key lists.
 
 ## Camera and World Bounds
 - World constants:

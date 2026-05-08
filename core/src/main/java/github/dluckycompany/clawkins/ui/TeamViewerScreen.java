@@ -22,6 +22,7 @@ import com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable;
 import github.dluckycompany.clawkins.audio.AudioService;
 import github.dluckycompany.clawkins.audio.SoundEffect;
 import github.dluckycompany.clawkins.character.Clawkin;
+import github.dluckycompany.clawkins.input.InputConventions;
 
 /**
  * TeamViewerScreen - Full-Screen Modal Party Member Viewer
@@ -86,6 +87,7 @@ public class TeamViewerScreen implements InputProcessor {
     private boolean actionMenuOpen = false;
     private int selectedActionIndex = 1; // default to SWITCH
     private int lastActionIndex = -1;  // For debouncing action menu navigation SFX
+    private boolean cancelKeyLatched;
     
     // Previous input processor (for restoration)
     private final InputProcessor previousInputProcessor;
@@ -684,109 +686,116 @@ public class TeamViewerScreen implements InputProcessor {
         Gdx.app.log("TeamViewerScreen", "[INPUT] keyDown received: " + keycode);
 
         if (actionMenuOpen) {
-            switch (keycode) {
-                case Input.Keys.A, Input.Keys.LEFT -> {
-                    int newIndex = (selectedActionIndex + ActionOption.values().length - 1) % ActionOption.values().length;
-                    // Play navigation sound only when action changes
-                    if (newIndex != lastActionIndex && audioService != null) {
-                        audioService.playSound(SoundEffect.UI_HOVER);
-                        lastActionIndex = newIndex;
-                    }
-                    selectedActionIndex = newIndex;
-                    updateActionOptionVisuals();
-                    return true;
-                }
-                case Input.Keys.D, Input.Keys.RIGHT -> {
-                    int newIndex = (selectedActionIndex + 1) % ActionOption.values().length;
-                    // Play navigation sound only when action changes
-                    if (newIndex != lastActionIndex && audioService != null) {
-                        audioService.playSound(SoundEffect.UI_HOVER);
-                        lastActionIndex = newIndex;
-                    }
-                    selectedActionIndex = newIndex;
-                    updateActionOptionVisuals();
-                    return true;
-                }
-                case Input.Keys.ENTER, Input.Keys.Z, Input.Keys.SPACE -> {
-                    // Play appropriate sound based on selected action
-                    if (audioService != null) {
-                        if (selectedActionIndex == ActionOption.CANCEL.ordinal()) {
-                            audioService.playSound(SoundEffect.UI_BACK);
-                        } else {
-                            audioService.playSound(SoundEffect.UI_SELECT);
-                        }
-                    }
-                    executeSelectedAction();
-                    return true;
-                }
-                case Input.Keys.ESCAPE, Input.Keys.X -> {
-                    // Play cancel sound
-                    if (audioService != null) {
-                        audioService.playSound(SoundEffect.UI_BACK);
-                    }
-                    closeActionMenu();
-                    return true;
-                }
-                default -> {
-                    return true;
-                }
-            }
-        }
-
-        switch (keycode) {
-            case Input.Keys.W, Input.Keys.UP, Input.Keys.A, Input.Keys.LEFT -> {
-                // Navigate previous card (wrap around)
-                int newIndex = (currentSelectedIndex - 1 + MAX_PARTY_SIZE) % MAX_PARTY_SIZE;
-                // Play navigation sound only when selection changes
-                if (newIndex != lastSelectedIndex && audioService != null) {
+            if (keycode == Input.Keys.A || keycode == Input.Keys.LEFT) {
+                int newIndex = (selectedActionIndex + ActionOption.values().length - 1) % ActionOption.values().length;
+                // Play navigation sound only when action changes
+                if (newIndex != lastActionIndex && audioService != null) {
                     audioService.playSound(SoundEffect.UI_HOVER);
-                    lastSelectedIndex = newIndex;
+                    lastActionIndex = newIndex;
                 }
-                selectSlot(newIndex);
+                selectedActionIndex = newIndex;
+                updateActionOptionVisuals();
                 return true;
             }
 
-            case Input.Keys.S, Input.Keys.DOWN, Input.Keys.D, Input.Keys.RIGHT -> {
-                // Navigate next card (wrap around)
-                int newIndex = (currentSelectedIndex + 1) % MAX_PARTY_SIZE;
-                // Play navigation sound only when selection changes
-                if (newIndex != lastSelectedIndex && audioService != null) {
+            if (keycode == Input.Keys.D || keycode == Input.Keys.RIGHT) {
+                int newIndex = (selectedActionIndex + 1) % ActionOption.values().length;
+                // Play navigation sound only when action changes
+                if (newIndex != lastActionIndex && audioService != null) {
                     audioService.playSound(SoundEffect.UI_HOVER);
-                    lastSelectedIndex = newIndex;
+                    lastActionIndex = newIndex;
                 }
-                selectSlot(newIndex);
+                selectedActionIndex = newIndex;
+                updateActionOptionVisuals();
                 return true;
             }
 
-            case Input.Keys.ENTER, Input.Keys.Z, Input.Keys.SPACE -> {
-                // Play select sound
+            if (InputConventions.isInteractKey(keycode)) {
+                // Play appropriate sound based on selected action
                 if (audioService != null) {
-                    audioService.playSound(SoundEffect.UI_SELECT);
+                    if (selectedActionIndex == ActionOption.CANCEL.ordinal()) {
+                        audioService.playSound(SoundEffect.UI_BACK);
+                    } else {
+                        audioService.playSound(SoundEffect.UI_SELECT);
+                    }
                 }
-                openActionMenuForCurrentSelection();
+                executeSelectedAction();
                 return true;
             }
 
-            case Input.Keys.ESCAPE -> {
-                Gdx.app.log("TeamViewerScreen", "[INPUT] ESCAPE key pressed");
-                // Play back sound
+            if (InputConventions.isCancelKey(keycode)) {
+                if (cancelKeyLatched) {
+                    return true;
+                }
+                cancelKeyLatched = true;
+                // Play cancel sound
                 if (audioService != null) {
                     audioService.playSound(SoundEffect.UI_BACK);
                 }
-                // CRITICAL FIX: Call exitTeamViewer() immediately
-                // Do NOT defer via animation callback - it never executes when delta=0 (paused game)
-                exitTeamViewer();
+                closeActionMenu();
                 return true;
             }
 
-            default -> {
-                return false;
-            }
+            return true;
         }
+
+        if (keycode == Input.Keys.W || keycode == Input.Keys.UP || keycode == Input.Keys.A || keycode == Input.Keys.LEFT) {
+            // Navigate previous card (wrap around)
+            int newIndex = (currentSelectedIndex - 1 + MAX_PARTY_SIZE) % MAX_PARTY_SIZE;
+            // Play navigation sound only when selection changes
+            if (newIndex != lastSelectedIndex && audioService != null) {
+                audioService.playSound(SoundEffect.UI_HOVER);
+                lastSelectedIndex = newIndex;
+            }
+            selectSlot(newIndex);
+            return true;
+        }
+
+        if (keycode == Input.Keys.S || keycode == Input.Keys.DOWN || keycode == Input.Keys.D || keycode == Input.Keys.RIGHT) {
+            // Navigate next card (wrap around)
+            int newIndex = (currentSelectedIndex + 1) % MAX_PARTY_SIZE;
+            // Play navigation sound only when selection changes
+            if (newIndex != lastSelectedIndex && audioService != null) {
+                audioService.playSound(SoundEffect.UI_HOVER);
+                lastSelectedIndex = newIndex;
+            }
+            selectSlot(newIndex);
+            return true;
+        }
+
+        if (InputConventions.isInteractKey(keycode)) {
+            // Play select sound
+            if (audioService != null) {
+                audioService.playSound(SoundEffect.UI_SELECT);
+            }
+            openActionMenuForCurrentSelection();
+            return true;
+        }
+
+        if (InputConventions.isCancelKey(keycode)) {
+            if (cancelKeyLatched) {
+                return true;
+            }
+            cancelKeyLatched = true;
+            Gdx.app.log("TeamViewerScreen", "[INPUT] Cancel key pressed");
+            // Play back sound
+            if (audioService != null) {
+                audioService.playSound(SoundEffect.UI_BACK);
+            }
+            // CRITICAL FIX: Call exitTeamViewer() immediately
+            // Do NOT defer via animation callback - it never executes when delta=0 (paused game)
+            exitTeamViewer();
+            return true;
+        }
+
+        return false;
     }
     
     @Override
     public boolean keyUp(int keycode) {
+        if (InputConventions.isCancelKey(keycode)) {
+            cancelKeyLatched = false;
+        }
         // Log key up events for debugging
         if (keycode == Input.Keys.ESCAPE) {
             Gdx.app.log("TeamViewerScreen", "[INPUT] ESCAPE key released");

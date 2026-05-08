@@ -71,9 +71,9 @@ public class UISkinManager {
         TextButton.TextButtonStyle buttonStyle = new TextButton.TextButtonStyle();
         buttonStyle.font = font;
         buttonStyle.fontColor = BUTTON_TEXT;
-        buttonStyle.up = new ColorDrawable(BUTTON_BG);           // Normal state
-        buttonStyle.down = new ColorDrawable(BORDER_COLOR);      // Pressed state
-        buttonStyle.over = new ColorDrawable(HIGHLIGHT_COLOR);   // Hover state
+        buttonStyle.up = RoundedPanelDrawable.createRoundedPanelWithStrokeAndGrain(BUTTON_BG, 8, 1, 0.75f);
+        buttonStyle.down = RoundedPanelDrawable.createRoundedPanelWithStrokeAndGrain(BORDER_COLOR, 8, 1, 0.55f);
+        buttonStyle.over = RoundedPanelDrawable.createRoundedPanelWithStrokeAndGrain(HIGHLIGHT_COLOR, 8, 1, 0.85f);
         skin.add("default", buttonStyle, TextButton.TextButtonStyle.class);
         Gdx.app.log("UISkinManager", "Registered TextButtonStyle: 'default'");
         
