@@ -37,6 +37,7 @@ import github.dluckycompany.clawkins.asset.MapAssetName;
 import github.dluckycompany.clawkins.audio.AudioEventType;
 import github.dluckycompany.clawkins.audio.AudioService;
 import github.dluckycompany.clawkins.audio.MusicTrack;
+import github.dluckycompany.clawkins.audio.SoundEffect;
 import github.dluckycompany.clawkins.battle.BattleOverlay;
 import github.dluckycompany.clawkins.battle.BattlePhase;
 import github.dluckycompany.clawkins.battle.BattleService;
@@ -159,6 +160,11 @@ public class GameScreen extends ScreenAdapter {
     private static final float MANSION_PATH_BLOCK_FORCE_MOVE_DURATION_SECONDS = 1.5f;
     private static final float BOSS_DECLINE_FORCE_MOVE_DURATION_SECONDS = 1f;
     private static final float INTERACTION_RETRIGGER_BLOCK_SECONDS = 0.2f;
+    private static final float SAVE_TOAST_DURATION_SECONDS = 2f;
+    private static final int SAVE_TOAST_FONT_SIZE = 30;
+    private static final float SAVE_TOAST_X = 20f;
+    private static final float SAVE_TOAST_Y = 575f;
+    private static final String SAVE_TOAST_TEXT = "SAVED";
     private static final int DEFAULT_BATTLE_XP_REWARD = 25;
     private static final String EVENT_BOSS_0 = "boss_0_event";
     private static final String EVENT_BOSS_0_DEFEATED = "boss_0_defeated";
@@ -200,6 +206,7 @@ public class GameScreen extends ScreenAdapter {
     private final HudWallet hudWallet;
     private final BitmapFont uiFont;
     private final BitmapFont areaTitleFont;
+    private final BitmapFont saveToastFont;
     private final GlyphLayout areaTitleLayout;
     private final PlayerBattleState playerBattleState;
     
@@ -245,6 +252,7 @@ public class GameScreen extends ScreenAdapter {
     private BossFightPromptState activeBossFightPrompt;
     private SaveGamePromptState activeSaveGamePrompt;
     private SaveActionPromptState activeSaveActionPrompt;
+    private float saveToastTimer;
     private float interactionRetriggerBlockSeconds;
     private Entity bertJrPropEntity;
     private Vector2 bertJrPropTargetPosition;
@@ -323,10 +331,12 @@ public class GameScreen extends ScreenAdapter {
         this.shapeRenderer = new ShapeRenderer();
         this.uiFont = new BitmapFont();
         this.areaTitleFont = createAreaTitleFont();
+        this.saveToastFont = createSaveToastFont();
         this.areaTitleLayout = new GlyphLayout();
         this.activeAreaTitle = null;
         this.areaTitleTimer = 0f;
         this.pendingAreaTitleAsset = null;
+        this.saveToastTimer = 0f;
         this.lastAreaNameForSfx = null;
         this.lastAreaDisplayKey = null;
         this.sideMenuOverlay = new MainSideMenuOverlay(inventoryStage, battleOverlay.getSkin(), uiFont, audioService);
@@ -708,6 +718,7 @@ public class GameScreen extends ScreenAdapter {
         updateBossFightPromptInput();
         updateSaveGamePromptInput();
         updateSaveActionPromptInput();
+        saveToastTimer = Math.max(0f, saveToastTimer - delta);
         interactionRetriggerBlockSeconds = Math.max(0f, interactionRetriggerBlockSeconds - delta);
 
         // Handle side-menu and submenu navigation while in exploration.
@@ -808,6 +819,7 @@ public class GameScreen extends ScreenAdapter {
             mapTransitionFade.render(batch);
         }
         renderAreaTitle(uiDelta);
+        renderSaveToast();
         
         // Render cheat console overlay (always on top, independent stage)
         if (cheatConsoleOverlay.isVisible()) {
@@ -924,6 +936,9 @@ public class GameScreen extends ScreenAdapter {
         }
         if (areaTitleFont != null) {
             areaTitleFont.dispose();
+        }
+        if (saveToastFont != null) {
+            saveToastFont.dispose();
         }
         if (shapeRenderer != null) {
             shapeRenderer.dispose();
@@ -1291,7 +1306,9 @@ public class GameScreen extends ScreenAdapter {
         if (!choseAction) {
             return;
         }
-        performSavePointSave(prompt.overwriteMode);
+        if (performSavePointSave(prompt.overwriteMode)) {
+            showSaveToast();
+        }
     }
 
     private void renderSaveActionPrompt() {
@@ -1306,11 +1323,11 @@ public class GameScreen extends ScreenAdapter {
         dialogueOverlay.renderPrompt(batch, text, Interactible.DialoguePosition.BOTTOM);
     }
 
-    private void performSavePointSave(boolean overwriteMode) {
+    private boolean performSavePointSave(boolean overwriteMode) {
         SaveStateManager saveStateManager = game.getSaveStateManager();
         SaveState state = buildSaveState();
         if (saveStateManager == null || state == null) {
-            return;
+            return false;
         }
 
         if (overwriteMode) {
@@ -1319,11 +1336,15 @@ public class GameScreen extends ScreenAdapter {
                 SaveState selected = existing.get(0);
                 state.setDisplayName(selected.getDisplayName());
                 state.setCreatedAt(selected.getCreatedAt());
-                saveStateManager.updateSaveState(selected.getFileName(), state);
-                return;
+                return saveStateManager.updateSaveState(selected.getFileName(), state);
             }
         }
-        saveStateManager.createSaveState(state);
+        return saveStateManager.createSaveState(state) != null;
+    }
+
+    private void showSaveToast() {
+        saveToastTimer = SAVE_TOAST_DURATION_SECONDS;
+        audioService.playSound(SoundEffect.CONFIRM);
     }
 
     private void blockInteractionRetrigger() {
@@ -2241,6 +2262,44 @@ public class GameScreen extends ScreenAdapter {
         BitmapFont font = generator.generateFont(parameter);
         generator.dispose();
         return font;
+    }
+
+    private BitmapFont createSaveToastFont() {
+        if (!Gdx.files.internal(DialogueBoxRenderer.DIALOGUE_FONT_PATH).exists()) {
+            return new BitmapFont();
+        }
+
+        FreeTypeFontGenerator generator = new FreeTypeFontGenerator(Gdx.files.internal(DialogueBoxRenderer.DIALOGUE_FONT_PATH));
+        FreeTypeFontGenerator.FreeTypeFontParameter parameter = new FreeTypeFontGenerator.FreeTypeFontParameter();
+        parameter.size = SAVE_TOAST_FONT_SIZE;
+        parameter.borderWidth = 2f;
+        parameter.borderColor = com.badlogic.gdx.graphics.Color.BLACK;
+        parameter.color = com.badlogic.gdx.graphics.Color.valueOf("#E8C15A");
+        parameter.characters = FreeTypeFontGenerator.DEFAULT_CHARS;
+        BitmapFont font = generator.generateFont(parameter);
+        generator.dispose();
+        return font;
+    }
+
+    private void renderSaveToast() {
+        if (saveToastTimer <= 0f) {
+            return;
+        }
+        float alpha = Math.min(1f, saveToastTimer / SAVE_TOAST_DURATION_SECONDS);
+
+        inventoryStage.getViewport().apply();
+        inventoryStage.getCamera().update();
+        batch.setProjectionMatrix(inventoryStage.getCamera().combined);
+
+        batch.begin();
+        float originalR = saveToastFont.getColor().r;
+        float originalG = saveToastFont.getColor().g;
+        float originalB = saveToastFont.getColor().b;
+        float originalA = saveToastFont.getColor().a;
+        saveToastFont.setColor(originalR, originalG, originalB, alpha);
+        saveToastFont.draw(batch, SAVE_TOAST_TEXT, SAVE_TOAST_X, SAVE_TOAST_Y);
+        saveToastFont.setColor(originalR, originalG, originalB, originalA);
+        batch.end();
     }
 
     private void showAreaTitle(MapAsset targetAsset) {
