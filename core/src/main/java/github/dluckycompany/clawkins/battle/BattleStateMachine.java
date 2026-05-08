@@ -307,6 +307,19 @@ public class BattleStateMachine {
         }
     }
 
+    /**
+     * Consumes the player's turn after manually switching clawkins.
+     * This moves battle flow to enemy command phase.
+     */
+    public void consumeTurnAfterSwitch(String allyDisplayName) {
+        if (phase != BattlePhase.PLAYER_COMMAND) {
+            return;
+        }
+        String display = (allyDisplayName == null || allyDisplayName.isBlank()) ? "Your clawkin" : allyDisplayName;
+        setLastLogPlain(display + " entered battle.");
+        phase = BattlePhase.ENEMY_COMMAND;
+    }
+
     public void reset() {
         phase = BattlePhase.INIT;
         context = null;

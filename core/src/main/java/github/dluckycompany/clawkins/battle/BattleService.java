@@ -218,6 +218,47 @@ public class BattleService {
         }
     }
 
+    /**
+     * Switches the active clawkin during PLAYER_COMMAND and consumes the player's turn.
+     *
+     * @return true if switch succeeded and turn was consumed.
+     */
+    public boolean switchActiveClawkin(int newIndex) {
+        if (!battleStateMachine.canAcceptPlayerAction()) {
+            return false;
+        }
+
+        int currentIndex = playerBattleState.getActiveClawkinIndex();
+        if (newIndex == currentIndex) {
+            return false;
+        }
+
+        Clawkin next = playerBattleState.getClawkin(newIndex);
+        if (next == null || !next.isAlive()) {
+            return false;
+        }
+
+        Clawkin current = playerBattleState.getClawkin(currentIndex);
+        BattleUnit currentBattleUnit = battleStateMachine.firstAlly();
+        if (current != null && currentBattleUnit != null) {
+            current.setCurrentHp(currentBattleUnit.getHp());
+        }
+
+        playerBattleState.setActiveClawkinIndex(newIndex);
+        BattleUnit switchedUnit = new BattleUnit(
+                next.getId(),
+                next.getCurrentHp(),
+                next.getBaseAttack(),
+                next.getBaseDefense(),
+                next.getBaseSpeed()
+        );
+        String switchedName = clawkinHudName(next, switchedUnit);
+        battleStateMachine.replaceAlly(switchedUnit, switchedName);
+        battleStateMachine.replacePlayerSkills(resolveSkillsForClawkin(next));
+        battleStateMachine.consumeTurnAfterSwitch(switchedName);
+        return true;
+    }
+
     public void closeBattleSession() {
         if (battleStateMachine.hasSession()) {
             playerBattleState.applyBattleResult(battleStateMachine.firstAlly());

@@ -165,6 +165,12 @@ Current object-to-entity mapping:
 - Tiled rule for enemy data: when object class is `Enemy`, keep enemy fields at top-level object properties and do not wrap them in nested `properties` class field.
 - Full technical details: see `docs/handoffs/2026-05-08-handover-enemy-alert-pause-and-sfx.md`.
 
+### Battle HUD Turn + HP + Action SFX Stabilization (2026-05-08)
+- Manual clawkin switch in battle now consumes the player's turn and advances to enemy phase.
+- Player HP bar now syncs from live ally `BattleUnit` HP (not stale cached clawkin values), then writes back to active clawkin state.
+- Per-action SFX routing is centralized in `BattleActionSfxHandler`.
+- Full technical details: see `docs/handoffs/2026-05-08-handover-battlehud-turn-hp-sfx.md`.
+
 ### Boss Interaction Confirmation Rule (2026-05-08)
 - **Default rule for all future bosses:** follow this sequence unless explicitly overridden:
   1. pre-dialogue event/checks

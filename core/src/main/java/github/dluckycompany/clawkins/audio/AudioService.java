@@ -14,6 +14,9 @@ import com.badlogic.gdx.utils.Disposable;
  * missing file paths are ignored without crashing.
  */
 public class AudioService implements Disposable {
+    // Per-music multiplier for battle track.
+    // Final loudness = musicVolume * BATTLE_MUSIC_VOLUME_MULTIPLIER.
+    private static final float BATTLE_MUSIC_VOLUME_MULTIPLIER = 0.50f;
     // Per-SFX multiplier for map area title sound.
     // Final loudness = soundVolume * AREA_NAME_DISPLAY_VOLUME_MULTIPLIER.
     private static final float AREA_NAME_DISPLAY_VOLUME_MULTIPLIER = 0.45f;
@@ -44,7 +47,7 @@ public class AudioService implements Disposable {
     public void setMusicVolume(float musicVolume) {
         this.musicVolume = Math.max(0f, Math.min(1f, musicVolume));
         if (currentMusic != null) {
-            currentMusic.setVolume(effectiveMusicVolume());
+            currentMusic.setVolume(effectiveMusicVolume(currentTrack));
         }
     }
 
@@ -77,7 +80,7 @@ public class AudioService implements Disposable {
     public void setMuted(boolean muted) {
         this.muted = muted;
         if (currentMusic != null) {
-            currentMusic.setVolume(effectiveMusicVolume());
+            currentMusic.setVolume(effectiveMusicVolume(currentTrack));
         }
     }
     
@@ -140,7 +143,7 @@ public class AudioService implements Disposable {
         }
         if (currentTrack == track && currentMusic != null) {
             currentMusic.setLooping(looping);
-            currentMusic.setVolume(effectiveMusicVolume());
+            currentMusic.setVolume(effectiveMusicVolume(track));
             if (!currentMusic.isPlaying()) {
                 currentMusic.play();
             }
@@ -157,7 +160,7 @@ public class AudioService implements Disposable {
         currentTrack = track;
         currentMusic = nextMusic;
         currentMusic.setLooping(looping);
-        currentMusic.setVolume(effectiveMusicVolume());
+        currentMusic.setVolume(effectiveMusicVolume(track));
         currentMusic.play();
     }
 
@@ -169,8 +172,18 @@ public class AudioService implements Disposable {
         sound.play(effectiveSoundVolume(effect));
     }
 
-    private float effectiveMusicVolume() {
-        return muted ? 0f : musicVolume;
+    private float effectiveMusicVolume(MusicTrack track) {
+        if (muted) {
+            return 0f;
+        }
+        return musicVolume * musicTrackVolumeMultiplier(track);
+    }
+
+    private float musicTrackVolumeMultiplier(MusicTrack track) {
+        if (track == MusicTrack.BATTLE) {
+            return BATTLE_MUSIC_VOLUME_MULTIPLIER;
+        }
+        return 1f;
     }
 
     private float effectiveSoundVolume() {
