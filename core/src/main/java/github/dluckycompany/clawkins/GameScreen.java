@@ -1,6 +1,10 @@
 package github.dluckycompany.clawkins;
 
 import java.util.List;
+import java.util.Map;
+import java.util.HashMap;
+import java.util.Set;
+import java.util.HashSet;
 import java.util.function.Consumer;
 
 import com.badlogic.ashley.core.Engine;
@@ -22,6 +26,7 @@ import com.badlogic.gdx.maps.tiled.TiledMap;
 import com.badlogic.gdx.math.Rectangle;
 import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.scenes.scene2d.Stage;
+import com.badlogic.gdx.scenes.scene2d.ui.Table;
 import com.badlogic.gdx.utils.Disposable;
 import com.badlogic.gdx.utils.viewport.FitViewport;
 import com.badlogic.gdx.utils.viewport.Viewport;
@@ -31,20 +36,29 @@ import github.dluckycompany.clawkins.asset.MapAsset;
 import github.dluckycompany.clawkins.asset.MapAssetName;
 import github.dluckycompany.clawkins.audio.AudioEventType;
 import github.dluckycompany.clawkins.audio.AudioService;
+import github.dluckycompany.clawkins.audio.MusicTrack;
 import github.dluckycompany.clawkins.battle.BattleOverlay;
 import github.dluckycompany.clawkins.battle.BattlePhase;
 import github.dluckycompany.clawkins.battle.BattleService;
 import github.dluckycompany.clawkins.battle.BattleSkill;
 import github.dluckycompany.clawkins.battle.BattleTransition;
+import github.dluckycompany.clawkins.battle.BattleUnit;
 import github.dluckycompany.clawkins.battle.PlayerBattleState;
 import github.dluckycompany.clawkins.character.Clawkin;
+import github.dluckycompany.clawkins.component.Interactible;
 import github.dluckycompany.clawkins.component.MapTransitionZone;
+import github.dluckycompany.clawkins.component.Move;
 import github.dluckycompany.clawkins.component.Player;
+import github.dluckycompany.clawkins.component.PlayerAnimation;
+import github.dluckycompany.clawkins.component.Prop;
 import github.dluckycompany.clawkins.component.Transform;
 import github.dluckycompany.clawkins.encounter.EncounterDetectionSystem;
+import github.dluckycompany.clawkins.encounter.EncounterEvent;
 import github.dluckycompany.clawkins.encounter.EncounterEventBus;
+import github.dluckycompany.clawkins.encounter.EncounterEventType;
 import github.dluckycompany.clawkins.item.Item;
 import github.dluckycompany.clawkins.item.ItemFactory;
+import github.dluckycompany.clawkins.progress.PlayerProgress;
 import github.dluckycompany.clawkins.save.SaveState;
 import github.dluckycompany.clawkins.system.AnimationSystem;
 import github.dluckycompany.clawkins.system.CameraSystem;
@@ -138,12 +152,23 @@ public class GameScreen extends ScreenAdapter {
     private static final float AREA_TITLE_DURATION_SECONDS = 3f;
     private static final float AREA_TITLE_FADE_IN_SECONDS = 0f;
     private static final float AREA_TITLE_FADE_OUT_SECONDS = 2f;
+    private static final float END_ROAD_FORCE_MOVE_DURATION_SECONDS = 1f;
+    private static final float BOSS_DECLINE_FORCE_MOVE_DURATION_SECONDS = 1f;
+    private static final String EVENT_BOSS_BERT_JR = "boss_bert_jr";
+    private static final String EVENT_BOSS_BERT_JR_DEFEATED = "boss_bert_jr_defeated";
+    private static final String ENCOUNTER_BERT_JR_ID = "bert_jr_tutorial_boss";
+    private static final String TRIGGER_BOSS_BERT_JR_ID = "trigger_boss01";
+    private static final String PROP_BERT_JR_OBJECT_ID = "bertjr_prop";
+    private static final float BERT_JR_PROP_INITIAL_X_OFFSET = 6f;
+    private static final float BERT_JR_PROP_WALK_IN_SPEED = 1.2f;
 
     private final Main game;
     private final Engine engine;
     private final Batch batch;
     private final TiledService tiledService;
     private final TiledObjectConfigurator tiledObjectConfigurator;
+    private final EncounterEventBus encounterEventBus;
+    private final PlayerProgress playerProgress;
     private final BattleService battleService;
     private final BattleOverlay battleOverlay;
     private final InteractionSystem interactionSystem;
@@ -201,6 +226,16 @@ public class GameScreen extends ScreenAdapter {
     private String lastAreaDisplayKey;
 
     private SaveState pendingSaveState;
+    private ForcedMoveState activeForcedMove;
+    private BossFightPromptState activeBossFightPrompt;
+    private Entity bertJrPropEntity;
+    private Vector2 bertJrPropTargetPosition;
+    private boolean bertJrPropWalkingIn;
+    private boolean bertJrPropReachedTarget;
+    private boolean bertJrPreDialogueSequenceActive;
+    private boolean bertJrFirstEncounterMusicStarted;
+    private final Map<String, BossMusicHooks> bossMusicHooksByEncounterId = new HashMap<>();
+    private ActiveBossMusicState activeBossMusicState;
     
     // Cheat console system for developer debugging
     private github.dluckycompany.clawkins.debug.CheatCodeManager cheatCodeManager;
@@ -243,11 +278,12 @@ public class GameScreen extends ScreenAdapter {
         });
         this.engine.addSystem(mapTransitionSystem);
 
-        EncounterEventBus encounterEventBus = new EncounterEventBus();
+        this.encounterEventBus = new EncounterEventBus();
+        this.playerProgress = new PlayerProgress();
         this.playerBattleState = new PlayerBattleState();
         this.interactionSystem.setClawkinPartySupplier(playerBattleState::getParty);
-        this.battleService = new BattleService(encounterEventBus, playerBattleState);
-        this.engine.addSystem(new EncounterDetectionSystem(encounterEventBus));
+        this.battleService = new BattleService(this.encounterEventBus, playerBattleState);
+        this.engine.addSystem(new EncounterDetectionSystem(this.encounterEventBus));
         DialogueBoxRenderer dialogueBoxRenderer = new DialogueBoxRenderer();
         this.battleOverlay = new BattleOverlay(game, dialogueBoxRenderer);
         this.battleOverlay.init(assetService, battleService, playerBattleState);
@@ -273,9 +309,20 @@ public class GameScreen extends ScreenAdapter {
         this.lastAreaDisplayKey = null;
         this.sideMenuOverlay = new MainSideMenuOverlay(inventoryStage, battleOverlay.getSkin(), uiFont, audioService);
         this.hudWallet = new HudWallet(playerBattleState.getWallet(), uiFont);
+        this.hudWallet.setPosition(10, 10);
+        this.hudWallet.pack(); // Size the label to fit its content
         
-        // Note: HUD wallet is kept for potential future use but not displayed
-        // Money can be viewed in the inventory screen
+        // Create root table for HUD wallet with fixed virtual coordinates
+        Table hudRoot = new Table();
+        hudRoot.setFillParent(true);
+        hudRoot.top().left();
+        hudRoot.add(hudWallet);
+        this.hudStage.addActor(hudRoot);
+        this.bertJrPropTargetPosition = new Vector2();
+        this.bertJrPropWalkingIn = false;
+        this.bertJrPropReachedTarget = false;
+        this.bertJrPreDialogueSequenceActive = false;
+        this.bertJrFirstEncounterMusicStarted = false;
 
         // Tiled map services
         this.tiledService = new TiledService(assetService);
@@ -368,6 +415,8 @@ public class GameScreen extends ScreenAdapter {
         interactionSystem.setOnMerchantInteraction(() -> {
             openMerchantShop();
         });
+        registerBossMusicHooks();
+        registerSpecialInteractions();
         
         // Create the full-screen inventory screen and cache it
         this.inventoryScreen = new InventoryScreen(game, playerBattleState.getInventory(), this);
@@ -378,6 +427,7 @@ public class GameScreen extends ScreenAdapter {
             // This triggers: object parsing → entity spawning → map change notification to systems.
             TiledMap startMap = this.tiledService.loadMap(MapAsset.COTTAGE_SAMPLE);
             this.tiledService.setMap(startMap);
+            refreshBertJrPropStateForCurrentMap();
             this.lastAreaNameForSfx = resolveAreaName(MapAsset.COTTAGE_SAMPLE);
             this.lastAreaDisplayKey = buildAreaDisplayKey(MapAsset.COTTAGE_SAMPLE);
             // Prevent frame-1 transition triggers from moving the player off the authored spawn.
@@ -401,6 +451,106 @@ public class GameScreen extends ScreenAdapter {
         this.pendingSaveState = saveState;
     }
 
+    private void registerSpecialInteractions() {
+        // Register object-id based handlers here.
+        // Flow: dialogue (if any) always finishes first, then this handler executes.
+        // Pre-dialogue checks run before dialogue/special handlers and may block interaction.
+        interactionSystem.registerPreDialogueCheck(TRIGGER_BOSS_BERT_JR_ID, context -> {
+            if (context.interactionCount() == 1 && !bertJrPropReachedTarget) {
+                startBertJrPreDialogueSequence(context.playerEntity());
+                return false;
+            }
+            if (context.interactionCount() == 1 && !bertJrFirstEncounterMusicStarted) {
+                audioService.playMusic(MusicTrack.BOSS_BERTJR_DIA_FIRST_ENCOUNTER, false);
+                bertJrFirstEncounterMusicStarted = true;
+            }
+            return !playerProgress.isEventAccomplished(EVENT_BOSS_BERT_JR_DEFEATED);
+        });
+        interactionSystem.registerSpecialInteraction("end_road", context -> {
+            startEndRoadForcedMove(context.playerEntity());
+        });
+        interactionSystem.registerSpecialInteraction(TRIGGER_BOSS_BERT_JR_ID, context -> {
+            if (battleService.hasBattleSession() || playerProgress.isEventAccomplished(EVENT_BOSS_BERT_JR_DEFEATED)) {
+                return;
+            }
+            playerProgress.incrementAttempts(EVENT_BOSS_BERT_JR);
+
+            promptBossFightChoice(
+                    "Bert Jr., The House Bandit",
+                    () -> {
+                        playerProgress.incrementAccepted(EVENT_BOSS_BERT_JR);
+                        runBossPreBattleMusicHook(ENCOUNTER_BERT_JR_ID);
+                        encounterEventBus.publish(new EncounterEvent(
+                                EncounterEventType.START_ENCOUNTER,
+                                ENCOUNTER_BERT_JR_ID,
+                                "tutorial_boss_bert_jr",
+                                600,
+                                25,
+                                35,
+                                35,
+                                createBertJrTutorialSkills(),
+                                "Bert Jr., The House Bandit",
+                                "entities/clawkins/Clawkin_04_Bert_Jr.png"
+                        ));
+                    },
+                    () -> {
+                        playerProgress.incrementDeclined(EVENT_BOSS_BERT_JR);
+                        if (context.interactionCount() == 1) {
+                            audioService.playCurrentMapMusic();
+                        }
+                        startForcedMove(
+                                context.playerEntity(),
+                                -1f,
+                                0f,
+                                PlayerAnimation.Direction.WEST,
+                                BOSS_DECLINE_FORCE_MOVE_DURATION_SECONDS
+                        );
+                    }
+            );
+        });
+    }
+
+    private void registerBossMusicHooks() {
+        // Keep Bert Jr. on default battle music flow.
+        bossMusicHooksByEncounterId.remove(ENCOUNTER_BERT_JR_ID);
+    }
+
+    private void promptBossFightChoice(String enemyName, Runnable onYes, Runnable onNo) {
+        if (enemyName == null || enemyName.isBlank()) {
+            enemyName = "Boss";
+        }
+        activeBossFightPrompt = new BossFightPromptState(enemyName, onYes, onNo);
+    }
+
+    private static List<BattleSkill> createBertJrTutorialSkills() {
+        return List.of(
+                new BattleSkill(
+                        "Telegraphed Chomp",
+                        BattleSkill.EffectType.DAMAGE,
+                        15,
+                        "attack[self]",
+                        0,
+                        1
+                ),
+                new BattleSkill(
+                        "Tail Whip",
+                        BattleSkill.EffectType.DAMAGE,
+                        10,
+                        "attack[self]",
+                        0,
+                        0
+                ),
+                new BattleSkill(
+                        "Junk Toss",
+                        BattleSkill.EffectType.DAMAGE,
+                        8,
+                        "attack[self]",
+                        0,
+                        0
+                )
+        );
+    }
+
     private void ensurePlayerEntityPresentAfterReturn() {
         Entity existingPlayer = findPlayerEntity();
         if (existingPlayer != null) {
@@ -418,6 +568,7 @@ public class GameScreen extends ScreenAdapter {
         }
 
         tiledService.setMap(currentMap);
+        refreshBertJrPropStateForCurrentMap();
         mapTransitionSystem.setCooldown(0.2f);
 
         Entity restoredPlayer = findPlayerEntity();
@@ -483,10 +634,13 @@ public class GameScreen extends ScreenAdapter {
         
         // Cap delta to avoid spiral-of-death on lag spikes
         delta = Math.min(1 / 30f, delta);
+        updateBossFightPromptInput();
 
         // Handle side-menu and submenu navigation while in exploration.
         if (!battleService.hasBattleSession() && !interactionSystem.isDialogueVisible() && !merchantShopVisible
-                && !mapTransitionFade.isTransitioning() && !cheatConsoleOverlay.isVisible()) {
+                && !mapTransitionFade.isTransitioning() && !isSpecialMovementActive()
+                && !isBossFightPromptVisible() && !isBertJrPreDialogueSequenceActive()
+                && !cheatConsoleOverlay.isVisible()) {
             MainSideMenuOverlay.Action menuAction = sideMenuOverlay.handleInput();
             switch (menuAction) {
                 case OPEN_CLAWKINS -> openTeamViewerSubmenu();
@@ -543,6 +697,8 @@ public class GameScreen extends ScreenAdapter {
 
         battleOverlay.update(battleService, delta);
         battleService.update(delta);
+        updateForcedMove(delta);
+        updateBertJrPropEntrance(delta);
         syncAudioStates();
         syncSystemStates();
 
@@ -552,6 +708,7 @@ public class GameScreen extends ScreenAdapter {
         engine.update(worldDelta);
         battleOverlay.render(batch, battleService);
         dialogueOverlay.render(batch, interactionSystem);
+        renderBossFightPrompt();
         
         // ============================================================
         // UI Rendering with Proper Viewport Coordinate Management
@@ -700,24 +857,219 @@ public class GameScreen extends ScreenAdapter {
     }
 
     private void syncSystemStates() {
+        if (isBertJrPreDialogueSequenceActive()) {
+            explorationSystemsEnabled = false;
+            engine.getSystem(PlayerInputSystem.class).setProcessing(false);
+            interactionSystem.setProcessing(true);
+            engine.getSystem(MoveSystem.class).setProcessing(false);
+            engine.getSystem(EncounterDetectionSystem.class).setProcessing(false);
+            mapTransitionSystem.setProcessing(false);
+            return;
+        }
+        if (isSpecialMovementActive()) {
+            explorationSystemsEnabled = false;
+            engine.getSystem(PlayerInputSystem.class).setProcessing(false);
+            interactionSystem.setProcessing(false);
+            engine.getSystem(MoveSystem.class).setProcessing(true);
+            engine.getSystem(EncounterDetectionSystem.class).setProcessing(false);
+            mapTransitionSystem.setProcessing(false);
+            return;
+        }
+
         boolean battleLocked = battleService.hasBattleSession();
         boolean dialogueLocked = interactionSystem.isDialogueVisible();
+        boolean bossPromptLocked = isBossFightPromptVisible();
         boolean merchantLocked = merchantShopVisible;
         boolean mapTransitionLocked = mapTransitionFade.isTransitioning();
         boolean menuLocked = sideMenuOverlay.isBlockingGameplay() || teamViewerVisible;
         boolean cheatConsoleLocked = cheatConsoleOverlay.isVisible();
-        boolean shouldEnableExploration = !battleLocked && !dialogueLocked && !merchantLocked && !mapTransitionLocked && !menuLocked && !cheatConsoleLocked;
+        boolean shouldEnableExploration = !battleLocked
+                && !dialogueLocked
+                && !bossPromptLocked
+                && !merchantLocked
+                && !mapTransitionLocked
+                && !menuLocked
+                && !cheatConsoleLocked;
         if (shouldEnableExploration == explorationSystemsEnabled) {
-            interactionSystem.setProcessing(!battleLocked && !merchantLocked && !menuLocked && !cheatConsoleLocked);
+            interactionSystem.setProcessing(!battleLocked && !bossPromptLocked && !merchantLocked && !menuLocked && !cheatConsoleLocked);
             return;
         }
 
         explorationSystemsEnabled = shouldEnableExploration;
         engine.getSystem(PlayerInputSystem.class).setProcessing(shouldEnableExploration);
-        interactionSystem.setProcessing(!battleLocked && !merchantLocked && !menuLocked && !cheatConsoleLocked);
+        interactionSystem.setProcessing(!battleLocked && !bossPromptLocked && !merchantLocked && !menuLocked && !cheatConsoleLocked);
         engine.getSystem(MoveSystem.class).setProcessing(shouldEnableExploration);
         engine.getSystem(EncounterDetectionSystem.class).setProcessing(shouldEnableExploration);
         mapTransitionSystem.setProcessing(shouldEnableExploration);
+    }
+
+    private boolean isSpecialMovementActive() {
+        return activeForcedMove != null;
+    }
+
+    private boolean isBossFightPromptVisible() {
+        return activeBossFightPrompt != null;
+    }
+
+    private boolean isBertJrPreDialogueSequenceActive() {
+        return bertJrPreDialogueSequenceActive;
+    }
+
+    private void startEndRoadForcedMove(Entity playerEntity) {
+        if (playerEntity == null || isSpecialMovementActive()) {
+            return;
+        }
+        Move move = Move.MAPPER.get(playerEntity);
+        if (move == null) {
+            return;
+        }
+
+        startForcedMove(playerEntity, 0f, 1f, PlayerAnimation.Direction.NORTH, END_ROAD_FORCE_MOVE_DURATION_SECONDS);
+    }
+
+    private void startForcedMove(
+            Entity playerEntity,
+            float directionX,
+            float directionY,
+            PlayerAnimation.Direction animationDirection,
+            float durationSeconds) {
+        if (playerEntity == null || isSpecialMovementActive()) {
+            return;
+        }
+        Move move = Move.MAPPER.get(playerEntity);
+        if (move == null) {
+            return;
+        }
+
+        activeForcedMove = new ForcedMoveState(
+                playerEntity,
+                directionX,
+                directionY,
+                animationDirection,
+                durationSeconds
+        );
+        move.getDirection().set(directionX, directionY);
+        move.setMaxSpeed(move.getBaseSpeed());
+
+        PlayerAnimation animation = PlayerAnimation.MAPPER.get(playerEntity);
+        if (animation != null && animationDirection != null) {
+            animation.setDirection(animationDirection);
+            animation.setMoving(true);
+        }
+    }
+
+    private void updateForcedMove(float delta) {
+        ForcedMoveState forcedMove = activeForcedMove;
+        if (forcedMove == null) {
+            return;
+        }
+
+        Move move = Move.MAPPER.get(forcedMove.playerEntity);
+        if (move == null) {
+            activeForcedMove = null;
+            return;
+        }
+
+        float dt = Math.max(0f, delta);
+        forcedMove.remainingDuration = Math.max(0f, forcedMove.remainingDuration - dt);
+
+        move.getDirection().set(forcedMove.directionX, forcedMove.directionY);
+        move.setMaxSpeed(move.getBaseSpeed());
+
+        PlayerAnimation animation = PlayerAnimation.MAPPER.get(forcedMove.playerEntity);
+        if (animation != null) {
+            if (forcedMove.animationDirection != null) {
+                animation.setDirection(forcedMove.animationDirection);
+            }
+            animation.setMoving(true);
+        }
+
+        if (forcedMove.remainingDuration > 0f) {
+            return;
+        }
+
+        move.getDirection().setZero();
+        move.setMaxSpeed(move.getBaseSpeed());
+        if (animation != null) {
+            animation.setMoving(false);
+        }
+        activeForcedMove = null;
+    }
+
+    private static final class ForcedMoveState {
+        private final Entity playerEntity;
+        private final float directionX;
+        private final float directionY;
+        private final PlayerAnimation.Direction animationDirection;
+        private float remainingDuration;
+
+        private ForcedMoveState(
+                Entity playerEntity,
+                float directionX,
+                float directionY,
+                PlayerAnimation.Direction animationDirection,
+                float remainingDuration) {
+            this.playerEntity = playerEntity;
+            this.directionX = directionX;
+            this.directionY = directionY;
+            this.animationDirection = animationDirection;
+            this.remainingDuration = Math.max(0f, remainingDuration);
+        }
+    }
+
+    private void updateBossFightPromptInput() {
+        BossFightPromptState prompt = activeBossFightPrompt;
+        if (prompt == null) {
+            return;
+        }
+
+        if (Gdx.input.isKeyJustPressed(Input.Keys.LEFT) || Gdx.input.isKeyJustPressed(Input.Keys.A)) {
+            prompt.yesSelected = true;
+            return;
+        }
+        if (Gdx.input.isKeyJustPressed(Input.Keys.RIGHT) || Gdx.input.isKeyJustPressed(Input.Keys.D)) {
+            prompt.yesSelected = false;
+            return;
+        }
+
+        if (Gdx.input.isKeyJustPressed(Input.Keys.Y)) {
+            handleBossFightPromptChoice(true);
+            return;
+        }
+        if (Gdx.input.isKeyJustPressed(Input.Keys.N)) {
+            handleBossFightPromptChoice(false);
+            return;
+        }
+
+        if (Gdx.input.isKeyJustPressed(Input.Keys.Z)
+                || Gdx.input.isKeyJustPressed(Input.Keys.SPACE)
+                || Gdx.input.isKeyJustPressed(Input.Keys.ENTER)) {
+            handleBossFightPromptChoice(prompt.yesSelected);
+        }
+    }
+
+    private void handleBossFightPromptChoice(boolean choseYes) {
+        BossFightPromptState prompt = activeBossFightPrompt;
+        if (prompt == null) {
+            return;
+        }
+        activeBossFightPrompt = null;
+        if (choseYes) {
+            prompt.onYes.run();
+            return;
+        }
+        prompt.onNo.run();
+    }
+
+    private void renderBossFightPrompt() {
+        BossFightPromptState prompt = activeBossFightPrompt;
+        if (prompt == null) {
+            return;
+        }
+        String yesOption = prompt.yesSelected ? "> Yes <" : "  Yes  ";
+        String noOption = prompt.yesSelected ? "  No  " : "> No <";
+        String text = "Fight " + prompt.enemyName + "?\n\n" + yesOption + "    " + noOption;
+        dialogueOverlay.renderPrompt(batch, text, Interactible.DialoguePosition.BOTTOM);
     }
 
     private void beginMapTransition(String targetMapKey, String targetTransitionId) {
@@ -739,18 +1091,34 @@ public class GameScreen extends ScreenAdapter {
     private void syncAudioStates() {
         boolean hasSession = battleService.hasBattleSession();
         boolean isPlaying = battleService.isBattleActive();
+        String encounterId = resolveActiveEncounterId();
 
         if (hasSession && !wasBattleSessionPresent) {
             audioService.onEvent(AudioEventType.ENCOUNTER_STARTED);
             audioService.onEvent(AudioEventType.BATTLE_STARTED);
+            runBossBattleStartMusicHook(encounterId);
+        }
+
+        if (hasSession && isPlaying) {
+            runBossMidBattleMusicHooks(encounterId);
         }
 
         if (wasBattlePlaying && !isPlaying && hasSession) {
             BattlePhase endPhase = battleService.getBattleStateMachine().getPhase();
             if (endPhase == BattlePhase.VICTORY) {
                 audioService.onEvent(AudioEventType.BATTLE_VICTORY);
+                runBossPostBattleMusicHook(encounterId, true);
+                if (ENCOUNTER_BERT_JR_ID.equals(encounterId)) {
+                    playerProgress.incrementWins(EVENT_BOSS_BERT_JR);
+                    playerProgress.markEventAccomplished(EVENT_BOSS_BERT_JR_DEFEATED);
+                    hideBertJrProp();
+                }
             } else if (endPhase == BattlePhase.DEFEAT) {
                 audioService.onEvent(AudioEventType.BATTLE_DEFEAT);
+                runBossPostBattleMusicHook(encounterId, false);
+                if (ENCOUNTER_BERT_JR_ID.equals(encounterId)) {
+                    playerProgress.incrementLosses(EVENT_BOSS_BERT_JR);
+                }
             }
         }
 
@@ -762,10 +1130,74 @@ public class GameScreen extends ScreenAdapter {
             System.out.println("[GameScreen] Battle ended - cleaning up inventory state");
             closeAllMenuUi();
             System.out.println("[GameScreen] Inventory cleanup complete, ready for exploration");
+            activeBossMusicState = null;
         }
 
         wasBattleSessionPresent = hasSession;
         wasBattlePlaying = isPlaying;
+    }
+
+    private String resolveActiveEncounterId() {
+        if (battleService.getBattleStateMachine().getContext() == null
+                || battleService.getBattleStateMachine().getContext().getEncounterId() == null) {
+            return "";
+        }
+        return battleService.getBattleStateMachine().getContext().getEncounterId();
+    }
+
+    private void runBossPreBattleMusicHook(String encounterId) {
+        BossMusicHooks hooks = bossMusicHooksByEncounterId.get(encounterId);
+        if (hooks == null || hooks.preBattleTrack == null) {
+            return;
+        }
+        audioService.playMusic(hooks.preBattleTrack, true);
+    }
+
+    private void runBossBattleStartMusicHook(String encounterId) {
+        BossMusicHooks hooks = bossMusicHooksByEncounterId.get(encounterId);
+        if (hooks == null) {
+            activeBossMusicState = null;
+            return;
+        }
+        activeBossMusicState = new ActiveBossMusicState(encounterId, hooks);
+        if (hooks.battleStartTrack != null) {
+            audioService.playMusic(hooks.battleStartTrack, true);
+        }
+    }
+
+    private void runBossMidBattleMusicHooks(String encounterId) {
+        ActiveBossMusicState state = activeBossMusicState;
+        if (state == null || !state.encounterId.equals(encounterId) || state.hooks.midBattleHooks.isEmpty()) {
+            return;
+        }
+        BattleUnit enemy = battleService.getBattleStateMachine().firstEnemy();
+        if (enemy == null || enemy.getMaxHp() <= 0) {
+            return;
+        }
+        float hpRatio = (float) enemy.getHp() / (float) enemy.getMaxHp();
+        for (MidBattleMusicHook hook : state.hooks.midBattleHooks) {
+            String key = Float.toString(hook.hpRatioThreshold);
+            if (state.triggeredMidBattleThresholds.contains(key)) {
+                continue;
+            }
+            if (hpRatio <= hook.hpRatioThreshold) {
+                if (hook.track != null) {
+                    audioService.playMusic(hook.track, true);
+                }
+                state.triggeredMidBattleThresholds.add(key);
+            }
+        }
+    }
+
+    private void runBossPostBattleMusicHook(String encounterId, boolean victory) {
+        BossMusicHooks hooks = bossMusicHooksByEncounterId.get(encounterId);
+        if (hooks == null) {
+            return;
+        }
+        MusicTrack track = victory ? hooks.postVictoryTrack : hooks.postDefeatTrack;
+        if (track != null) {
+            audioService.playMusic(track, false);
+        }
     }
 
     private void performMapTransition(String targetMapKey, String targetTransitionId) {
@@ -787,6 +1219,7 @@ public class GameScreen extends ScreenAdapter {
 
         TiledMap newMap = tiledService.loadMap(targetAsset);
         tiledService.setMap(newMap);
+        refreshBertJrPropStateForCurrentMap();
         pendingAreaTitleAsset = targetAsset;
 
         Rectangle spawnBounds = findTransitionZoneBounds(targetTransitionId);
@@ -1153,6 +1586,7 @@ public class GameScreen extends ScreenAdapter {
         
         Gdx.app.log("GameScreen", "Setting map (this will spawn entities)");
         tiledService.setMap(loadedMap);
+        refreshBertJrPropStateForCurrentMap();
         
         int entityCountAfter = engine.getEntities().size();
         Gdx.app.log("GameScreen", "After setMap, entity count: " + entityCountAfter);
@@ -1491,7 +1925,69 @@ public class GameScreen extends ScreenAdapter {
     }
 
     private boolean shouldPauseForUi() {
-        return sideMenuOverlay.isBlockingGameplay() || teamViewerVisible || merchantShopVisible || cheatConsoleOverlay.isVisible();
+        return sideMenuOverlay.isBlockingGameplay()
+                || teamViewerVisible
+                || merchantShopVisible
+                || isBossFightPromptVisible()
+                || cheatConsoleOverlay.isVisible();
+    }
+
+    private static final class BossFightPromptState {
+        private final String enemyName;
+        private final Runnable onYes;
+        private final Runnable onNo;
+        private boolean yesSelected = true;
+
+        private BossFightPromptState(String enemyName, Runnable onYes, Runnable onNo) {
+            this.enemyName = enemyName;
+            this.onYes = onYes == null ? () -> {} : onYes;
+            this.onNo = onNo == null ? () -> {} : onNo;
+        }
+    }
+
+    private static final class BossMusicHooks {
+        private final String encounterId;
+        private final MusicTrack preBattleTrack;
+        private final MusicTrack battleStartTrack;
+        private final List<MidBattleMusicHook> midBattleHooks;
+        private final MusicTrack postVictoryTrack;
+        private final MusicTrack postDefeatTrack;
+
+        private BossMusicHooks(
+                String encounterId,
+                MusicTrack preBattleTrack,
+                MusicTrack battleStartTrack,
+                List<MidBattleMusicHook> midBattleHooks,
+                MusicTrack postVictoryTrack,
+                MusicTrack postDefeatTrack) {
+            this.encounterId = encounterId;
+            this.preBattleTrack = preBattleTrack;
+            this.battleStartTrack = battleStartTrack;
+            this.midBattleHooks = midBattleHooks == null ? List.of() : List.copyOf(midBattleHooks);
+            this.postVictoryTrack = postVictoryTrack;
+            this.postDefeatTrack = postDefeatTrack;
+        }
+    }
+
+    private static final class MidBattleMusicHook {
+        private final float hpRatioThreshold;
+        private final MusicTrack track;
+
+        private MidBattleMusicHook(float hpRatioThreshold, MusicTrack track) {
+            this.hpRatioThreshold = Math.max(0f, Math.min(1f, hpRatioThreshold));
+            this.track = track;
+        }
+    }
+
+    private static final class ActiveBossMusicState {
+        private final String encounterId;
+        private final BossMusicHooks hooks;
+        private final Set<String> triggeredMidBattleThresholds = new HashSet<>();
+
+        private ActiveBossMusicState(String encounterId, BossMusicHooks hooks) {
+            this.encounterId = encounterId == null ? "" : encounterId;
+            this.hooks = hooks;
+        }
     }
 
     // ============================================================
@@ -1606,6 +2102,146 @@ public class GameScreen extends ScreenAdapter {
      */
     public github.dluckycompany.clawkins.battle.BattleOverlay getBattleOverlay() {
         return battleOverlay;
+    }
+
+    public PlayerProgress getPlayerProgress() {
+        return playerProgress;
+    }
+
+    private void refreshBertJrPropStateForCurrentMap() {
+        bertJrPropEntity = findPropEntityByObjectId(PROP_BERT_JR_OBJECT_ID);
+        bertJrPropWalkingIn = false;
+        bertJrPropReachedTarget = false;
+        bertJrPreDialogueSequenceActive = false;
+        bertJrPropTargetPosition.setZero();
+        int bertJrAttempts = playerProgress.getEventStats(EVENT_BOSS_BERT_JR).getAttemptCount();
+        bertJrFirstEncounterMusicStarted = bertJrAttempts > 0;
+
+        if (bertJrPropEntity == null) {
+            return;
+        }
+
+        if (playerProgress.isEventAccomplished(EVENT_BOSS_BERT_JR_DEFEATED)) {
+            hideBertJrProp();
+            return;
+        }
+
+        Transform transform = Transform.MAPPER.get(bertJrPropEntity);
+        if (transform == null) {
+            bertJrPropEntity = null;
+            return;
+        }
+
+        bertJrPropTargetPosition.set(transform.getPosition());
+        if (bertJrAttempts <= 0) {
+            transform.getPosition().x = bertJrPropTargetPosition.x + BERT_JR_PROP_INITIAL_X_OFFSET;
+            transform.getPosition().y = bertJrPropTargetPosition.y;
+            bertJrPropReachedTarget = false;
+            return;
+        }
+        bertJrPropReachedTarget = true;
+    }
+
+    private void startBertJrPropEntranceIfNeeded(int interactionCount) {
+        if (interactionCount != 1 || playerProgress.isEventAccomplished(EVENT_BOSS_BERT_JR_DEFEATED)) {
+            return;
+        }
+        if (bertJrPropEntity == null) {
+            bertJrPropEntity = findPropEntityByObjectId(PROP_BERT_JR_OBJECT_ID);
+        }
+        if (bertJrPropEntity == null || bertJrPropReachedTarget) {
+            return;
+        }
+        if (bertJrPropTargetPosition.isZero()) {
+            Transform transform = Transform.MAPPER.get(bertJrPropEntity);
+            if (transform == null) {
+                return;
+            }
+            float currentX = transform.getPosition().x;
+            float currentY = transform.getPosition().y;
+            bertJrPropTargetPosition.set(currentX - BERT_JR_PROP_INITIAL_X_OFFSET, currentY);
+        }
+        bertJrPropWalkingIn = true;
+    }
+
+    private void startBertJrPreDialogueSequence(Entity playerEntity) {
+        if (bertJrPreDialogueSequenceActive || bertJrPropReachedTarget) {
+            return;
+        }
+        bertJrPreDialogueSequenceActive = true;
+        freezePlayerInPlace(playerEntity);
+        startBertJrPropEntranceIfNeeded(1);
+    }
+
+    private void freezePlayerInPlace(Entity playerEntity) {
+        if (playerEntity == null) {
+            return;
+        }
+        Move move = Move.MAPPER.get(playerEntity);
+        if (move != null) {
+            move.getDirection().setZero();
+            move.setMaxSpeed(move.getBaseSpeed());
+        }
+        PlayerAnimation animation = PlayerAnimation.MAPPER.get(playerEntity);
+        if (animation != null) {
+            animation.setMoving(false);
+        }
+    }
+
+    private void updateBertJrPropEntrance(float delta) {
+        if (!bertJrPropWalkingIn || bertJrPropEntity == null) {
+            return;
+        }
+        Transform transform = Transform.MAPPER.get(bertJrPropEntity);
+        if (transform == null) {
+            bertJrPropWalkingIn = false;
+            bertJrPropEntity = null;
+            return;
+        }
+        float dt = Math.max(0f, delta);
+        float targetX = bertJrPropTargetPosition.x;
+        float currentX = transform.getPosition().x;
+        float nextX = Math.max(targetX, currentX - BERT_JR_PROP_WALK_IN_SPEED * dt);
+        transform.getPosition().x = nextX;
+        transform.getPosition().y = bertJrPropTargetPosition.y;
+        if (nextX <= targetX + 0.001f) {
+            transform.getPosition().x = targetX;
+            bertJrPropReachedTarget = true;
+            bertJrPropWalkingIn = false;
+            if (bertJrPreDialogueSequenceActive) {
+                bertJrPreDialogueSequenceActive = false;
+                interactionSystem.triggerInteractionByObjectId(TRIGGER_BOSS_BERT_JR_ID);
+            }
+        }
+    }
+
+    private void hideBertJrProp() {
+        if (bertJrPropEntity != null) {
+            engine.removeEntity(bertJrPropEntity);
+        }
+        bertJrPropEntity = null;
+        bertJrPropWalkingIn = false;
+        bertJrPropReachedTarget = true;
+        bertJrPreDialogueSequenceActive = false;
+        bertJrPropTargetPosition.setZero();
+    }
+
+    private Entity findPropEntityByObjectId(String objectId) {
+        if (objectId == null || objectId.isBlank()) {
+            return null;
+        }
+        String normalizedTarget = objectId.trim().toLowerCase();
+        ImmutableArray<Entity> props = engine.getEntitiesFor(Family.all(Prop.class, Transform.class).get());
+        for (Entity entity : props) {
+            Prop prop = Prop.MAPPER.get(entity);
+            if (prop == null || prop.getObjectId() == null) {
+                continue;
+            }
+            if (normalizedTarget.equals(prop.getObjectId().trim().toLowerCase())) {
+                return entity;
+            }
+        }
+        return null;
     }
 }
 
