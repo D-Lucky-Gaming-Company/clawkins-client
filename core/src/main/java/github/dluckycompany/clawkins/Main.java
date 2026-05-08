@@ -21,6 +21,7 @@ import github.dluckycompany.clawkins.audio.AudioService;
 import github.dluckycompany.clawkins.audio.MusicTrack;
 import github.dluckycompany.clawkins.audio.SoundEffect;
 import github.dluckycompany.clawkins.save.SaveStateManager;
+import github.dluckycompany.clawkins.ui.CharacterSetupScreen;
 import github.dluckycompany.clawkins.ui.MainMenuScreen;
 import github.dluckycompany.clawkins.ui.SaveStateScreen;
 
@@ -87,6 +88,7 @@ public class Main extends Game {
             () -> exitGame(),
             saveStateManager
         ));
+        addScreen(new CharacterSetupScreen(this, batch));
         addScreen(new GameScreen(this));
         this.saveStateScreen = new SaveStateScreen(batch, saveStateManager);
         addScreen(saveStateScreen);
@@ -100,7 +102,7 @@ public class Main extends Game {
      */
     private void startNewGame() {
         Gdx.app.log("Main", "Start New Game");
-        setScreen(GameScreen.class);
+        setScreen(CharacterSetupScreen.class);
     }
 
     /**
