@@ -275,6 +275,7 @@ public class BattleHud implements Disposable {
     private Runnable onItem   = () -> {};
     private Runnable onInventory = () -> {};
     private Runnable onFlee = () -> {};
+    private Runnable onClawkinSelected = () -> {}; // Called when a Clawkin icon is clicked
 
     // -----------------------------------------------------------------------
     // Construction
@@ -301,12 +302,12 @@ public class BattleHud implements Disposable {
     // Public API
     // -----------------------------------------------------------------------
 
-    /** Makes the HUD visible but does NOT set input processor (keyboard-only control). */
+    /** Makes the HUD visible and enables mouse input for clicking buttons. */
     public void show() {
         visible = true;
         // Highlight will be synced to active Clawkin in setActiveClawkinIndex() on first battle start
-        // Do NOT set input processor - we use keyboard input only
-        // Gdx.input.setInputProcessor(stage);
+        // Enable input processor for mouse clicks
+        Gdx.input.setInputProcessor(stage);
     }
 
     /** Hides the HUD and removes the Stage as input processor. */
@@ -321,6 +322,11 @@ public class BattleHud implements Disposable {
     /** Returns true when the HUD is currently active. */
     public boolean isVisible() {
         return visible;
+    }
+    
+    /** Returns the Stage for input hit detection. */
+    public Stage getStage() {
+        return stage;
     }
 
     /**
@@ -405,6 +411,7 @@ public class BattleHud implements Disposable {
     public void setOnItem(Runnable onItem) { this.onItem = onItem != null ? onItem : () -> {}; }
     public void setOnInventory(Runnable onInventory) { this.onInventory = onInventory != null ? onInventory : () -> {}; }
     public void setOnFlee(Runnable onFlee) { this.onFlee = onFlee != null ? onFlee : () -> {}; }
+    public void setOnClawkinSelected(Runnable onClawkinSelected) { this.onClawkinSelected = onClawkinSelected != null ? onClawkinSelected : () -> {}; }
 
     /** Sets whether this is a wild battle (enables/disables flee button). */
     public void setWildBattle(boolean isWildBattle) { 
@@ -780,9 +787,9 @@ public class BattleHud implements Disposable {
         specialBtn.getImage().setScaling(Scaling.fit);
         itemBtn.getImage().setScaling(Scaling.fit);
 
-        // Create corner buttons (visual only - no mouse interaction)
-        inventoryBtn = loadButtonVisualOnly(inventoryButtonTex);
-        fleeBtn = loadButtonVisualOnly(fleeButtonTex);
+        // Create corner buttons with mouse interaction enabled
+        inventoryBtn = loadButton(inventoryButtonTex, () -> this.onInventory.run());
+        fleeBtn = loadButton(fleeButtonTex, () -> this.onFlee.run());
         inventoryBtn.getImage().setScaling(Scaling.fit);
         fleeBtn.getImage().setScaling(Scaling.fit);
 
@@ -1474,6 +1481,19 @@ public class BattleHud implements Disposable {
                         // Normal appearance
                         icon.setColor(1.0f, 1.0f, 1.0f, 1.0f);
                     }
+                    
+                    // Make icon clickable
+                    final int slotIndex = i;
+                    icon.addListener(new ClickListener() {
+                        @Override
+                        public void clicked(InputEvent event, float x, float y) {
+                            // Update highlighted index when clicked
+                            highlightedClawkinIndex = slotIndex;
+                            updateSelectionHighlight();
+                            // Trigger the selection callback (shows confirmation dialog)
+                            onClawkinSelected.run();
+                        }
+                    });
                     
                     // Add icon with exact slot dimensions
                     clawkinIconTable.add(icon)
