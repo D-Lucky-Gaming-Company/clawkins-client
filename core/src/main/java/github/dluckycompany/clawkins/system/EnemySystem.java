@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.PriorityQueue;
 import java.util.Set;
@@ -16,12 +17,18 @@ import com.badlogic.ashley.utils.ImmutableArray;
 import com.badlogic.gdx.maps.MapLayer;
 import com.badlogic.gdx.maps.MapObject;
 import com.badlogic.gdx.maps.MapObjects;
+import com.badlogic.gdx.maps.objects.CircleMapObject;
+import com.badlogic.gdx.maps.objects.EllipseMapObject;
 import com.badlogic.gdx.maps.objects.PolygonMapObject;
 import com.badlogic.gdx.maps.objects.RectangleMapObject;
+import com.badlogic.gdx.math.Circle;
+import com.badlogic.gdx.math.Ellipse;
+import com.badlogic.gdx.math.Intersector;
 import com.badlogic.gdx.maps.tiled.TiledMap;
 import com.badlogic.gdx.maps.tiled.TiledMapTile;
 import com.badlogic.gdx.maps.tiled.TiledMapTileLayer;
 import com.badlogic.gdx.math.MathUtils;
+import com.badlogic.gdx.math.Polygon;
 import com.badlogic.gdx.math.Rectangle;
 import com.badlogic.gdx.math.Vector2;
 
@@ -54,11 +61,14 @@ public class EnemySystem extends IteratingSystem {
     private final AudioService audioService;
 
     private final List<TiledMapTileLayer> collisionLayers;
+    private final List<BarrierShape> barrierHitboxes;
     private final Rectangle tmpRect = new Rectangle();
     private final Rectangle tmpTileRect = new Rectangle();
     private final Rectangle tmpSolidRect = new Rectangle();
     private final Vector2 tmpVec = new Vector2();
     private final Vector2 tmpDir = new Vector2();
+    private final Polygon tmpProbePolygon = new Polygon();
+    private final float[] tmpProbeVertices = new float[8];
 
     private float mapWidth;
     private float mapHeight;
@@ -66,12 +76,13 @@ public class EnemySystem extends IteratingSystem {
     private float tileWorldHeight;
 
     // Using simple hitboxes for raycasting validation mirroring the MoveSystem
-    private static final float TILE_HITBOX_WIDTH_FACTOR = 0.80f;
-    private static final float TILE_HITBOX_HEIGHT_FACTOR = 0.45f;
-    private static final float SOLID_HITBOX_WIDTH_FACTOR = 0.80f;
-    private static final float SOLID_HITBOX_HEIGHT_FACTOR = 0.45f;
-    private static final float PLAYER_HITBOX_WIDTH_FACTOR = 0.26f;
-    private static final float PLAYER_HITBOX_HEIGHT_FACTOR = 0.22f;
+    private static final float TILE_HITBOX_WIDTH_FACTOR = 1f;
+    private static final float TILE_HITBOX_HEIGHT_FACTOR = 1f;
+    private static final float SOLID_HITBOX_WIDTH_FACTOR = 1f;
+    private static final float SOLID_HITBOX_HEIGHT_FACTOR = 1f;
+    private static final float PLAYER_HITBOX_WIDTH_FACTOR = 0.25f;
+    private static final float PLAYER_HITBOX_HEIGHT_FACTOR = 0.25f;
+    private static final float PLAYER_HITBOX_Y_OFFSET_FACTOR = 0.06f;
 
     private record PathNode(long key, int col, int row, float fScore) implements Comparable<PathNode> {
         @Override
@@ -84,6 +95,7 @@ public class EnemySystem extends IteratingSystem {
         super(Family.all(Enemy.class, Move.class, Transform.class).get());
         this.audioService = audioService;
         this.collisionLayers = new ArrayList<>();
+        this.barrierHitboxes = new ArrayList<>();
     }
 
     @Override
@@ -95,6 +107,7 @@ public class EnemySystem extends IteratingSystem {
 
     public void setMap(TiledMap tiledMap) {
         this.collisionLayers.clear();
+        this.barrierHitboxes.clear();
         int width = tiledMap.getProperties().get("width", 0, Integer.class);
         int tileW = tiledMap.getProperties().get("tilewidth", 0, Integer.class);
         int height = tiledMap.getProperties().get("height", 0, Integer.class);
@@ -105,6 +118,7 @@ public class EnemySystem extends IteratingSystem {
         this.tileWorldHeight = tileH * Main.UNIT_SCALE;
 
         for (MapLayer layer : tiledMap.getLayers()) {
+            collectBarrierObjects(layer);
             if (layer instanceof TiledMapTileLayer tileLayer) {
                 // Tile collision objects should block regardless of visual layer placement.
                 this.collisionLayers.add(tileLayer);
@@ -384,7 +398,7 @@ public class EnemySystem extends IteratingSystem {
         float hitboxW = playerW * PLAYER_HITBOX_WIDTH_FACTOR;
         float hitboxH = playerH * PLAYER_HITBOX_HEIGHT_FACTOR;
         float hitboxX = playerX + (playerW - hitboxW) * 0.5f;
-        float hitboxY = playerY;
+        float hitboxY = playerY + playerH * PLAYER_HITBOX_Y_OFFSET_FACTOR;
         Rectangle playerEncounterRect = tmpTileRect.set(hitboxX, hitboxY, hitboxW, hitboxH);
 
         float feetX = playerX + playerW * 0.5f;
@@ -678,6 +692,10 @@ public class EnemySystem extends IteratingSystem {
             return true;
         }
 
+        if (isBlockedByBarrierObjects(rayRect)) {
+            return true;
+        }
+
         // 1. Check Map layers
         for (TiledMapTileLayer layer : collisionLayers) {
             float tileWorldW = layer.getTileWidth() * Main.UNIT_SCALE;
@@ -768,6 +786,18 @@ public class EnemySystem extends IteratingSystem {
         return false;
     }
 
+    private boolean isBlockedByBarrierObjects(Rectangle probeRect) {
+        if (barrierHitboxes.isEmpty()) {
+            return false;
+        }
+        for (BarrierShape barrierRect : barrierHitboxes) {
+            if (barrierRect.overlaps(probeRect, tmpProbePolygon, tmpProbeVertices)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private boolean isOutOfMapBounds(Rectangle rect) {
         if (mapWidth <= 0f || mapHeight <= 0f) {
             return false;
@@ -776,5 +806,181 @@ public class EnemySystem extends IteratingSystem {
                 || rect.y < 0f
                 || rect.x + rect.width > mapWidth
                 || rect.y + rect.height > mapHeight;
+    }
+
+    private void collectBarrierObjects(MapLayer layer) {
+        if (layer == null || layer.getObjects() == null || layer.getObjects().getCount() == 0) {
+            return;
+        }
+        float layerOffsetX = layer.getOffsetX();
+        float layerOffsetY = layer.getOffsetY();
+        for (MapObject object : layer.getObjects()) {
+            if (!isBarrierObject(layer, object)) {
+                continue;
+            }
+            Rectangle bounds = getObjectBounds(object);
+            if (bounds == null || bounds.width <= 0f || bounds.height <= 0f) {
+                continue;
+            }
+            BarrierShape barrierShape = toBarrierShape(object, layerOffsetX, layerOffsetY);
+            if (barrierShape != null) {
+                barrierHitboxes.add(barrierShape);
+            }
+        }
+    }
+
+    private static BarrierShape toBarrierShape(MapObject mapObject, float layerOffsetX, float layerOffsetY) {
+        if (mapObject instanceof RectangleMapObject rectangleMapObject) {
+            Rectangle rect = rectangleMapObject.getRectangle();
+            return BarrierShape.fromRectangle(new Rectangle(
+                    (rect.x + layerOffsetX) * Main.UNIT_SCALE,
+                    (rect.y + layerOffsetY) * Main.UNIT_SCALE,
+                    rect.width * Main.UNIT_SCALE,
+                    rect.height * Main.UNIT_SCALE));
+        }
+        if (mapObject instanceof PolygonMapObject polygonMapObject) {
+            float[] transformed = polygonMapObject.getPolygon().getTransformedVertices();
+            if (transformed == null || transformed.length < 6) {
+                return null;
+            }
+            float[] worldVertices = new float[transformed.length];
+            for (int i = 0; i < transformed.length; i += 2) {
+                worldVertices[i] = (transformed[i] + layerOffsetX) * Main.UNIT_SCALE;
+                worldVertices[i + 1] = (transformed[i + 1] + layerOffsetY) * Main.UNIT_SCALE;
+            }
+            return BarrierShape.fromPolygon(new Polygon(worldVertices));
+        }
+        if (mapObject instanceof CircleMapObject circleMapObject) {
+            Circle circle = circleMapObject.getCircle();
+            return BarrierShape.fromCircle(new Circle(
+                    (circle.x + layerOffsetX) * Main.UNIT_SCALE,
+                    (circle.y + layerOffsetY) * Main.UNIT_SCALE,
+                    circle.radius * Main.UNIT_SCALE));
+        }
+        if (mapObject instanceof EllipseMapObject ellipseMapObject) {
+            Ellipse ellipse = ellipseMapObject.getEllipse();
+            if (ellipse.width <= 0f || ellipse.height <= 0f) {
+                return null;
+            }
+            final int segments = 20;
+            float[] worldVertices = new float[segments * 2];
+            float centerX = (ellipse.x + ellipse.width * 0.5f + layerOffsetX) * Main.UNIT_SCALE;
+            float centerY = (ellipse.y + ellipse.height * 0.5f + layerOffsetY) * Main.UNIT_SCALE;
+            float radiusX = ellipse.width * 0.5f * Main.UNIT_SCALE;
+            float radiusY = ellipse.height * 0.5f * Main.UNIT_SCALE;
+            for (int i = 0; i < segments; i++) {
+                float angle = (float) (Math.PI * 2.0 * i / segments);
+                worldVertices[i * 2] = centerX + (float) Math.cos(angle) * radiusX;
+                worldVertices[i * 2 + 1] = centerY + (float) Math.sin(angle) * radiusY;
+            }
+            return BarrierShape.fromPolygon(new Polygon(worldVertices));
+        }
+        return null;
+    }
+
+    private static boolean isBarrierObject(MapLayer layer, MapObject object) {
+        String layerName = normalize(layer == null ? null : layer.getName());
+        if ("barrier".equals(layerName)) {
+            return true;
+        }
+        String objectType = normalize(stringProperty(object, "ObjectType"));
+        if ("barrier".equals(objectType)) {
+            return true;
+        }
+        objectType = normalize(stringProperty(object, "type"));
+        if ("barrier".equals(objectType)) {
+            return true;
+        }
+        objectType = normalize(stringProperty(object, "Type"));
+        if ("barrier".equals(objectType)) {
+            return true;
+        }
+        return "barrier".equals(normalize(object == null ? null : object.getName()));
+    }
+
+    private static String stringProperty(MapObject object, String key) {
+        if (object == null || key == null) {
+            return null;
+        }
+        Object value = object.getProperties().get(key);
+        return value == null ? null : String.valueOf(value);
+    }
+
+    private static String normalize(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private static Rectangle getObjectBounds(MapObject mapObject) {
+        if (mapObject instanceof RectangleMapObject rectangleMapObject) {
+            return rectangleMapObject.getRectangle();
+        }
+        if (mapObject instanceof PolygonMapObject polygonMapObject) {
+            return polygonMapObject.getPolygon().getBoundingRectangle();
+        }
+        if (mapObject instanceof CircleMapObject circleMapObject) {
+            float radius = circleMapObject.getCircle().radius;
+            return new Rectangle(
+                    circleMapObject.getCircle().x - radius,
+                    circleMapObject.getCircle().y - radius,
+                    radius * 2f,
+                    radius * 2f);
+        }
+        if (mapObject instanceof EllipseMapObject ellipseMapObject) {
+            return new Rectangle(
+                    ellipseMapObject.getEllipse().x,
+                    ellipseMapObject.getEllipse().y,
+                    ellipseMapObject.getEllipse().width,
+                    ellipseMapObject.getEllipse().height);
+        }
+        return null;
+    }
+
+    private static final class BarrierShape {
+        private final Rectangle rect;
+        private final Polygon polygon;
+        private final Circle circle;
+
+        private BarrierShape(Rectangle rect, Polygon polygon, Circle circle) {
+            this.rect = rect;
+            this.polygon = polygon;
+            this.circle = circle;
+        }
+
+        static BarrierShape fromRectangle(Rectangle rect) {
+            return new BarrierShape(rect, null, null);
+        }
+
+        static BarrierShape fromPolygon(Polygon polygon) {
+            return new BarrierShape(null, polygon, null);
+        }
+
+        static BarrierShape fromCircle(Circle circle) {
+            return new BarrierShape(null, null, circle);
+        }
+
+        boolean overlaps(Rectangle probe, Polygon tmpProbePolygon, float[] tmpProbeVertices) {
+            if (rect != null) {
+                return probe.overlaps(rect);
+            }
+            if (circle != null) {
+                return Intersector.overlaps(circle, probe);
+            }
+            if (polygon != null) {
+                tmpProbeVertices[0] = probe.x;
+                tmpProbeVertices[1] = probe.y;
+                tmpProbeVertices[2] = probe.x + probe.width;
+                tmpProbeVertices[3] = probe.y;
+                tmpProbeVertices[4] = probe.x + probe.width;
+                tmpProbeVertices[5] = probe.y + probe.height;
+                tmpProbeVertices[6] = probe.x;
+                tmpProbeVertices[7] = probe.y + probe.height;
+                tmpProbePolygon.setVertices(tmpProbeVertices);
+                return Intersector.overlapConvexPolygons(polygon, tmpProbePolygon);
+            }
+            return false;
+        }
     }
 }
