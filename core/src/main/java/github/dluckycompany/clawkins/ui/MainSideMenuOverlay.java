@@ -194,7 +194,8 @@ public class MainSideMenuOverlay {
     }
 
     private boolean isMenuSelectPressed() {
-        return Gdx.input.isKeyJustPressed(Input.Keys.ENTER)
+        return Gdx.input.isKeyJustPressed(Input.Keys.Z)
+            || Gdx.input.isKeyJustPressed(Input.Keys.ENTER)
             || Gdx.input.isKeyJustPressed(Input.Keys.SPACE)
             || Gdx.input.isKeyJustPressed(Input.Keys.BUTTON_A);
     }

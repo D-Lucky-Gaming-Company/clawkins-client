@@ -2,6 +2,7 @@ package github.dluckycompany.clawkins.ui;
 
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.graphics.Color;
+import com.badlogic.gdx.graphics.Texture.TextureFilter;
 import com.badlogic.gdx.graphics.g2d.Batch;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.GlyphLayout;
@@ -28,18 +29,22 @@ public class DialogueBoxRenderer implements Disposable {
     public static final String DIALOGUE_FONT_PATH = "font/earthbound-dialogue-gold.otf";
 
     private static final int BODY_FONT_SIZE = 24;
-    private static final int TITLE_FONT_SIZE = 26;
+    private static final int TITLE_FONT_SIZE = 31;
     private static final float MARGIN = 24f;
     private static final float MIN_BOX_HEIGHT = 140f;
     private static final float BOX_HEIGHT_FRACTION = 0.2f;
-    private static final float TEXT_PAD_X = 18f;
+    private static final float TEXT_PAD_X = 13f;
     private static final float TITLE_BODY_GAP = 26f;
+    private static final float MIN_TEXT_SCALE = 0.6f;
+    private static final float TEXT_SCALE_STEP = 0.05f;
 
     private final BitmapFont bodyFont;
     private final BitmapFont titleFont;
     private final ShapeRenderer shapeRenderer;
     private final Matrix4 uiProjection = new Matrix4();
     private final GlyphLayout battleGlyphLayout = new GlyphLayout();
+    private final GlyphLayout measureBodyLayout = new GlyphLayout();
+    private final GlyphLayout measureTitleLayout = new GlyphLayout();
 
     public DialogueBoxRenderer() {
         FreeTypeFontGenerator generator =
@@ -66,6 +71,15 @@ public class DialogueBoxRenderer implements Disposable {
             String speakerName,
             String bodyText,
             Interactible.DialoguePosition position) {
+        render(batch, speakerName, bodyText, bodyText, position);
+    }
+
+    public void render(
+            Batch batch,
+            String speakerName,
+            String visibleBodyText,
+            String fullBodyText,
+            Interactible.DialoguePosition position) {
         float w = Gdx.graphics.getWidth();
         float h = Gdx.graphics.getHeight();
         float boxH = Math.max(MIN_BOX_HEIGHT, h * BOX_HEIGHT_FRACTION);
@@ -84,7 +98,8 @@ public class DialogueBoxRenderer implements Disposable {
 
         String name = speakerName == null ? "" : speakerName.trim();
         boolean hasName = !name.isEmpty();
-        String body = bodyText == null ? "" : bodyText;
+        String visibleBody = visibleBodyText == null ? "" : visibleBodyText;
+        String fullBody = fullBodyText == null ? visibleBody : fullBodyText;
 
         batch.setProjectionMatrix(uiProjection);
         batch.begin();
@@ -94,15 +109,23 @@ public class DialogueBoxRenderer implements Disposable {
         float textX = MARGIN + TEXT_PAD_X;
         float innerWidth = boxW - TEXT_PAD_X * 2f;
         float topLineY = boxY + boxH - TEXT_PAD_X;
+        float textScale = computeBestTextScale(name, fullBody, hasName, innerWidth, boxH);
+        bodyFont.getData().setScale(textScale);
+        titleFont.getData().setScale(textScale);
 
-        if (hasName) {
-            titleFont.draw(batch, name, textX, topLineY);
-            float bodyY = topLineY - TITLE_BODY_GAP;
-            bodyFont.draw(batch, body, textX, bodyY, innerWidth, Align.left, true);
-        } else {
-            bodyFont.draw(batch, body, textX, topLineY, innerWidth, Align.left, true);
+        try {
+            if (hasName) {
+                titleFont.draw(batch, name, textX, topLineY);
+                float bodyY = topLineY - TITLE_BODY_GAP;
+                bodyFont.draw(batch, visibleBody, textX, bodyY, innerWidth, Align.left, true);
+            } else {
+                bodyFont.draw(batch, visibleBody, textX, topLineY, innerWidth, Align.left, true);
+            }
+            batch.end();
+        } finally {
+            bodyFont.getData().setScale(1f);
+            titleFont.getData().setScale(1f);
         }
-        batch.end();
     }
 
     /**
@@ -148,15 +171,48 @@ public class DialogueBoxRenderer implements Disposable {
         float textX = MARGIN + TEXT_PAD_X;
         float innerWidth = boxW - TEXT_PAD_X * 2f;
         float topLineY = boxY + boxH - TEXT_PAD_X;
+        float textScale = computeBestTextScale(name, plain, hasName, innerWidth, boxH);
+        bodyFont.getData().setScale(textScale);
+        titleFont.getData().setScale(textScale);
 
-        if (hasName) {
-            titleFont.draw(batch, name, textX, topLineY);
-            float bodyY = topLineY - TITLE_BODY_GAP;
-            drawBattleBodyMarkup(batch, markupVisible, textX, bodyY, innerWidth);
-        } else {
-            drawBattleBodyMarkup(batch, markupVisible, textX, topLineY, innerWidth);
+        try {
+            if (hasName) {
+                titleFont.draw(batch, name, textX, topLineY);
+                float bodyY = topLineY - TITLE_BODY_GAP;
+                drawBattleBodyMarkup(batch, markupVisible, textX, bodyY, innerWidth);
+            } else {
+                drawBattleBodyMarkup(batch, markupVisible, textX, topLineY, innerWidth);
+            }
+            batch.end();
+        } finally {
+            bodyFont.getData().setScale(1f);
+            titleFont.getData().setScale(1f);
         }
-        batch.end();
+    }
+
+    private float computeBestTextScale(String speakerName, String bodyText, boolean hasName, float innerWidth, float boxHeight) {
+        float availableTextHeight = boxHeight - (TEXT_PAD_X * 2f);
+        String measuredBody = (bodyText == null || bodyText.isEmpty()) ? " " : bodyText;
+        String measuredTitle = (speakerName == null || speakerName.isEmpty()) ? " " : speakerName;
+
+        for (float scale = 1f; scale >= MIN_TEXT_SCALE; scale -= TEXT_SCALE_STEP) {
+            bodyFont.getData().setScale(scale);
+            titleFont.getData().setScale(scale);
+
+            measureBodyLayout.setText(bodyFont, measuredBody, Color.WHITE, innerWidth, Align.left, true);
+            float requiredHeight = measureBodyLayout.height;
+
+            if (hasName) {
+                measureTitleLayout.setText(titleFont, measuredTitle);
+                requiredHeight += measureTitleLayout.height + TITLE_BODY_GAP;
+            }
+
+            if (requiredHeight <= availableTextHeight) {
+                return scale;
+            }
+        }
+
+        return MIN_TEXT_SCALE;
     }
 
     private void drawBattleBodyMarkup(Batch batch, String markupVisible, float textX, float bodyBaselineY, float innerWidth) {
@@ -184,10 +240,12 @@ public class DialogueBoxRenderer implements Disposable {
         parameter.size = size;
         parameter.kerning = true;
         parameter.spaceX = 1;
-        parameter.borderWidth = 1.8f;
+        parameter.minFilter = TextureFilter.Nearest;
+        parameter.magFilter = TextureFilter.Nearest;
+        parameter.borderWidth = 3.1f;
         parameter.borderColor = Color.BLACK;
-        parameter.shadowOffsetX = 1;
-        parameter.shadowOffsetY = -1;
-        parameter.shadowColor = new Color(0f, 0f, 0f, 0.7f);
+        parameter.shadowOffsetX = 2;
+        parameter.shadowOffsetY = -2;
+        parameter.shadowColor = new Color(0f, 0f, 0f, 0.88f);
     }
 }

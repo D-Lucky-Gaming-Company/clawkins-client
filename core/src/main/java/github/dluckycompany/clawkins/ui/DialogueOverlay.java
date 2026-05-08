@@ -28,6 +28,7 @@ public class DialogueOverlay implements Disposable {
                 batch,
                 interactionSystem.getDialogueName(),
                 interactionSystem.getDialogueText(),
+                interactionSystem.getDialogueFullText(),
                 interactionSystem.getDialoguePosition());
     }
 

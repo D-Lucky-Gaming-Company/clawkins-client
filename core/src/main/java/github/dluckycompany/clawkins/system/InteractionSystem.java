@@ -141,6 +141,10 @@ public class InteractionSystem extends EntitySystem {
         return dialogueText;
     }
 
+    public String getDialogueFullText() {
+        return dialogueFullText;
+    }
+
     public Interactible.DialoguePosition getDialoguePosition() {
         return dialoguePosition;
     }
