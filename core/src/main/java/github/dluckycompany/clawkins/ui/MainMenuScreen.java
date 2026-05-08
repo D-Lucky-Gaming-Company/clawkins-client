@@ -21,6 +21,8 @@ import com.badlogic.gdx.scenes.scene2d.utils.ClickListener;
 import com.badlogic.gdx.scenes.scene2d.utils.NinePatchDrawable;
 import com.badlogic.gdx.utils.viewport.FitViewport;
 
+import github.dluckycompany.clawkins.audio.AudioService;
+import github.dluckycompany.clawkins.audio.SoundEffect;
 import github.dluckycompany.clawkins.save.SaveStateManager;
 
 /**
@@ -74,6 +76,10 @@ public class MainMenuScreen implements Screen {
     private final Runnable onContinue;
     private final Runnable onExit;
     private final SaveStateManager saveStateManager;
+    private final AudioService audioService;
+    
+    // Hover debounce tracking
+    private TextButton lastHoveredButton;
 
     // -----------------------------------------------------------------------
     // Constructor
@@ -86,8 +92,10 @@ public class MainMenuScreen implements Screen {
      * @param onNewGame called when "NEW GAME" button is clicked
      * @param onContinue called when "CONTINUE" button is clicked
      * @param onExit called when "EXIT GAME" button is clicked
+     * @param saveStateManager save state manager for checking available saves
+     * @param audioService audio service for playing menu sounds
      */
-    public MainMenuScreen(Batch batch, Runnable onNewGame, Runnable onContinue, Runnable onExit, SaveStateManager saveStateManager) {
+    public MainMenuScreen(Batch batch, Runnable onNewGame, Runnable onContinue, Runnable onExit, SaveStateManager saveStateManager, AudioService audioService) {
         this.batch = batch;
         this.stage = new Stage(new FitViewport(VIRTUAL_UI_WIDTH, VIRTUAL_UI_HEIGHT));
 
@@ -95,6 +103,7 @@ public class MainMenuScreen implements Screen {
         this.onContinue = onContinue;
         this.onExit = onExit;
         this.saveStateManager = saveStateManager;
+        this.audioService = audioService;
 
         Gdx.input.setInputProcessor(stage);
     }
@@ -163,6 +172,37 @@ public class MainMenuScreen implements Screen {
     }
 
     // -----------------------------------------------------------------------
+    // Sound Effects Helper
+    // -----------------------------------------------------------------------
+
+    /**
+     * Adds sound effects to a button with hover debouncing.
+     * Plays hover sound once when mouse enters, and click sound on click.
+     *
+     * @param button the button to add sound effects to
+     * @param onClickAction the action to run when clicked (should include sound)
+     */
+    private void addButtonSoundEffects(TextButton button, Runnable onClickAction) {
+        button.addListener(new ClickListener() {
+            @Override
+            public void clicked(InputEvent event, float x, float y) {
+                onClickAction.run();
+            }
+
+            @Override
+            public void enter(InputEvent event, float x, float y, int pointer, com.badlogic.gdx.scenes.scene2d.Actor fromActor) {
+                // Only play hover sound if this is a different button than last hovered
+                if (lastHoveredButton != button && !button.isDisabled()) {
+                    lastHoveredButton = button;
+                    if (audioService != null) {
+                        audioService.playSound(SoundEffect.UI_HOVER);
+                    }
+                }
+            }
+        });
+    }
+
+    // -----------------------------------------------------------------------
     // UI building
     // -----------------------------------------------------------------------
 
@@ -188,35 +228,30 @@ public class MainMenuScreen implements Screen {
         TextButtonStyle buttonStyle = createButtonStyle();
 
         TextButton newGameBtn = new TextButton("NEW GAME", buttonStyle);
-        newGameBtn.addListener(new ClickListener() {
-            @Override
-            public void clicked(InputEvent event, float x, float y) {
-                Gdx.app.log("MainMenu", "NEW GAME clicked");
-                onNewGame.run();
-            }
+        addButtonSoundEffects(newGameBtn, () -> {
+            if (audioService != null) audioService.playSound(SoundEffect.UI_SELECT);
+            Gdx.app.log("MainMenu", "NEW GAME clicked");
+            onNewGame.run();
         });
 
         boolean hasSaves = saveStateManager != null && saveStateManager.hasSaveStates();
         TextButton continueBtn = new TextButton("CONTINUE", buttonStyle);
         continueBtn.setDisabled(!hasSaves);
-        continueBtn.addListener(new ClickListener() {
-            @Override
-            public void clicked(InputEvent event, float x, float y) {
-                Gdx.app.log("MainMenu", "CONTINUE clicked");
-                if (continueBtn.isDisabled()) {
-                    return;
-                }
-                onContinue.run();
+        addButtonSoundEffects(continueBtn, () -> {
+            if (continueBtn.isDisabled()) {
+                if (audioService != null) audioService.playSound(SoundEffect.UI_ERROR);
+                return;
             }
+            if (audioService != null) audioService.playSound(SoundEffect.UI_SELECT);
+            Gdx.app.log("MainMenu", "CONTINUE clicked");
+            onContinue.run();
         });
 
         TextButton exitBtn = new TextButton("EXIT GAME", buttonStyle);
-        exitBtn.addListener(new ClickListener() {
-            @Override
-            public void clicked(InputEvent event, float x, float y) {
-                Gdx.app.log("MainMenu", "EXIT GAME clicked");
-                onExit.run();
-            }
+        addButtonSoundEffects(exitBtn, () -> {
+            if (audioService != null) audioService.playSound(SoundEffect.UI_SELECT);
+            Gdx.app.log("MainMenu", "EXIT GAME clicked");
+            onExit.run();
         });
 
         // Fixed button sizing using virtual dimensions - consistent with CharacterSetupScreen approach

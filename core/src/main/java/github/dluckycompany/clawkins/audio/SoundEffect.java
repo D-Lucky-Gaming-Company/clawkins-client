@@ -6,5 +6,10 @@ public enum SoundEffect {
     HIT,
     ENCOUNTER,
     ENEMY_ALERT,
-    AREA_NAME_DISPLAY
+    AREA_NAME_DISPLAY,
+    // UI/Menu sounds
+    UI_HOVER,
+    UI_SELECT,
+    UI_BACK,
+    UI_ERROR
 }
