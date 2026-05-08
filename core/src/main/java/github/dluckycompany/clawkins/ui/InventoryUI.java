@@ -21,6 +21,8 @@ import com.badlogic.gdx.scenes.scene2d.ui.TextButton;
 import com.badlogic.gdx.scenes.scene2d.utils.ClickListener;
 import com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable;
 
+import github.dluckycompany.clawkins.audio.AudioService;
+import github.dluckycompany.clawkins.audio.SoundEffect;
 import github.dluckycompany.clawkins.character.Clawkin;
 import github.dluckycompany.clawkins.item.Inventory;
 import github.dluckycompany.clawkins.item.Item;
@@ -57,6 +59,7 @@ public class InventoryUI {
     private final List<Clawkin> party;
     private final Skin skin;
     private final Wallet wallet;
+    private final AudioService audioService;
 
     // Main layout table
     private Table rootTable;
@@ -70,6 +73,7 @@ public class InventoryUI {
     private final List<Item> navigableItems = new ArrayList<>();
     private final List<Table> navigableRows = new ArrayList<>();
     private int selectedIndex = -1;
+    private int lastSelectedIndex = -1;  // For debouncing navigation SFX
 
     // Keyboard action mode: false=list navigation, true=USE/DROP selection.
     private boolean actionMode = false;
@@ -107,13 +111,14 @@ public class InventoryUI {
     /**
      * Constructor
      */
-    public InventoryUI(Stage stage, BitmapFont font, Inventory inventory, List<Clawkin> party, Skin skin, Wallet wallet) {
+    public InventoryUI(Stage stage, BitmapFont font, Inventory inventory, List<Clawkin> party, Skin skin, Wallet wallet, AudioService audioService) {
         this.stage = stage;
         this.font = font;
         this.inventory = inventory;
         this.party = party;
         this.skin = skin;
         this.wallet = wallet;
+        this.audioService = audioService;
         
         // Load button assets from PNG files
         loadButtonAssets();
@@ -319,6 +324,10 @@ public class InventoryUI {
         backBtn.addListener(new ClickListener() {
             @Override
             public void clicked(InputEvent event, float x, float y) {
+                // Play back/cancel sound
+                if (audioService != null) {
+                    audioService.playSound(SoundEffect.UI_BACK);
+                }
                 if (onBackPressed != null) {
                     onBackPressed.run();
                 }
@@ -499,6 +508,18 @@ public class InventoryUI {
             public void clicked(InputEvent event, float x, float y) {
                 selectedIndex = index;
                 selectItem(item, itemRow);
+                // Play selection sound on click
+                if (audioService != null) {
+                    audioService.playSound(SoundEffect.UI_SELECT);
+                }
+            }
+            
+            @Override
+            public void enter(InputEvent event, float x, float y, int pointer, com.badlogic.gdx.scenes.scene2d.Actor fromActor) {
+                // Play hover sound only when entering a different item
+                if (selectedIndex != index && audioService != null) {
+                    audioService.playSound(SoundEffect.UI_HOVER);
+                }
             }
         });
 
@@ -619,6 +640,12 @@ public class InventoryUI {
             selectedIndex = (selectedIndex + delta + navigableItems.size()) % navigableItems.size();
         }
 
+        // Play navigation sound only when selection actually changes
+        if (selectedIndex != lastSelectedIndex && audioService != null) {
+            audioService.playSound(SoundEffect.UI_HOVER);
+            lastSelectedIndex = selectedIndex;
+        }
+
         selectItem(navigableItems.get(selectedIndex), navigableRows.get(selectedIndex));
     }
 
@@ -685,6 +712,14 @@ public class InventoryUI {
             public void clicked(InputEvent event, float x, float y) {
                 triggerUseAction();
             }
+            
+            @Override
+            public void enter(InputEvent event, float x, float y, int pointer, com.badlogic.gdx.scenes.scene2d.Actor fromActor) {
+                // Play hover sound when hovering over USE button
+                if (audioService != null) {
+                    audioService.playSound(SoundEffect.UI_HOVER);
+                }
+            }
         });
         detailPanel.add(useBtn).expandX().fillX().height(50).padBottom(5f).row();
 
@@ -709,6 +744,14 @@ public class InventoryUI {
             public void clicked(InputEvent event, float x, float y) {
                 triggerDropAction();
             }
+            
+            @Override
+            public void enter(InputEvent event, float x, float y, int pointer, com.badlogic.gdx.scenes.scene2d.Actor fromActor) {
+                // Play hover sound when hovering over DROP button
+                if (audioService != null) {
+                    audioService.playSound(SoundEffect.UI_HOVER);
+                }
+            }
         });
         detailPanel.add(dropBtn).expandX().fillX().height(50).row();
 
@@ -718,6 +761,11 @@ public class InventoryUI {
     }
 
     private void triggerUseAction() {
+        // Play confirm sound
+        if (audioService != null) {
+            audioService.playSound(SoundEffect.UI_SELECT);
+        }
+        
         if (selectedItem != null && party != null && !party.isEmpty()) {
             PartySelectionDialog dialog = new PartySelectionDialog(
                 party,
@@ -741,6 +789,11 @@ public class InventoryUI {
     }
 
     private void triggerDropAction() {
+        // Play confirm sound
+        if (audioService != null) {
+            audioService.playSound(SoundEffect.UI_SELECT);
+        }
+        
         if (selectedItem != null) {
             int quantity = inventory.getQuantity(selectedItem);
             if (quantity > 0) {
@@ -750,6 +803,11 @@ public class InventoryUI {
                 dialog.show(stage);
 
                 dialog.setConfirmCallback((dropAmount) -> {
+                    // Play confirm sound on drop
+                    if (audioService != null) {
+                        audioService.playSound(SoundEffect.UI_SELECT);
+                    }
+                    
                     boolean removed = inventory.removeItem(selectedItem, dropAmount);
                     if (removed) {
                         com.badlogic.gdx.Gdx.app.log("InventoryUI",
@@ -769,6 +827,10 @@ public class InventoryUI {
                 });
 
                 dialog.setCancelCallback(() -> {
+                    // Play cancel sound on drop cancel
+                    if (audioService != null) {
+                        audioService.playSound(SoundEffect.UI_BACK);
+                    }
                     Gdx.app.log("InventoryUI", "[Item Drop] Cancelled by user");
                     refreshItemList();
                 });
