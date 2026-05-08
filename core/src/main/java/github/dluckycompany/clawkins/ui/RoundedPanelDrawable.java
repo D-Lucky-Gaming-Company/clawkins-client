@@ -1,5 +1,7 @@
 package github.dluckycompany.clawkins.ui;
 
+import java.util.Random;
+
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.Pixmap;
 import com.badlogic.gdx.graphics.Texture;
@@ -32,6 +34,7 @@ import com.badlogic.gdx.scenes.scene2d.utils.NinePatchDrawable;
  * - Color theme integration (#E7DAC7, #C19253, #1F1A13)
  */
 public class RoundedPanelDrawable {
+    private static final long DEFAULT_GRAIN_SEED = 0xC1A0BEEF;
 
     /**
      * Create a NinePatchDrawable with rounded corners (12px radius)
@@ -157,6 +160,32 @@ public class RoundedPanelDrawable {
     }
 
     /**
+     * Create a rounded panel with stroke and subtle grain texture.
+     * Grain is generated procedurally to avoid external texture dependencies.
+     *
+     * @param color Base fill color
+     * @param cornerRadius Rounded corner radius
+     * @param strokeWidth Border width
+     * @param grainStrength 0..1 controls grain visibility
+     * @return A textured NinePatch drawable
+     */
+    public static NinePatchDrawable createRoundedPanelWithStrokeAndGrain(
+        Color color, int cornerRadius, int strokeWidth, float grainStrength
+    ) {
+        int textureSize = cornerRadius * 2 + 2 + (strokeWidth * 2);
+        Pixmap pixmap = createNinePatchStrokedPixmap(textureSize, textureSize, color, cornerRadius, strokeWidth);
+        applySubtleGrain(pixmap, strokeWidth, grainStrength);
+
+        Texture texture = new Texture(pixmap);
+        pixmap.dispose();
+
+        TextureRegion region = new TextureRegion(texture);
+        int splitValue = cornerRadius + strokeWidth;
+        NinePatch ninePatch = new NinePatch(region, splitValue, splitValue, splitValue, splitValue);
+        return new NinePatchDrawable(ninePatch);
+    }
+
+    /**
      * Create a Pixmap with rounded corners and a black stroke
      * Designed specifically for NinePatch to avoid distortion
      * 
@@ -229,6 +258,37 @@ public class RoundedPanelDrawable {
         drawCornerStroke(pixmap, width - cornerRadius - 1, cornerRadius, cornerRadius, strokeWidth, color);  // Top-right
         drawCornerStroke(pixmap, cornerRadius, height - cornerRadius - 1, cornerRadius, strokeWidth, color);  // Bottom-left
         drawCornerStroke(pixmap, width - cornerRadius - 1, height - cornerRadius - 1, cornerRadius, strokeWidth, color);  // Bottom-right
+    }
+
+    /**
+     * Adds subtle random luminance variation to the interior fill area.
+     */
+    private static void applySubtleGrain(Pixmap pixmap, int inset, float grainStrength) {
+        float clampedStrength = Math.max(0f, Math.min(1f, grainStrength));
+        if (clampedStrength <= 0f) {
+            return;
+        }
+
+        int width = pixmap.getWidth();
+        int height = pixmap.getHeight();
+        int startX = Math.max(inset + 1, 0);
+        int startY = Math.max(inset + 1, 0);
+        int endX = Math.max(startX, width - inset - 1);
+        int endY = Math.max(startY, height - inset - 1);
+
+        Random random = new Random(DEFAULT_GRAIN_SEED + width * 31L + height);
+        float darkAlpha = 0.06f * clampedStrength;
+        float lightAlpha = 0.05f * clampedStrength;
+        int darkColor = Color.rgba8888(0f, 0f, 0f, darkAlpha);
+        int lightColor = Color.rgba8888(1f, 1f, 1f, lightAlpha);
+
+        for (int y = startY; y < endY; y++) {
+            for (int x = startX; x < endX; x++) {
+                if (random.nextFloat() < 0.15f) {
+                    pixmap.drawPixel(x, y, random.nextBoolean() ? darkColor : lightColor);
+                }
+            }
+        }
     }
 
     /**

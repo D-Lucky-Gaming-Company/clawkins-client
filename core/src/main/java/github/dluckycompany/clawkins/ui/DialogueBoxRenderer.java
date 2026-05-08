@@ -11,6 +11,7 @@ import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.math.Matrix4;
 import com.badlogic.gdx.utils.Align;
 import com.badlogic.gdx.utils.Disposable;
+import com.badlogic.gdx.utils.viewport.Viewport;
 
 import java.util.List;
 
@@ -33,7 +34,7 @@ public class DialogueBoxRenderer implements Disposable {
     private static final float MARGIN = 24f;
     private static final float MIN_BOX_HEIGHT = 140f;
     private static final float BOX_HEIGHT_FRACTION = 0.2f;
-    private static final float TEXT_PAD_X = 13f;
+    private static final float TEXT_PAD_X = 16f;
     private static final float TITLE_BODY_GAP = 26f;
     private static final float MIN_TEXT_SCALE = 0.6f;
     private static final float TEXT_SCALE_STEP = 0.05f;
@@ -71,7 +72,16 @@ public class DialogueBoxRenderer implements Disposable {
             String speakerName,
             String bodyText,
             Interactible.DialoguePosition position) {
-        render(batch, speakerName, bodyText, bodyText, position);
+        render(batch, null, speakerName, bodyText, bodyText, position);
+    }
+
+    public void render(
+            Batch batch,
+            Viewport viewport,
+            String speakerName,
+            String bodyText,
+            Interactible.DialoguePosition position) {
+        render(batch, viewport, speakerName, bodyText, bodyText, position);
     }
 
     public void render(
@@ -80,15 +90,32 @@ public class DialogueBoxRenderer implements Disposable {
             String visibleBodyText,
             String fullBodyText,
             Interactible.DialoguePosition position) {
-        float w = Gdx.graphics.getWidth();
-        float h = Gdx.graphics.getHeight();
+        render(batch, null, speakerName, visibleBodyText, fullBodyText, position);
+    }
+
+    public void render(
+            Batch batch,
+            Viewport viewport,
+            String speakerName,
+            String visibleBodyText,
+            String fullBodyText,
+            Interactible.DialoguePosition position) {
+        if (viewport != null) {
+            viewport.apply();
+            uiProjection.set(viewport.getCamera().combined);
+        } else {
+            float screenWidth = Gdx.graphics.getWidth();
+            float screenHeight = Gdx.graphics.getHeight();
+            uiProjection.setToOrtho2D(0f, 0f, screenWidth, screenHeight);
+        }
+
+        float w = viewport != null ? viewport.getWorldWidth() : Gdx.graphics.getWidth();
+        float h = viewport != null ? viewport.getWorldHeight() : Gdx.graphics.getHeight();
         float boxH = Math.max(MIN_BOX_HEIGHT, h * BOX_HEIGHT_FRACTION);
         float boxW = w - MARGIN * 2f;
         float boxY = position == Interactible.DialoguePosition.TOP
                 ? h - MARGIN - boxH
                 : MARGIN;
-
-        uiProjection.setToOrtho2D(0f, 0f, w, h);
 
         shapeRenderer.setProjectionMatrix(uiProjection);
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
@@ -111,7 +138,6 @@ public class DialogueBoxRenderer implements Disposable {
         float topLineY = boxY + boxH - TEXT_PAD_X;
         float textScale = computeBestTextScale(name, fullBody, hasName, innerWidth, boxH);
         bodyFont.getData().setScale(textScale);
-        titleFont.getData().setScale(textScale);
 
         try {
             if (hasName) {
@@ -124,7 +150,111 @@ public class DialogueBoxRenderer implements Disposable {
             batch.end();
         } finally {
             bodyFont.getData().setScale(1f);
-            titleFont.getData().setScale(1f);
+        }
+    }
+
+    public void renderPromptMarkup(
+            Batch batch,
+            Viewport viewport,
+            String markupText,
+            Interactible.DialoguePosition position) {
+        if (viewport != null) {
+            viewport.apply();
+            uiProjection.set(viewport.getCamera().combined);
+        } else {
+            float screenWidth = Gdx.graphics.getWidth();
+            float screenHeight = Gdx.graphics.getHeight();
+            uiProjection.setToOrtho2D(0f, 0f, screenWidth, screenHeight);
+        }
+
+        float w = viewport != null ? viewport.getWorldWidth() : Gdx.graphics.getWidth();
+        float h = viewport != null ? viewport.getWorldHeight() : Gdx.graphics.getHeight();
+        float boxH = Math.max(MIN_BOX_HEIGHT, h * BOX_HEIGHT_FRACTION);
+        float boxW = w - MARGIN * 2f;
+        float boxY = position == Interactible.DialoguePosition.TOP
+                ? h - MARGIN - boxH
+                : MARGIN;
+
+        shapeRenderer.setProjectionMatrix(uiProjection);
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+        shapeRenderer.setColor(new Color(0f, 0f, 0f, 0.72f));
+        shapeRenderer.rect(MARGIN, boxY, boxW, boxH);
+        shapeRenderer.end();
+
+        String safeMarkup = markupText == null ? "" : markupText;
+        String plainText = safeMarkup.replaceAll("\\[[^\\]]*\\]", "");
+
+        batch.setProjectionMatrix(uiProjection);
+        batch.begin();
+        bodyFont.setColor(Color.WHITE);
+
+        float textX = MARGIN + TEXT_PAD_X;
+        float innerWidth = boxW - TEXT_PAD_X * 2f;
+        float topLineY = boxY + boxH - TEXT_PAD_X;
+        float textScale = computeBestTextScale("", plainText, false, innerWidth, boxH);
+        bodyFont.getData().setScale(textScale);
+
+        boolean wasMarkup = bodyFont.getData().markupEnabled;
+        bodyFont.getData().markupEnabled = true;
+        try {
+            bodyFont.draw(batch, safeMarkup, textX, topLineY, innerWidth, Align.left, true);
+            batch.end();
+        } finally {
+            bodyFont.getData().markupEnabled = wasMarkup;
+            bodyFont.getData().setScale(1f);
+        }
+    }
+
+    public void renderPromptMarkupLarge(
+            Batch batch,
+            Viewport viewport,
+            String markupText,
+            Interactible.DialoguePosition position) {
+        if (viewport != null) {
+            viewport.apply();
+            uiProjection.set(viewport.getCamera().combined);
+        } else {
+            float screenWidth = Gdx.graphics.getWidth();
+            float screenHeight = Gdx.graphics.getHeight();
+            uiProjection.setToOrtho2D(0f, 0f, screenWidth, screenHeight);
+        }
+
+        float w = viewport != null ? viewport.getWorldWidth() : Gdx.graphics.getWidth();
+        float h = viewport != null ? viewport.getWorldHeight() : Gdx.graphics.getHeight();
+        float boxH = Math.max(250f, h * 0.42f);
+        float boxW = w - MARGIN * 2f;
+        float boxY = position == Interactible.DialoguePosition.TOP
+                ? h - MARGIN - boxH
+                : MARGIN;
+
+        shapeRenderer.setProjectionMatrix(uiProjection);
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+        shapeRenderer.setColor(new Color(0f, 0f, 0f, 0.76f));
+        shapeRenderer.rect(MARGIN, boxY, boxW, boxH);
+        shapeRenderer.end();
+
+        String safeMarkup = markupText == null ? "" : markupText;
+        String plainText = safeMarkup.replaceAll("\\[[^\\]]*\\]", "");
+
+        batch.setProjectionMatrix(uiProjection);
+        batch.begin();
+        bodyFont.setColor(Color.WHITE);
+
+        float textX = MARGIN + TEXT_PAD_X;
+        float innerWidth = boxW - TEXT_PAD_X * 2f;
+        float topLineY = boxY + boxH - TEXT_PAD_X;
+        float fittedScale = computeBestTextScale("", plainText, false, innerWidth, boxH);
+        float textScale = Math.min(1.22f, fittedScale + 0.18f);
+        bodyFont.getData().setScale(textScale);
+
+        boolean wasMarkup = bodyFont.getData().markupEnabled;
+        bodyFont.getData().markupEnabled = true;
+        try {
+            bodyFont.draw(batch, safeMarkup, textX, topLineY, innerWidth, Align.left, true);
+            batch.end();
+        } finally {
+            bodyFont.getData().markupEnabled = wasMarkup;
+            bodyFont.getData().setScale(1f);
         }
     }
 
@@ -140,15 +270,33 @@ public class DialogueBoxRenderer implements Disposable {
             List<BattleTextSpan> spans,
             int visiblePlainChars,
             Interactible.DialoguePosition position) {
-        float w = Gdx.graphics.getWidth();
-        float h = Gdx.graphics.getHeight();
+        renderBattleLog(batch, null, speakerName, plainFull, spans, visiblePlainChars, position);
+    }
+
+    public void renderBattleLog(
+            Batch batch,
+            Viewport viewport,
+            String speakerName,
+            String plainFull,
+            List<BattleTextSpan> spans,
+            int visiblePlainChars,
+            Interactible.DialoguePosition position) {
+        if (viewport != null) {
+            viewport.apply();
+            uiProjection.set(viewport.getCamera().combined);
+        } else {
+            float screenWidth = Gdx.graphics.getWidth();
+            float screenHeight = Gdx.graphics.getHeight();
+            uiProjection.setToOrtho2D(0f, 0f, screenWidth, screenHeight);
+        }
+
+        float w = viewport != null ? viewport.getWorldWidth() : Gdx.graphics.getWidth();
+        float h = viewport != null ? viewport.getWorldHeight() : Gdx.graphics.getHeight();
         float boxH = Math.max(MIN_BOX_HEIGHT, h * BOX_HEIGHT_FRACTION);
         float boxW = w - MARGIN * 2f;
         float boxY = position == Interactible.DialoguePosition.TOP
                 ? h - MARGIN - boxH
                 : MARGIN;
-
-        uiProjection.setToOrtho2D(0f, 0f, w, h);
 
         shapeRenderer.setProjectionMatrix(uiProjection);
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
@@ -173,7 +321,6 @@ public class DialogueBoxRenderer implements Disposable {
         float topLineY = boxY + boxH - TEXT_PAD_X;
         float textScale = computeBestTextScale(name, plain, hasName, innerWidth, boxH);
         bodyFont.getData().setScale(textScale);
-        titleFont.getData().setScale(textScale);
 
         try {
             if (hasName) {
@@ -186,7 +333,6 @@ public class DialogueBoxRenderer implements Disposable {
             batch.end();
         } finally {
             bodyFont.getData().setScale(1f);
-            titleFont.getData().setScale(1f);
         }
     }
 
@@ -197,7 +343,6 @@ public class DialogueBoxRenderer implements Disposable {
 
         for (float scale = 1f; scale >= MIN_TEXT_SCALE; scale -= TEXT_SCALE_STEP) {
             bodyFont.getData().setScale(scale);
-            titleFont.getData().setScale(scale);
 
             measureBodyLayout.setText(bodyFont, measuredBody, Color.WHITE, innerWidth, Align.left, true);
             float requiredHeight = measureBodyLayout.height;
