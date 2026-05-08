@@ -237,6 +237,9 @@ public class GameScreen extends ScreenAdapter {
     private final Map<String, BossMusicHooks> bossMusicHooksByEncounterId = new HashMap<>();
     private ActiveBossMusicState activeBossMusicState;
     
+    // Player profile from character setup
+    private github.dluckycompany.clawkins.model.PlayerProfile playerProfile;
+    
     // Cheat console system for developer debugging
     private github.dluckycompany.clawkins.debug.CheatCodeManager cheatCodeManager;
     private github.dluckycompany.clawkins.debug.CheatConsoleOverlay cheatConsoleOverlay;
@@ -377,6 +380,17 @@ public class GameScreen extends ScreenAdapter {
             return;
         }
         hasBeenInitialized = true;
+
+        // Check if CharacterSetupScreen has a profile and set it
+        github.dluckycompany.clawkins.ui.CharacterSetupScreen characterSetupScreen = 
+            game.getScreen(github.dluckycompany.clawkins.ui.CharacterSetupScreen.class);
+        if (characterSetupScreen != null) {
+            github.dluckycompany.clawkins.model.PlayerProfile profile = characterSetupScreen.getPlayerProfile();
+            if (profile != null) {
+                setPlayerProfile(profile);
+                Gdx.app.log("GameScreen", "Player profile loaded: " + profile.getName() + " (" + profile.getGender() + ")");
+            }
+        }
 
         boolean loadedFromSave = false;
         if (pendingSaveState != null) {
@@ -2242,6 +2256,24 @@ public class GameScreen extends ScreenAdapter {
             }
         }
         return null;
+    }
+
+    /**
+     * Sets the player profile created during character setup.
+     *
+     * @param profile the player profile to set
+     */
+    public void setPlayerProfile(github.dluckycompany.clawkins.model.PlayerProfile profile) {
+        this.playerProfile = profile;
+    }
+
+    /**
+     * Gets the player profile created during character setup.
+     *
+     * @return the player profile, or null if not set
+     */
+    public github.dluckycompany.clawkins.model.PlayerProfile getPlayerProfile() {
+        return playerProfile;
     }
 }
 

@@ -21,6 +21,7 @@ import github.dluckycompany.clawkins.audio.AudioService;
 import github.dluckycompany.clawkins.audio.MusicTrack;
 import github.dluckycompany.clawkins.audio.SoundEffect;
 import github.dluckycompany.clawkins.save.SaveStateManager;
+import github.dluckycompany.clawkins.ui.CharacterSetupScreen;
 import github.dluckycompany.clawkins.ui.MainMenuScreen;
 import github.dluckycompany.clawkins.ui.SaveStateScreen;
 
@@ -78,6 +79,11 @@ public class Main extends Game {
         audioService.registerSound(SoundEffect.ENCOUNTER, "audio/sfx/encounter.wav");
         audioService.registerSound(SoundEffect.ENEMY_ALERT, "audio/soundEffects/SFX_MayGenko/square channel SFX/ba-da 1.ogg");
         audioService.registerSound(SoundEffect.AREA_NAME_DISPLAY, "audio/soundEffects/mapTransition/area_name.mp3");
+        // UI/Menu sounds
+        audioService.registerSound(SoundEffect.UI_HOVER, "audio/soundEffects/SFX_MayGenko/square channel SFX/menu beep 1.ogg");
+        audioService.registerSound(SoundEffect.UI_SELECT, "audio/soundEffects/SFX_MayGenko/square channel SFX/menu select beep 1.ogg");
+        audioService.registerSound(SoundEffect.UI_BACK, "audio/soundEffects/SFX_MayGenko/square channel SFX/menu back 1.ogg");
+        audioService.registerSound(SoundEffect.UI_ERROR, "audio/soundEffects/SFX_MayGenko/square channel SFX/menu error 1.ogg");
         this.glProfiler = new GLProfiler(Gdx.graphics);
         this.glProfiler.enable();
 
@@ -86,10 +92,12 @@ public class Main extends Game {
             () -> startNewGame(),
             () -> continueGame(),
             () -> exitGame(),
-            saveStateManager
+            saveStateManager,
+            audioService
         ));
+        addScreen(new CharacterSetupScreen(this, batch));
         addScreen(new GameScreen(this));
-        this.saveStateScreen = new SaveStateScreen(batch, saveStateManager);
+        this.saveStateScreen = new SaveStateScreen(batch, saveStateManager, audioService);
         addScreen(saveStateScreen);
 
         // Show main menu first
@@ -101,7 +109,7 @@ public class Main extends Game {
      */
     private void startNewGame() {
         Gdx.app.log("Main", "Start New Game");
-        setScreen(GameScreen.class);
+        setScreen(CharacterSetupScreen.class);
     }
 
     /**
