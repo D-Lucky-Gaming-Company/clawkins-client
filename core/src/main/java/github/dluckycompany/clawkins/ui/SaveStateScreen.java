@@ -70,6 +70,8 @@ public class SaveStateScreen implements Screen {
     private TextButton saveNewButton;
     private TextButton deleteButton;
     private TextButton backButton;
+    private float inputGuardTimer;
+    private boolean waitForConfirmRelease;
 
     private static final float ACTION_BUTTON_WIDTH = 190f;
     private static final float ACTION_BUTTON_HEIGHT = 56f;
@@ -80,6 +82,7 @@ public class SaveStateScreen implements Screen {
     private static final float VIRTUAL_UI_HEIGHT = 600f;
     private static final float PANEL_WIDTH = 700f;
     private static final float PANEL_HEIGHT = 500f;
+    private static final float SCREEN_ENTRY_INPUT_GUARD_SECONDS = 0.15f;
 
     public SaveStateScreen(Batch batch, SaveStateManager saveStateManager, AudioService audioService) {
         this.batch = batch;
@@ -115,11 +118,14 @@ public class SaveStateScreen implements Screen {
         buildUI();
         refreshSaveList();
 
+        inputGuardTimer = SCREEN_ENTRY_INPUT_GUARD_SECONDS;
+        waitForConfirmRelease = true;
         Gdx.input.setInputProcessor(stage);
     }
 
     @Override
     public void render(float delta) {
+        updateInputGuard(delta);
         handleInput();
 
         Gdx.gl.glClearColor(0.08f, 0.08f, 0.1f, 1f);
@@ -366,7 +372,7 @@ public class SaveStateScreen implements Screen {
     private void updateSelectionVisuals() {
         for (int i = 0; i < entryLabels.size(); i++) {
             boolean selected = i == selectedIndex;
-            entryLabels.get(i).setColor(selected ? Color.WHITE : Color.valueOf("#C9C2B6"));
+            entryLabels.get(i).setColor(selected ? Color.valueOf("#ECCD61") : Color.valueOf("#C9C2B6"));
         }
     }
 
@@ -377,6 +383,10 @@ public class SaveStateScreen implements Screen {
     }
 
     private void handleInput() {
+        if (isInputGuardActive()) {
+            return;
+        }
+
         if (Gdx.input.isKeyJustPressed(Keys.ESCAPE)) {
             handleBack();
             return;
@@ -386,11 +396,19 @@ public class SaveStateScreen implements Screen {
             return;
         }
 
-        if (Gdx.input.isKeyJustPressed(Keys.UP)) {
+        if (Gdx.input.isKeyJustPressed(Keys.W)
+                || Gdx.input.isKeyJustPressed(Keys.UP)
+                || Gdx.input.isKeyJustPressed(Keys.DPAD_UP)) {
             setSelectedIndex(selectedIndex - 1);
-        } else if (Gdx.input.isKeyJustPressed(Keys.DOWN)) {
+        } else if (Gdx.input.isKeyJustPressed(Keys.S)
+                || Gdx.input.isKeyJustPressed(Keys.DOWN)
+                || Gdx.input.isKeyJustPressed(Keys.DPAD_DOWN)) {
             setSelectedIndex(selectedIndex + 1);
-        } else if (Gdx.input.isKeyJustPressed(Keys.ENTER)) {
+        } else if (Gdx.input.isKeyJustPressed(Keys.Z)
+                || Gdx.input.isKeyJustPressed(Keys.SPACE)
+                || Gdx.input.isKeyJustPressed(Keys.ENTER)
+                || Gdx.input.isKeyJustPressed(Keys.NUMPAD_ENTER)
+                || Gdx.input.isKeyJustPressed(Keys.BUTTON_A)) {
             handlePrimaryAction();
         } else if (Gdx.input.isKeyJustPressed(Keys.DEL) || Gdx.input.isKeyJustPressed(Keys.FORWARD_DEL)) {
             handleDelete();
@@ -477,6 +495,27 @@ public class SaveStateScreen implements Screen {
 
     private void setStatus(String message) {
         statusLabel.setText(message == null ? "" : message);
+    }
+
+    private void updateInputGuard(float delta) {
+        if (inputGuardTimer > 0f) {
+            inputGuardTimer = Math.max(0f, inputGuardTimer - delta);
+        }
+        if (waitForConfirmRelease && !isMenuConfirmHeld()) {
+            waitForConfirmRelease = false;
+        }
+    }
+
+    private boolean isMenuConfirmHeld() {
+        return Gdx.input.isKeyPressed(Keys.Z)
+                || Gdx.input.isKeyPressed(Keys.SPACE)
+                || Gdx.input.isKeyPressed(Keys.ENTER)
+                || Gdx.input.isKeyPressed(Keys.NUMPAD_ENTER)
+                || Gdx.input.isKeyPressed(Keys.BUTTON_A);
+    }
+
+    private boolean isInputGuardActive() {
+        return inputGuardTimer > 0f || waitForConfirmRelease;
     }
 
     private Skin buildSkin() {

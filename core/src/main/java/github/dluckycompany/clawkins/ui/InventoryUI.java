@@ -598,7 +598,7 @@ public class InventoryUI {
                 }
                 return true;
             }
-            case Input.Keys.ENTER -> {
+            case Input.Keys.ENTER, Input.Keys.NUMPAD_ENTER, Input.Keys.Z, Input.Keys.SPACE, Input.Keys.BUTTON_A -> {
                 // Enter should mirror click flow: select item, then choose USE/DROP, then confirm.
                 if (navigableItems.isEmpty()) {
                     return true;
