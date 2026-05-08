@@ -76,6 +76,13 @@ public class Main extends Game {
         audioService.registerSound(SoundEffect.CONFIRM, "audio/sfx/confirm.wav");
         audioService.registerSound(SoundEffect.CANCEL, "audio/sfx/cancel.wav");
         audioService.registerSound(SoundEffect.HIT, "audio/sfx/hit.wav");
+        audioService.registerSound(SoundEffect.BATTLE_ATTACK, "audio/soundEffects/SFX_RPGMaker2000/Attack1.wav");
+        audioService.registerSound(SoundEffect.BATTLE_DEFEND, "audio/soundEffects/SFX_RPGMaker2000/Barrier.wav");
+        audioService.registerSound(SoundEffect.BATTLE_HEAL, "audio/soundEffects/SFX_RPGMaker2000/Recovery1.wav");
+        audioService.registerSound(SoundEffect.BATTLE_SPECIAL, "audio/soundEffects/SFX_RPGMaker2000/Teleport1.wav");
+        audioService.registerSound(SoundEffect.BATTLE_SWITCH, "audio/soundEffects/SFX_RPGMaker2000/Teleport2.wav");
+        audioService.registerSound(SoundEffect.BATTLE_ESCAPE, "audio/soundEffects/SFX_RPGMaker2000/Escape.wav");
+        audioService.registerSound(SoundEffect.BATTLE_ENEMY_ACTION, "audio/soundEffects/SFX_RPGMaker2000/Attack2.wav");
         audioService.registerSound(SoundEffect.ENCOUNTER, "audio/sfx/encounter.wav");
         audioService.registerSound(SoundEffect.ENEMY_ALERT, "audio/soundEffects/SFX_MayGenko/square channel SFX/ba-da 1.ogg");
         audioService.registerSound(SoundEffect.AREA_NAME_DISPLAY, "audio/soundEffects/mapTransition/area_name.mp3");
