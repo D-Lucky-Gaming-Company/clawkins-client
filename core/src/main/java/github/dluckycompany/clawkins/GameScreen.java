@@ -154,6 +154,7 @@ public class GameScreen extends ScreenAdapter {
     private static final float AREA_TITLE_FADE_IN_SECONDS = 0f;
     private static final float AREA_TITLE_FADE_OUT_SECONDS = 2f;
     private static final float END_ROAD_FORCE_MOVE_DURATION_SECONDS = 1f;
+    private static final float MANSION_PATH_BLOCK_FORCE_MOVE_DURATION_SECONDS = 1.5f;
     private static final float BOSS_DECLINE_FORCE_MOVE_DURATION_SECONDS = 1f;
     private static final String EVENT_BOSS_0 = "boss_0_event";
     private static final String EVENT_BOSS_0_DEFEATED = "boss_0_defeated";
@@ -162,6 +163,8 @@ public class GameScreen extends ScreenAdapter {
     private static final String ENCOUNTER_SPARTACUS_ID = "boss_1_encounter";
     private static final String ENCOUNTER_CERBERUS_ID = "boss_2_encounter";
     private static final String TRIGGER_BOSS_BERT_JR_ID = "trigger_boss0";
+    private static final String END_ROAD_OBJECT_ID = "end_road";
+    private static final String MANSION_PATH_BLOCK_OBJECT_ID = "mansion_path_block";
     private static final String PROP_BERT_JR_OBJECT_ID = "bertjr_prop";
     private static final float BERT_JR_PROP_INITIAL_X_OFFSET = 6f;
     private static final float BERT_JR_PROP_WALK_IN_SPEED = 1.2f;
@@ -484,8 +487,11 @@ public class GameScreen extends ScreenAdapter {
             }
             return !playerProgress.isEventAccomplished(EVENT_BOSS_0_DEFEATED);
         });
-        interactionSystem.registerSpecialInteraction("end_road", context -> {
+        interactionSystem.registerSpecialInteraction(END_ROAD_OBJECT_ID, context -> {
             startEndRoadForcedMove(context.playerEntity());
+        });
+        interactionSystem.registerSpecialInteraction(MANSION_PATH_BLOCK_OBJECT_ID, context -> {
+            startMansionPathBlockForcedMove(context.playerEntity());
         });
         interactionSystem.registerSpecialInteraction(TRIGGER_BOSS_BERT_JR_ID, context -> {
             if (battleService.hasBattleSession() || playerProgress.isEventAccomplished(EVENT_BOSS_0_DEFEATED)) {
@@ -943,6 +949,24 @@ public class GameScreen extends ScreenAdapter {
         }
 
         startForcedMove(playerEntity, 0f, 1f, PlayerAnimation.Direction.NORTH, END_ROAD_FORCE_MOVE_DURATION_SECONDS);
+    }
+
+    private void startMansionPathBlockForcedMove(Entity playerEntity) {
+        if (playerEntity == null || isSpecialMovementActive()) {
+            return;
+        }
+        Move move = Move.MAPPER.get(playerEntity);
+        if (move == null) {
+            return;
+        }
+
+        startForcedMove(
+                playerEntity,
+                -1f,
+                0f,
+                PlayerAnimation.Direction.WEST,
+                MANSION_PATH_BLOCK_FORCE_MOVE_DURATION_SECONDS
+        );
     }
 
     private void startForcedMove(
