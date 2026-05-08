@@ -391,10 +391,18 @@ public class BattleOverlay implements Disposable {
             int activeIndex = playerBattleState.getActiveClawkinIndex();
             battleHud.updateActiveClawkin(activeClawkin);
 
-            // Use live battle-unit HP so the HUD always reflects damage immediately.
-            battleHud.setPlayerHp(ally.getHp(), ally.getMaxHp());
+            // Sync Clawkin HP from BattleUnit (source of truth during battle)
             if (activeClawkin != null) {
                 activeClawkin.setCurrentHp(ally.getHp());
+                
+                // Use Clawkin's maxHp (not BattleUnit's) for correct health bar display
+                // BattleUnit's maxHp is fixed at construction, but Clawkin's maxHp is the real stat
+                float currentHp = ally.getHp();
+                float maxHp = activeClawkin.getMaxHp();
+                battleHud.setPlayerHp(currentHp, maxHp);
+            } else {
+                // Fallback if no active Clawkin
+                battleHud.setPlayerHp(ally.getHp(), ally.getMaxHp());
             }
             
             // Update Clawkin container with party data

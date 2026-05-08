@@ -86,7 +86,7 @@ public class BattleHud implements Disposable {
     // -----------------------------------------------------------------------
 
     private static final String PLAYER_PLACEHOLDER_PATH = "entities/clawkins/Clawkin_01_Ginger.png";
-    private static final String BOSS_PLACEHOLDER_PATH   = "entities/clawkins/Clawkin_04_Bert_Jr.png";
+    private static final String BOSS_PLACEHOLDER_PATH   = "entities/clawkins/Clawkin_14_Stray.png";
 
     private static final float PLAYER_PLACEHOLDER_W = 96f;
     private static final float PLAYER_PLACEHOLDER_H = 96f;
