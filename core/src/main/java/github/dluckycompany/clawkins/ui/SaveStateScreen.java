@@ -25,6 +25,8 @@ import com.badlogic.gdx.scenes.scene2d.utils.ClickListener;
 import com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable;
 import com.badlogic.gdx.utils.viewport.FitViewport;
 
+import github.dluckycompany.clawkins.audio.AudioService;
+import github.dluckycompany.clawkins.audio.SoundEffect;
 import github.dluckycompany.clawkins.save.SaveState;
 import github.dluckycompany.clawkins.save.SaveStateManager;
 
@@ -44,6 +46,8 @@ public class SaveStateScreen implements Screen {
 
     private final Batch batch;
     private final SaveStateManager saveStateManager;
+    private final AudioService audioService;
+    private UiSoundHelper soundHelper;
 
     private Stage stage;
     private Skin skin;
@@ -75,9 +79,11 @@ public class SaveStateScreen implements Screen {
     private static final float PANEL_WIDTH = 700f;
     private static final float PANEL_HEIGHT = 500f;
 
-    public SaveStateScreen(Batch batch, SaveStateManager saveStateManager) {
+    public SaveStateScreen(Batch batch, SaveStateManager saveStateManager, AudioService audioService) {
         this.batch = batch;
         this.saveStateManager = saveStateManager;
+        this.audioService = audioService;
+        this.soundHelper = new UiSoundHelper(audioService);
     }
 
     public void configure(Mode mode, SaveStateProvider saveStateProvider, SaveStateConsumer loadConsumer, Runnable onBack) {
@@ -194,41 +200,21 @@ public class SaveStateScreen implements Screen {
 
         primaryButton = new TextButton(mode == Mode.LOAD ? "Load" : "Overwrite", skin);
         primaryButton.getLabel().setFontScale(ACTION_BUTTON_SCALE);
-        primaryButton.addListener(new ClickListener() {
-            @Override
-            public void clicked(InputEvent event, float x, float y) {
-                handlePrimaryAction();
-            }
-        });
+        soundHelper.addButtonSounds(primaryButton, () -> handlePrimaryAction());
 
         if (mode == Mode.SAVE) {
             saveNewButton = new TextButton("Save New", skin);
             saveNewButton.getLabel().setFontScale(ACTION_BUTTON_SCALE);
-            saveNewButton.addListener(new ClickListener() {
-                @Override
-                public void clicked(InputEvent event, float x, float y) {
-                    handleSaveNew();
-                }
-            });
+            soundHelper.addButtonSounds(saveNewButton, () -> handleSaveNew());
         }
 
         deleteButton = new TextButton("Delete", skin);
         deleteButton.getLabel().setFontScale(ACTION_BUTTON_SCALE);
-        deleteButton.addListener(new ClickListener() {
-            @Override
-            public void clicked(InputEvent event, float x, float y) {
-                handleDelete();
-            }
-        });
+        soundHelper.addButtonSounds(deleteButton, () -> handleDelete());
 
         backButton = new TextButton("Back", skin);
         backButton.getLabel().setFontScale(ACTION_BUTTON_SCALE);
-        backButton.addListener(new ClickListener() {
-            @Override
-            public void clicked(InputEvent event, float x, float y) {
-                handleBack();
-            }
-        });
+        soundHelper.addButtonSounds(backButton, () -> handleBack(), SoundEffect.UI_BACK);
 
         actions.add(primaryButton);
         if (saveNewButton != null) {

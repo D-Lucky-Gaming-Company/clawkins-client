@@ -19,8 +19,10 @@ import com.badlogic.gdx.scenes.scene2d.ui.TextButton;
 import com.badlogic.gdx.scenes.scene2d.ui.TextButton.TextButtonStyle;
 import com.badlogic.gdx.scenes.scene2d.utils.ClickListener;
 import com.badlogic.gdx.scenes.scene2d.utils.NinePatchDrawable;
-import com.badlogic.gdx.utils.viewport.ScreenViewport;
+import com.badlogic.gdx.utils.viewport.FitViewport;
 
+import github.dluckycompany.clawkins.audio.AudioService;
+import github.dluckycompany.clawkins.audio.SoundEffect;
 import github.dluckycompany.clawkins.save.SaveStateManager;
 
 /**
@@ -46,6 +48,10 @@ public class MainMenuScreen implements Screen {
 
     private final Batch batch;
     private final Stage stage;
+    
+    // Virtual UI resolution (fixed, independent of physical screen) - MATCHES CharacterSetupScreen
+    private static final float VIRTUAL_UI_WIDTH = 800f;
+    private static final float VIRTUAL_UI_HEIGHT = 600f;
 
     // -----------------------------------------------------------------------
     // Fonts
@@ -70,6 +76,10 @@ public class MainMenuScreen implements Screen {
     private final Runnable onContinue;
     private final Runnable onExit;
     private final SaveStateManager saveStateManager;
+    private final AudioService audioService;
+    
+    // Hover debounce tracking
+    private TextButton lastHoveredButton;
 
     // -----------------------------------------------------------------------
     // Constructor
@@ -82,15 +92,18 @@ public class MainMenuScreen implements Screen {
      * @param onNewGame called when "NEW GAME" button is clicked
      * @param onContinue called when "CONTINUE" button is clicked
      * @param onExit called when "EXIT GAME" button is clicked
+     * @param saveStateManager save state manager for checking available saves
+     * @param audioService audio service for playing menu sounds
      */
-    public MainMenuScreen(Batch batch, Runnable onNewGame, Runnable onContinue, Runnable onExit, SaveStateManager saveStateManager) {
+    public MainMenuScreen(Batch batch, Runnable onNewGame, Runnable onContinue, Runnable onExit, SaveStateManager saveStateManager, AudioService audioService) {
         this.batch = batch;
-        this.stage = new Stage(new ScreenViewport());
+        this.stage = new Stage(new FitViewport(VIRTUAL_UI_WIDTH, VIRTUAL_UI_HEIGHT));
 
         this.onNewGame = onNewGame;
         this.onContinue = onContinue;
         this.onExit = onExit;
         this.saveStateManager = saveStateManager;
+        this.audioService = audioService;
 
         Gdx.input.setInputProcessor(stage);
     }
@@ -114,16 +127,14 @@ public class MainMenuScreen implements Screen {
         Gdx.gl.glClearColor(0.129f, 0.129f, 0.137f, 1f);
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
 
-        // Set batch projection to match screen dimensions (responsive)
-        batch.setProjectionMatrix(batch.getProjectionMatrix()
-                .setToOrtho2D(0, 0, Gdx.graphics.getWidth(), Gdx.graphics.getHeight()));
-
-        // Draw background (automatically scales to screen size)
+        // Draw background using stage viewport for proper scaling - MATCHES CharacterSetupScreen
+        stage.getViewport().apply();
+        batch.setProjectionMatrix(stage.getCamera().combined);
         batch.begin();
         drawBackground();
         batch.end();
 
-        // Draw Stage UI (already handles viewport updates)
+        // Draw Stage UI
         stage.act(delta);
         stage.draw();
 
@@ -136,10 +147,6 @@ public class MainMenuScreen implements Screen {
     @Override
     public void resize(int width, int height) {
         stage.getViewport().update(width, height, true);
-        
-        // Rebuild UI to re-layout buttons and text at new resolution
-        stage.clear();
-        buildUI();
     }
 
     @Override
@@ -162,6 +169,37 @@ public class MainMenuScreen implements Screen {
         if (buttonFont != null) buttonFont.dispose();
         if (backgroundTexture != null) backgroundTexture.dispose();
         if (menuBackgroundTexture != null) menuBackgroundTexture.dispose();
+    }
+
+    // -----------------------------------------------------------------------
+    // Sound Effects Helper
+    // -----------------------------------------------------------------------
+
+    /**
+     * Adds sound effects to a button with hover debouncing.
+     * Plays hover sound once when mouse enters, and click sound on click.
+     *
+     * @param button the button to add sound effects to
+     * @param onClickAction the action to run when clicked (should include sound)
+     */
+    private void addButtonSoundEffects(TextButton button, Runnable onClickAction) {
+        button.addListener(new ClickListener() {
+            @Override
+            public void clicked(InputEvent event, float x, float y) {
+                onClickAction.run();
+            }
+
+            @Override
+            public void enter(InputEvent event, float x, float y, int pointer, com.badlogic.gdx.scenes.scene2d.Actor fromActor) {
+                // Only play hover sound if this is a different button than last hovered
+                if (lastHoveredButton != button && !button.isDisabled()) {
+                    lastHoveredButton = button;
+                    if (audioService != null) {
+                        audioService.playSound(SoundEffect.UI_HOVER);
+                    }
+                }
+            }
+        });
     }
 
     // -----------------------------------------------------------------------
@@ -190,41 +228,36 @@ public class MainMenuScreen implements Screen {
         TextButtonStyle buttonStyle = createButtonStyle();
 
         TextButton newGameBtn = new TextButton("NEW GAME", buttonStyle);
-        newGameBtn.addListener(new ClickListener() {
-            @Override
-            public void clicked(InputEvent event, float x, float y) {
-                Gdx.app.log("MainMenu", "NEW GAME clicked");
-                onNewGame.run();
-            }
+        addButtonSoundEffects(newGameBtn, () -> {
+            if (audioService != null) audioService.playSound(SoundEffect.UI_SELECT);
+            Gdx.app.log("MainMenu", "NEW GAME clicked");
+            onNewGame.run();
         });
 
         boolean hasSaves = saveStateManager != null && saveStateManager.hasSaveStates();
         TextButton continueBtn = new TextButton("CONTINUE", buttonStyle);
         continueBtn.setDisabled(!hasSaves);
-        continueBtn.addListener(new ClickListener() {
-            @Override
-            public void clicked(InputEvent event, float x, float y) {
-                Gdx.app.log("MainMenu", "CONTINUE clicked");
-                if (continueBtn.isDisabled()) {
-                    return;
-                }
-                onContinue.run();
+        addButtonSoundEffects(continueBtn, () -> {
+            if (continueBtn.isDisabled()) {
+                if (audioService != null) audioService.playSound(SoundEffect.UI_ERROR);
+                return;
             }
+            if (audioService != null) audioService.playSound(SoundEffect.UI_SELECT);
+            Gdx.app.log("MainMenu", "CONTINUE clicked");
+            onContinue.run();
         });
 
         TextButton exitBtn = new TextButton("EXIT GAME", buttonStyle);
-        exitBtn.addListener(new ClickListener() {
-            @Override
-            public void clicked(InputEvent event, float x, float y) {
-                Gdx.app.log("MainMenu", "EXIT GAME clicked");
-                onExit.run();
-            }
+        addButtonSoundEffects(exitBtn, () -> {
+            if (audioService != null) audioService.playSound(SoundEffect.UI_SELECT);
+            Gdx.app.log("MainMenu", "EXIT GAME clicked");
+            onExit.run();
         });
 
-        // Responsive button sizing: scale based on screen dimensions
-        float btnWidth = Math.min(Gdx.graphics.getWidth() * 0.25f, 250f);  // 25% of width, max 250px
-        float btnHeight = Math.min(Gdx.graphics.getHeight() * 0.08f, 60f);  // 8% of height, max 60px
-        float btnSpacing = Math.max(Gdx.graphics.getHeight() * 0.03f, 15f); // 3% of height, min 15px
+        // Fixed button sizing using virtual dimensions - consistent with CharacterSetupScreen approach
+        float btnWidth = 300f;
+        float btnHeight = 65f;
+        float btnSpacing = 18f;
 
         buttonTable.add(newGameBtn).width(btnWidth).height(btnHeight).row();
         buttonTable.add(continueBtn).width(btnWidth).height(btnHeight).padTop(btnSpacing).row();
@@ -237,7 +270,8 @@ public class MainMenuScreen implements Screen {
         statusLabel.setFontScale(0.9f);
         buttonTable.add(statusLabel).padTop(btnSpacing * 0.6f);
 
-        root.add(buttonTable).center();
+        // Center button table in root with top padding to position below logo
+        root.add(buttonTable).center().padTop(240f);
 
         stage.addActor(root);
     }
@@ -328,11 +362,12 @@ public class MainMenuScreen implements Screen {
     }
 
     /**
-     * Draws the dark gradient background that automatically resizes to screen dimensions.
+     * Draws the background using virtual coordinates - MATCHES CharacterSetupScreen.
      */
     private void drawBackground() {
-        float w = Gdx.graphics.getWidth();
-        float h = Gdx.graphics.getHeight();
+        // Use virtual UI dimensions instead of physical screen dimensions
+        float w = VIRTUAL_UI_WIDTH;
+        float h = VIRTUAL_UI_HEIGHT;
 
         if (menuBackgroundTexture == null) {
             menuBackgroundTexture = new Texture(Gdx.files.internal("ui/MenuUI_Background.png"));
