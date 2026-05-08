@@ -58,9 +58,11 @@ import github.dluckycompany.clawkins.encounter.EncounterEventBus;
 import github.dluckycompany.clawkins.encounter.EncounterEventType;
 import github.dluckycompany.clawkins.item.Item;
 import github.dluckycompany.clawkins.item.ItemFactory;
+import github.dluckycompany.clawkins.model.Gender;
 import github.dluckycompany.clawkins.model.PlayerProfile;
 import github.dluckycompany.clawkins.progress.PlayerProgress;
 import github.dluckycompany.clawkins.save.SaveState;
+import github.dluckycompany.clawkins.save.SaveStateManager;
 import github.dluckycompany.clawkins.system.AnimationSystem;
 import github.dluckycompany.clawkins.system.CameraSystem;
 import github.dluckycompany.clawkins.system.EnemySystem;
@@ -156,6 +158,8 @@ public class GameScreen extends ScreenAdapter {
     private static final float END_ROAD_FORCE_MOVE_DURATION_SECONDS = 1f;
     private static final float MANSION_PATH_BLOCK_FORCE_MOVE_DURATION_SECONDS = 1.5f;
     private static final float BOSS_DECLINE_FORCE_MOVE_DURATION_SECONDS = 1f;
+    private static final float INTERACTION_RETRIGGER_BLOCK_SECONDS = 0.2f;
+    private static final int DEFAULT_BATTLE_XP_REWARD = 25;
     private static final String EVENT_BOSS_0 = "boss_0_event";
     private static final String EVENT_BOSS_0_DEFEATED = "boss_0_defeated";
     private static final String ENCOUNTER_BERT_JR_ID = "boss_0_encounter";
@@ -165,7 +169,11 @@ public class GameScreen extends ScreenAdapter {
     private static final String TRIGGER_BOSS_BERT_JR_ID = "trigger_boss_0";
     private static final String END_ROAD_OBJECT_ID = "end_road";
     private static final String MANSION_PATH_BLOCK_OBJECT_ID = "mansion_path_block";
+    private static final String BED_COTTAGE_OBJECT_ID = "bed_cottage";
     private static final String PROP_BERT_JR_OBJECT_ID = "bertjr_prop";
+    private static final Set<String> SAVE_POINT_OBJECT_IDS = Set.of(
+            BED_COTTAGE_OBJECT_ID
+    );
     private static final float BERT_JR_PROP_INITIAL_X_OFFSET = 6f;
     private static final float BERT_JR_PROP_WALK_IN_SPEED = 1.2f;
 
@@ -235,6 +243,9 @@ public class GameScreen extends ScreenAdapter {
     private SaveState pendingSaveState;
     private ForcedMoveState activeForcedMove;
     private BossFightPromptState activeBossFightPrompt;
+    private SaveGamePromptState activeSaveGamePrompt;
+    private SaveActionPromptState activeSaveActionPrompt;
+    private float interactionRetriggerBlockSeconds;
     private Entity bertJrPropEntity;
     private Vector2 bertJrPropTargetPosition;
     private boolean bertJrPropWalkingIn;
@@ -420,6 +431,7 @@ public class GameScreen extends ScreenAdapter {
         if (!loadedFromSave && playerBattleState.getWallet().getMoney() == 0) {
             playerBattleState.getWallet().addMoney(500);
         }
+        refreshProgressSnapshots();
         
         // Create the merchant shop UI (fixed virtual resolution)
         this.merchantShopUI = new MerchantShopUI(
@@ -495,6 +507,7 @@ public class GameScreen extends ScreenAdapter {
         interactionSystem.registerSpecialInteraction(MANSION_PATH_BLOCK_OBJECT_ID, context -> {
             startMansionPathBlockForcedMove(context.playerEntity());
         });
+        registerSavePointInteractions();
         interactionSystem.registerSpecialInteraction(TRIGGER_BOSS_BERT_JR_ID, context -> {
             if (battleService.hasBattleSession() || playerProgress.isEventAccomplished(EVENT_BOSS_0_DEFEATED)) {
                 return;
@@ -546,6 +559,30 @@ public class GameScreen extends ScreenAdapter {
             enemyName = "Boss";
         }
         activeBossFightPrompt = new BossFightPromptState(enemyName, onYes, onNo);
+    }
+
+    private void promptSaveGameChoice(Runnable onYes, Runnable onNo) {
+        activeSaveGamePrompt = new SaveGamePromptState(onYes, onNo);
+    }
+
+    private void registerSavePointInteractions() {
+        for (String objectId : SAVE_POINT_OBJECT_IDS) {
+            interactionSystem.registerSpecialInteraction(objectId, context -> openSavePromptFromInteractible());
+        }
+    }
+
+    private void openSavePromptFromInteractible() {
+        if (isBossFightPromptVisible() || isSaveGamePromptVisible() || isSaveActionPromptVisible()) {
+            return;
+        }
+        promptSaveGameChoice(this::openSaveActionPrompt, () -> {});
+    }
+
+    private void openSaveActionPrompt() {
+        if (isBossFightPromptVisible() || isSaveActionPromptVisible()) {
+            return;
+        }
+        activeSaveActionPrompt = new SaveActionPromptState(game.getSaveStateManager().hasSaveStates());
     }
 
     private static List<BattleSkill> createBertJrTutorialSkills() {
@@ -669,11 +706,15 @@ public class GameScreen extends ScreenAdapter {
         // Cap delta to avoid spiral-of-death on lag spikes
         delta = Math.min(1 / 30f, delta);
         updateBossFightPromptInput();
+        updateSaveGamePromptInput();
+        updateSaveActionPromptInput();
+        interactionRetriggerBlockSeconds = Math.max(0f, interactionRetriggerBlockSeconds - delta);
 
         // Handle side-menu and submenu navigation while in exploration.
         if (!battleService.hasBattleSession() && !interactionSystem.isDialogueVisible() && !merchantShopVisible
                 && !mapTransitionFade.isTransitioning() && !isSpecialMovementActive()
-                && !isBossFightPromptVisible() && !isBertJrPreDialogueSequenceActive()
+                && !isBossFightPromptVisible() && !isSaveGamePromptVisible() && !isSaveActionPromptVisible()
+                && !isBertJrPreDialogueSequenceActive()
                 && !cheatConsoleOverlay.isVisible()) {
             MainSideMenuOverlay.Action menuAction = sideMenuOverlay.handleInput();
             switch (menuAction) {
@@ -743,6 +784,8 @@ public class GameScreen extends ScreenAdapter {
         battleOverlay.render(batch, battleService);
         dialogueOverlay.render(batch, interactionSystem);
         renderBossFightPrompt();
+        renderSaveGamePrompt();
+        renderSaveActionPrompt();
         
         // ============================================================
         // UI Rendering with Proper Viewport Coordinate Management
@@ -913,6 +956,9 @@ public class GameScreen extends ScreenAdapter {
         boolean battleLocked = battleService.hasBattleSession();
         boolean dialogueLocked = interactionSystem.isDialogueVisible();
         boolean bossPromptLocked = isBossFightPromptVisible();
+        boolean savePromptLocked = isSaveGamePromptVisible();
+        boolean saveActionPromptLocked = isSaveActionPromptVisible();
+        boolean interactionRetriggerLocked = interactionRetriggerBlockSeconds > 0f;
         boolean merchantLocked = merchantShopVisible;
         boolean mapTransitionLocked = mapTransitionFade.isTransitioning();
         boolean menuLocked = sideMenuOverlay.isBlockingGameplay() || teamViewerVisible;
@@ -920,18 +966,34 @@ public class GameScreen extends ScreenAdapter {
         boolean shouldEnableExploration = !battleLocked
                 && !dialogueLocked
                 && !bossPromptLocked
+                && !savePromptLocked
+                && !saveActionPromptLocked
                 && !merchantLocked
                 && !mapTransitionLocked
                 && !menuLocked
                 && !cheatConsoleLocked;
         if (shouldEnableExploration == explorationSystemsEnabled) {
-            interactionSystem.setProcessing(!battleLocked && !bossPromptLocked && !merchantLocked && !menuLocked && !cheatConsoleLocked);
+            interactionSystem.setProcessing(!battleLocked
+                    && !bossPromptLocked
+                    && !savePromptLocked
+                    && !saveActionPromptLocked
+                    && !interactionRetriggerLocked
+                    && !merchantLocked
+                    && !menuLocked
+                    && !cheatConsoleLocked);
             return;
         }
 
         explorationSystemsEnabled = shouldEnableExploration;
         engine.getSystem(PlayerInputSystem.class).setProcessing(shouldEnableExploration);
-        interactionSystem.setProcessing(!battleLocked && !bossPromptLocked && !merchantLocked && !menuLocked && !cheatConsoleLocked);
+        interactionSystem.setProcessing(!battleLocked
+                && !bossPromptLocked
+                && !savePromptLocked
+                && !saveActionPromptLocked
+                && !interactionRetriggerLocked
+                && !merchantLocked
+                && !menuLocked
+                && !cheatConsoleLocked);
         engine.getSystem(MoveSystem.class).setProcessing(shouldEnableExploration);
         engine.getSystem(EncounterDetectionSystem.class).setProcessing(shouldEnableExploration);
         mapTransitionSystem.setProcessing(shouldEnableExploration);
@@ -943,6 +1005,14 @@ public class GameScreen extends ScreenAdapter {
 
     private boolean isBossFightPromptVisible() {
         return activeBossFightPrompt != null;
+    }
+
+    private boolean isSaveGamePromptVisible() {
+        return activeSaveGamePrompt != null;
+    }
+
+    private boolean isSaveActionPromptVisible() {
+        return activeSaveActionPrompt != null;
     }
 
     private boolean isBertJrPreDialogueSequenceActive() {
@@ -1124,6 +1194,142 @@ public class GameScreen extends ScreenAdapter {
         dialogueOverlay.renderPrompt(batch, text, Interactible.DialoguePosition.BOTTOM);
     }
 
+    private void updateSaveGamePromptInput() {
+        SaveGamePromptState prompt = activeSaveGamePrompt;
+        if (prompt == null || isBossFightPromptVisible()) {
+            return;
+        }
+
+        if (Gdx.input.isKeyJustPressed(Input.Keys.LEFT) || Gdx.input.isKeyJustPressed(Input.Keys.A)) {
+            prompt.yesSelected = true;
+            return;
+        }
+        if (Gdx.input.isKeyJustPressed(Input.Keys.RIGHT) || Gdx.input.isKeyJustPressed(Input.Keys.D)) {
+            prompt.yesSelected = false;
+            return;
+        }
+
+        if (Gdx.input.isKeyJustPressed(Input.Keys.Y)) {
+            handleSaveGamePromptChoice(true);
+            return;
+        }
+        if (Gdx.input.isKeyJustPressed(Input.Keys.N)) {
+            handleSaveGamePromptChoice(false);
+            return;
+        }
+
+        if (Gdx.input.isKeyJustPressed(Input.Keys.Z)
+                || Gdx.input.isKeyJustPressed(Input.Keys.SPACE)
+                || Gdx.input.isKeyJustPressed(Input.Keys.ENTER)) {
+            handleSaveGamePromptChoice(prompt.yesSelected);
+        }
+    }
+
+    private void handleSaveGamePromptChoice(boolean choseYes) {
+        SaveGamePromptState prompt = activeSaveGamePrompt;
+        if (prompt == null) {
+            return;
+        }
+        activeSaveGamePrompt = null;
+        blockInteractionRetrigger();
+        if (choseYes) {
+            prompt.onYes.run();
+            return;
+        }
+        prompt.onNo.run();
+    }
+
+    private void renderSaveGamePrompt() {
+        SaveGamePromptState prompt = activeSaveGamePrompt;
+        if (prompt == null || isBossFightPromptVisible() || isSaveActionPromptVisible()) {
+            return;
+        }
+        String yesOption = prompt.yesSelected ? "> Yes <" : "  Yes  ";
+        String noOption = prompt.yesSelected ? "  No  " : "> No <";
+        String text = "Do you want to save your game?\n\n" + yesOption + "    " + noOption;
+        dialogueOverlay.renderPrompt(batch, text, Interactible.DialoguePosition.BOTTOM);
+    }
+
+    private void updateSaveActionPromptInput() {
+        SaveActionPromptState prompt = activeSaveActionPrompt;
+        if (prompt == null || isBossFightPromptVisible() || isSaveGamePromptVisible()) {
+            return;
+        }
+
+        if (Gdx.input.isKeyJustPressed(Input.Keys.LEFT) || Gdx.input.isKeyJustPressed(Input.Keys.A)) {
+            prompt.actionSelected = true;
+            return;
+        }
+        if (Gdx.input.isKeyJustPressed(Input.Keys.RIGHT) || Gdx.input.isKeyJustPressed(Input.Keys.D)) {
+            prompt.actionSelected = false;
+            return;
+        }
+
+        if (Gdx.input.isKeyJustPressed(Input.Keys.Y)) {
+            handleSaveActionPromptChoice(true);
+            return;
+        }
+        if (Gdx.input.isKeyJustPressed(Input.Keys.N)) {
+            handleSaveActionPromptChoice(false);
+            return;
+        }
+
+        if (Gdx.input.isKeyJustPressed(Input.Keys.Z)
+                || Gdx.input.isKeyJustPressed(Input.Keys.SPACE)
+                || Gdx.input.isKeyJustPressed(Input.Keys.ENTER)) {
+            handleSaveActionPromptChoice(prompt.actionSelected);
+        }
+    }
+
+    private void handleSaveActionPromptChoice(boolean choseAction) {
+        SaveActionPromptState prompt = activeSaveActionPrompt;
+        if (prompt == null) {
+            return;
+        }
+        activeSaveActionPrompt = null;
+        blockInteractionRetrigger();
+        if (!choseAction) {
+            return;
+        }
+        performSavePointSave(prompt.overwriteMode);
+    }
+
+    private void renderSaveActionPrompt() {
+        SaveActionPromptState prompt = activeSaveActionPrompt;
+        if (prompt == null || isBossFightPromptVisible() || isSaveGamePromptVisible()) {
+            return;
+        }
+        String actionLabel = prompt.overwriteMode ? "Overwrite" : "Save";
+        String actionOption = prompt.actionSelected ? "> " + actionLabel + " <" : "  " + actionLabel + "  ";
+        String cancelOption = prompt.actionSelected ? "  Cancel  " : "> Cancel <";
+        String text = actionOption + "    " + cancelOption;
+        dialogueOverlay.renderPrompt(batch, text, Interactible.DialoguePosition.BOTTOM);
+    }
+
+    private void performSavePointSave(boolean overwriteMode) {
+        SaveStateManager saveStateManager = game.getSaveStateManager();
+        SaveState state = buildSaveState();
+        if (saveStateManager == null || state == null) {
+            return;
+        }
+
+        if (overwriteMode) {
+            List<SaveState> existing = saveStateManager.listSaveStates();
+            if (!existing.isEmpty()) {
+                SaveState selected = existing.get(0);
+                state.setDisplayName(selected.getDisplayName());
+                state.setCreatedAt(selected.getCreatedAt());
+                saveStateManager.updateSaveState(selected.getFileName(), state);
+                return;
+            }
+        }
+        saveStateManager.createSaveState(state);
+    }
+
+    private void blockInteractionRetrigger() {
+        interactionRetriggerBlockSeconds = INTERACTION_RETRIGGER_BLOCK_SECONDS;
+    }
+
     private void beginMapTransition(String targetMapKey, String targetTransitionId) {
         if (targetMapKey == null || targetMapKey.isBlank()) {
             Gdx.app.error("GameScreen", "Cannot start map transition: missing targetMap");
@@ -1160,6 +1366,9 @@ public class GameScreen extends ScreenAdapter {
             if (endPhase == BattlePhase.VICTORY) {
                 audioService.onEvent(AudioEventType.BATTLE_VICTORY);
                 runBossPostBattleMusicHook(encounterId, true);
+                playerProgress.incrementEnemiesDefeated();
+                playerProgress.addExperiencePoints(DEFAULT_BATTLE_XP_REWARD);
+                refreshProgressSnapshots();
                 if (ENCOUNTER_BERT_JR_ID.equals(encounterId)) {
                     playerProgress.incrementWins(EVENT_BOSS_0);
                     playerProgress.markEventAccomplished(EVENT_BOSS_0_DEFEATED);
@@ -1168,6 +1377,7 @@ public class GameScreen extends ScreenAdapter {
             } else if (endPhase == BattlePhase.DEFEAT) {
                 audioService.onEvent(AudioEventType.BATTLE_DEFEAT);
                 runBossPostBattleMusicHook(encounterId, false);
+                refreshProgressSnapshots();
                 if (ENCOUNTER_BERT_JR_ID.equals(encounterId)) {
                     playerProgress.incrementLosses(EVENT_BOSS_0);
                 }
@@ -1592,6 +1802,10 @@ public class GameScreen extends ScreenAdapter {
     private SaveState buildSaveState() {
         SaveState state = new SaveState();
         state.setMapKey(resolveCurrentMapKey());
+        state.setPlayerName(resolveCurrentPlayerName());
+        if (playerProfile != null && playerProfile.getGender() != null) {
+            state.setPlayerGender(playerProfile.getGender().name());
+        }
 
         Entity playerEntity = findPlayerEntity();
         if (playerEntity != null) {
@@ -1671,6 +1885,10 @@ public class GameScreen extends ScreenAdapter {
             state.getInventory().add(entry);
         }
 
+        refreshProgressSnapshots();
+        playerProgress.writeToFlags(state.getFlags());
+        state.getFlags().put(PlayerProgress.PROTOCOL_FLAG_KEY, playerProgress.toProtocolPayload());
+
         return state;
     }
 
@@ -1719,6 +1937,7 @@ public class GameScreen extends ScreenAdapter {
         if (loadedPlayer != null) {
             Gdx.app.log("GameScreen", "✓ Player entity found, applying saved position");
             applySavedPlayerPosition(loadedPlayer, loadedMap, saveState.getPlayerX(), saveState.getPlayerY());
+            applyPlayerNameToEntity(loadedPlayer, resolveCurrentPlayerName());
             
             // Center camera on player
             centerCameraOnPlayer(loadedPlayer);
@@ -1746,6 +1965,8 @@ public class GameScreen extends ScreenAdapter {
     }
 
     private void applySaveStateToPlayer(SaveState saveState) {
+        restorePlayerProfile(saveState);
+
         playerBattleState.getParty().clear();
         for (SaveState.PartyEntry entry : saveState.getParty()) {
             if (entry == null) {
@@ -1821,6 +2042,59 @@ public class GameScreen extends ScreenAdapter {
 
         playerBattleState.getWallet().setMoney(saveState.getMoney());
         playerBattleState.setActiveClawkinIndex(saveState.getActiveClawkinIndex());
+
+        String protocolPayload = saveState.getFlags().get(PlayerProgress.PROTOCOL_FLAG_KEY);
+        if (protocolPayload != null && !protocolPayload.isBlank()) {
+            playerProgress.loadFromProtocolPayload(protocolPayload);
+        } else {
+            playerProgress.loadFromFlags(saveState.getFlags());
+        }
+        refreshProgressSnapshots();
+    }
+
+    private String resolveCurrentPlayerName() {
+        if (playerProfile != null && playerProfile.getName() != null && !playerProfile.getName().isBlank()) {
+            return playerProfile.getName();
+        }
+        Entity playerEntity = findPlayerEntity();
+        if (playerEntity == null) {
+            return "Player";
+        }
+        github.dluckycompany.clawkins.component.PlayerProfile profileComponent =
+                github.dluckycompany.clawkins.component.PlayerProfile.MAPPER.get(playerEntity);
+        if (profileComponent == null || profileComponent.getPlayerName() == null || profileComponent.getPlayerName().isBlank()) {
+            return "Player";
+        }
+        return profileComponent.getPlayerName();
+    }
+
+    private void restorePlayerProfile(SaveState saveState) {
+        if (saveState == null) {
+            return;
+        }
+        String name = safeText(saveState.getPlayerName(), "Player");
+        Gender gender = parseGender(saveState.getPlayerGender());
+        if (gender != null) {
+            this.playerProfile = new PlayerProfile(name, gender);
+            return;
+        }
+        if (this.playerProfile == null) {
+            this.playerProfile = new PlayerProfile(name, Gender.MALE);
+        }
+    }
+
+    private void applyPlayerNameToEntity(Entity playerEntity, String playerName) {
+        if (playerEntity == null) {
+            return;
+        }
+        String name = safeText(playerName, "Player");
+        playerEntity.remove(github.dluckycompany.clawkins.component.PlayerProfile.class);
+        playerEntity.add(new github.dluckycompany.clawkins.component.PlayerProfile(name));
+    }
+
+    private void refreshProgressSnapshots() {
+        playerProgress.captureInventory(playerBattleState.getInventory());
+        playerProgress.capturePartyStats(playerBattleState.getParty());
     }
 
     private void applySavedPlayerPosition(Entity playerEntity, TiledMap map, float x, float y) {
@@ -1872,6 +2146,17 @@ public class GameScreen extends ScreenAdapter {
             return fallback;
         }
         return value;
+    }
+
+    private static Gender parseGender(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            return Gender.valueOf(raw.trim().toUpperCase(java.util.Locale.ROOT));
+        } catch (IllegalArgumentException ex) {
+            return null;
+        }
     }
 
     private void openSummaryFromTeamViewer() {
@@ -2050,6 +2335,8 @@ public class GameScreen extends ScreenAdapter {
                 || teamViewerVisible
                 || merchantShopVisible
                 || isBossFightPromptVisible()
+                || isSaveGamePromptVisible()
+                || isSaveActionPromptVisible()
                 || cheatConsoleOverlay.isVisible();
     }
 
@@ -2063,6 +2350,26 @@ public class GameScreen extends ScreenAdapter {
             this.enemyName = enemyName;
             this.onYes = onYes == null ? () -> {} : onYes;
             this.onNo = onNo == null ? () -> {} : onNo;
+        }
+    }
+
+    private static final class SaveGamePromptState {
+        private final Runnable onYes;
+        private final Runnable onNo;
+        private boolean yesSelected = true;
+
+        private SaveGamePromptState(Runnable onYes, Runnable onNo) {
+            this.onYes = onYes == null ? () -> {} : onYes;
+            this.onNo = onNo == null ? () -> {} : onNo;
+        }
+    }
+
+    private static final class SaveActionPromptState {
+        private final boolean overwriteMode;
+        private boolean actionSelected = true;
+
+        private SaveActionPromptState(boolean overwriteMode) {
+            this.overwriteMode = overwriteMode;
         }
     }
 
