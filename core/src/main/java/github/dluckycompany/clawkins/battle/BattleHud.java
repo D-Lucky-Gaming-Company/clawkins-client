@@ -20,7 +20,7 @@ import com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable;
 import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.utils.Scaling;
 import com.badlogic.gdx.utils.Disposable;
-import com.badlogic.gdx.utils.viewport.ScreenViewport;
+import com.badlogic.gdx.utils.viewport.FitViewport;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -60,6 +60,62 @@ import github.dluckycompany.clawkins.character.Clawkin;
 public class BattleHud implements Disposable {
 
     // -----------------------------------------------------------------------
+    // Viewport constants - Fixed 4:3 aspect ratio
+    // -----------------------------------------------------------------------
+    
+    /** Fixed virtual width for 4:3 aspect ratio (retro RPG style) */
+    private static final float VIRTUAL_WIDTH = 960f;
+    
+    /** Fixed virtual height for 4:3 aspect ratio (retro RPG style) */
+    private static final float VIRTUAL_HEIGHT = 720f;
+
+    // -----------------------------------------------------------------------
+    // Fixed UI element sizes (in virtual pixels)
+    // -----------------------------------------------------------------------
+    
+    /** Fixed size for action buttons (Attack, Defend, Special, Item) */
+    private static final float BUTTON_SIZE = 80f;
+    
+    /** Fixed gap between action buttons */
+    private static final float BUTTON_GAP = 24f;
+    
+    /** Fixed padding from bottom of screen */
+    private static final float BOTTOM_PAD = 32f;
+    
+    /** Fixed padding for labels above buttons */
+    private static final float LABEL_PAD_TOP = 6f;
+    
+    /** Fixed width for HP bars */
+    private static final float HP_BAR_WIDTH = 240f;
+    
+    /** Fixed height for HP bars */
+    private static final float HP_BAR_HEIGHT = 20f;
+    
+    /** Fixed padding from top of screen for HP bars */
+    private static final float HP_TOP_PAD = 16f;
+    
+    /** Fixed padding from sides of screen for HP bars */
+    private static final float HP_SIDE_PAD = 16f;
+    
+    /** Fixed size for corner buttons (Inventory, Flee) */
+    private static final float CORNER_BUTTON_SIZE = 64f;
+    
+    /** Fixed padding for corner buttons */
+    private static final float CORNER_PAD = 20f;
+    
+    /** Fixed width for Clawkin container */
+    private static final float CONTAINER_WIDTH = 80f;
+    
+    /** Fixed height for Clawkin container */
+    private static final float CONTAINER_HEIGHT = 240f;
+    
+    /** Fixed size for player combatant sprite */
+    private static final float PLAYER_SIZE = 120f;
+    
+    /** Fixed size for boss combatant sprite */
+    private static final float BOSS_SIZE = 160f;
+
+    // -----------------------------------------------------------------------
     // Icon sheet constants
     // -----------------------------------------------------------------------
 
@@ -86,12 +142,7 @@ public class BattleHud implements Disposable {
     // -----------------------------------------------------------------------
 
     private static final String PLAYER_PLACEHOLDER_PATH = "entities/clawkins/Clawkin_01_Ginger.png";
-    private static final String BOSS_PLACEHOLDER_PATH   = "entities/clawkins/Clawkin_14_Stray.png";
-
-    private static final float PLAYER_PLACEHOLDER_W = 96f;
-    private static final float PLAYER_PLACEHOLDER_H = 96f;
-    private static final float BOSS_PLACEHOLDER_W   = 128f;
-    private static final float BOSS_PLACEHOLDER_H   = 128f;
+    private static final String BOSS_PLACEHOLDER_PATH   = "entities/clawkins/Clawkin_04_Bert_Jr.png";
 
     // -----------------------------------------------------------------------
     // Button asset paths (individual PNG files)
@@ -231,11 +282,14 @@ public class BattleHud implements Disposable {
 
     /**
      * Builds the Stage and all widgets.
+     * Uses a fixed 4:3 aspect ratio viewport (960x720) for consistent UI sizing.
      *
      * @param assetService used to load {@link TextureAsset#BATTLE_UI}
      */
     public BattleHud(AssetService assetService) {
-        this.stage    = new Stage(new ScreenViewport());
+        // Use FitViewport with fixed 4:3 dimensions for consistent UI sizing
+        // This will add black bars (pillarboxing) on wider screens
+        this.stage    = new Stage(new FitViewport(VIRTUAL_WIDTH, VIRTUAL_HEIGHT));
         this.battleBg = assetService.load(TextureAsset.BATTLE_BACKGROUND);
         this.font     = new BitmapFont();
         this.font.getData().setScale(1.1f);
@@ -272,12 +326,66 @@ public class BattleHud implements Disposable {
     /**
      * Updates and draws the HUD.  Call once per frame from
      * {@link BattleOverlay#render} when a battle session is active.
+     * Renders black bars outside the 4:3 viewport area.
      */
     public void render() {
         if (!visible) return;
+        
+        // Draw black bars to cover areas outside the 4:3 viewport
+        renderBlackBars();
+        
+        // Apply viewport and render the stage
         stage.getViewport().apply();
         stage.act(Gdx.graphics.getDeltaTime());
         stage.draw();
+    }
+    
+    /**
+     * Renders black bars (pillarboxing) outside the 4:3 gameplay area.
+     * This covers any background content that might be visible.
+     */
+    private void renderBlackBars() {
+        // Get the viewport's screen coordinates
+        int screenWidth = Gdx.graphics.getWidth();
+        int screenHeight = Gdx.graphics.getHeight();
+        
+        // Get the viewport's actual rendering area
+        int viewportX = stage.getViewport().getScreenX();
+        int viewportY = stage.getViewport().getScreenY();
+        int viewportWidth = stage.getViewport().getScreenWidth();
+        int viewportHeight = stage.getViewport().getScreenHeight();
+        
+        // Enable blending for proper rendering
+        Gdx.gl.glEnable(com.badlogic.gdx.graphics.GL20.GL_BLEND);
+        Gdx.gl.glBlendFunc(com.badlogic.gdx.graphics.GL20.GL_SRC_ALPHA, com.badlogic.gdx.graphics.GL20.GL_ONE_MINUS_SRC_ALPHA);
+        
+        // Use ShapeRenderer to draw black rectangles
+        com.badlogic.gdx.graphics.glutils.ShapeRenderer shapeRenderer = new com.badlogic.gdx.graphics.glutils.ShapeRenderer();
+        shapeRenderer.begin(com.badlogic.gdx.graphics.glutils.ShapeRenderer.ShapeType.Filled);
+        shapeRenderer.setColor(0, 0, 0, 1); // Black
+        
+        // Left bar
+        if (viewportX > 0) {
+            shapeRenderer.rect(0, 0, viewportX, screenHeight);
+        }
+        
+        // Right bar
+        if (viewportX + viewportWidth < screenWidth) {
+            shapeRenderer.rect(viewportX + viewportWidth, 0, screenWidth - (viewportX + viewportWidth), screenHeight);
+        }
+        
+        // Top bar
+        if (viewportY + viewportHeight < screenHeight) {
+            shapeRenderer.rect(0, viewportY + viewportHeight, screenWidth, screenHeight - (viewportY + viewportHeight));
+        }
+        
+        // Bottom bar
+        if (viewportY > 0) {
+            shapeRenderer.rect(0, 0, screenWidth, viewportY);
+        }
+        
+        shapeRenderer.end();
+        shapeRenderer.dispose();
     }
 
     /** Resize the Stage viewport â€” call from {@code Screen.resize()}. */
@@ -726,72 +834,60 @@ public class BattleHud implements Disposable {
         stage.addActor(root);
     }
 
-    /** Rebuilds cell sizing/padding using viewport-relative values. */
+    /** 
+     * Rebuilds cell sizing/padding using FIXED values for consistent UI sizing.
+     * No longer scales based on window size - uses fixed virtual pixel dimensions.
+     */
     private void applyResponsiveLayout() {
         if (root == null || playerHpTable == null || bossHpTable == null) return;
 
-        float worldW = stage.getViewport().getWorldWidth();
-        float worldH = stage.getViewport().getWorldHeight();
-
-        float buttonSize = MathUtils.clamp(Math.min(worldW * 0.09f, worldH * 0.16f), 48f, 96f);
-        float buttonGap = MathUtils.clamp(buttonSize * 0.35f, 10f, 36f);
-        float bottomPad = MathUtils.clamp(worldH * 0.04f, 16f, 48f);
-        float labelPadTop = MathUtils.clamp(worldH * 0.008f, 4f, 10f);
-
-        float hpBarWidth = MathUtils.clamp(worldW * 0.22f, 140f, 340f);
-        float hpBarHeight = MathUtils.clamp(worldH * 0.03f, 14f, 28f);
-        float hpTopPad = MathUtils.clamp(worldH * 0.015f, 8f, 20f);
-        float hpSidePad = MathUtils.clamp(worldW * 0.012f, 10f, 24f);
-
+        // Use fixed sizes from constants - no more percentage-based scaling
         playerHpTable.clearChildren();
         playerHpTable.add(playerNameLabel).left().padBottom(2f);
         playerHpTable.row();
-        playerHpTable.add(playerHpBar).width(hpBarWidth).height(hpBarHeight).left();
+        playerHpTable.add(playerHpBar).width(HP_BAR_WIDTH).height(HP_BAR_HEIGHT).left();
         playerHpTable.row();
         playerHpTable.add(playerHpLabel).left().padTop(2f);
 
         bossHpTable.clearChildren();
         bossHpTable.add(bossNameLabel).right().padBottom(2f);
         bossHpTable.row();
-        bossHpTable.add(bossHpBar).width(hpBarWidth).height(hpBarHeight).right();
+        bossHpTable.add(bossHpBar).width(HP_BAR_WIDTH).height(HP_BAR_HEIGHT).right();
         bossHpTable.row();
         bossHpTable.add(bossHpLabel).right().padTop(2f);
 
         playerHpCorner.clearChildren();
-        playerHpCorner.top().left().pad(hpTopPad, hpSidePad, 0f, 0f);
+        playerHpCorner.top().left().pad(HP_TOP_PAD, HP_SIDE_PAD, 0f, 0f);
         playerHpCorner.add(playerHpTable).left();
 
         bossHpCorner.clearChildren();
-        bossHpCorner.top().right().pad(hpTopPad, 0f, 0f, hpSidePad);
+        bossHpCorner.top().right().pad(HP_TOP_PAD, 0f, 0f, HP_SIDE_PAD);
         bossHpCorner.add(bossHpTable).right();
 
         root.clearChildren();
-        root.bottom().padBottom(bottomPad);
-        root.add(attackBtn).size(buttonSize, buttonSize).padRight(buttonGap);
-        root.add(defendBtn).size(buttonSize, buttonSize).padRight(buttonGap);
-        root.add(specialBtn).size(buttonSize, buttonSize).padRight(buttonGap);
-        root.add(itemBtn).size(buttonSize, buttonSize);
-        root.row().padTop(labelPadTop);
-        root.add(attackLbl).center().padRight(buttonGap);
-        root.add(defendLbl).center().padRight(buttonGap);
-        root.add(specialLbl).center().padRight(buttonGap);
+        root.bottom().padBottom(BOTTOM_PAD);
+        root.add(attackBtn).size(BUTTON_SIZE, BUTTON_SIZE).padRight(BUTTON_GAP);
+        root.add(defendBtn).size(BUTTON_SIZE, BUTTON_SIZE).padRight(BUTTON_GAP);
+        root.add(specialBtn).size(BUTTON_SIZE, BUTTON_SIZE).padRight(BUTTON_GAP);
+        root.add(itemBtn).size(BUTTON_SIZE, BUTTON_SIZE);
+        root.row().padTop(LABEL_PAD_TOP);
+        root.add(attackLbl).center().padRight(BUTTON_GAP);
+        root.add(defendLbl).center().padRight(BUTTON_GAP);
+        root.add(specialLbl).center().padRight(BUTTON_GAP);
         root.add(itemLbl).center();
 
-        // Corner buttons sizing and positioning
-        float cornerButtonSize = MathUtils.clamp(Math.min(worldW * 0.08f, worldH * 0.14f), 48f, 80f);
-        float cornerPad = MathUtils.clamp(Math.min(worldW * 0.015f, worldH * 0.025f), 16f, 24f);
-
+        // Corner buttons - fixed sizes
         if (inventoryCorner != null && inventoryBtn != null) {
             inventoryCorner.clearChildren();
-            inventoryCorner.bottom().left().pad(0f, cornerPad, cornerPad, 0f);
-            inventoryCorner.add(inventoryBtn).size(cornerButtonSize, cornerButtonSize);
+            inventoryCorner.bottom().left().pad(0f, CORNER_PAD, CORNER_PAD, 0f);
+            inventoryCorner.add(inventoryBtn).size(CORNER_BUTTON_SIZE, CORNER_BUTTON_SIZE);
             inventoryCorner.invalidateHierarchy();
         }
 
         if (fleeCorner != null && fleeBtn != null) {
             fleeCorner.clearChildren();
-            fleeCorner.bottom().right().pad(0f, 0f, cornerPad, cornerPad);
-            fleeCorner.add(fleeBtn).size(cornerButtonSize, cornerButtonSize);
+            fleeCorner.bottom().right().pad(0f, 0f, CORNER_PAD, CORNER_PAD);
+            fleeCorner.add(fleeBtn).size(CORNER_BUTTON_SIZE, CORNER_BUTTON_SIZE);
             fleeCorner.invalidateHierarchy();
         }
 
@@ -831,6 +927,7 @@ public class BattleHud implements Disposable {
 
     /**
      * Loads placeholder textures and builds their Image actors (idempotent).
+     * Initial size will be set by positionPlaceholders().
      */
     private void loadPlaceholders() {
         // Load shadow texture (shared by both player and boss)
@@ -841,7 +938,7 @@ public class BattleHud implements Disposable {
         if (playerImage == null) {
             playerPlaceholderTex = new Texture(Gdx.files.internal(PLAYER_PLACEHOLDER_PATH));
             playerImage = new Image(new TextureRegionDrawable(new TextureRegion(playerPlaceholderTex)));
-            playerImage.setSize(PLAYER_PLACEHOLDER_W, PLAYER_PLACEHOLDER_H);
+            playerImage.setSize(PLAYER_SIZE, PLAYER_SIZE);
             playerImage.setName("player_placeholder");
         }
 
@@ -864,7 +961,7 @@ public class BattleHud implements Disposable {
             // bossRegion.flip(true, false); 
 
             bossImage = new Image(new TextureRegionDrawable(bossRegion));
-            bossImage.setSize(BOSS_PLACEHOLDER_W, BOSS_PLACEHOLDER_H);
+            bossImage.setSize(BOSS_SIZE, BOSS_SIZE);
             bossImage.setName("boss_placeholder");
         }
 
@@ -883,13 +980,14 @@ public class BattleHud implements Disposable {
     private void positionPlaceholders() {
         if (playerImage == null || bossImage == null) return;
 
-        float w = stage.getViewport().getWorldWidth();
-        float h = stage.getViewport().getWorldHeight();
+        float w = VIRTUAL_WIDTH;
+        float h = VIRTUAL_HEIGHT;
 
-    float playerW = MathUtils.clamp(Math.min(w, h) * 0.14f, 72f, 140f);
-    float playerH = playerW;
-    float bossW = MathUtils.clamp(Math.min(w, h) * 0.19f, 96f, 196f);
-    float bossH = bossW;
+        // Use fixed sizes from constants
+        float playerW = PLAYER_SIZE;
+        float playerH = PLAYER_SIZE;
+        float bossW = BOSS_SIZE;
+        float bossH = BOSS_SIZE;
 
     playerImage.setSize(playerW, playerH);
     bossImage.setSize(bossW, bossH);
@@ -1311,19 +1409,20 @@ public class BattleHud implements Disposable {
     /**
      * Positions and sizes the Clawkin container on the left side of the screen.
      * Ensures icons are properly centered within container slots.
-     * Uses precise slot-based positioning for perfect alignment.
+     * Uses FIXED sizes for consistent appearance.
      */
     private void positionClawkinContainer() {
         if (clawkinWrapper == null || clawkinStack == null || clawkinIconTable == null) {
             return;
         }
 
-        float w = stage.getViewport().getWorldWidth();
-        float h = stage.getViewport().getWorldHeight();
+        // Use fixed virtual dimensions
+        float w = VIRTUAL_WIDTH;
+        float h = VIRTUAL_HEIGHT;
 
-        // Container sizing (responsive)
-        float containerW = MathUtils.clamp(w * 0.08f, 60f, 100f);
-        float containerH = MathUtils.clamp(h * 0.4f, 150f, 300f);
+        // Use fixed container sizes from constants
+        float containerW = CONTAINER_WIDTH;
+        float containerH = CONTAINER_HEIGHT;
 
         // Update wrapper table
         clawkinWrapper.clearChildren();
@@ -1401,18 +1500,20 @@ public class BattleHud implements Disposable {
 
     /**
      * Updates the position and size of the selection highlight to match the highlighted slot.
+     * Uses FIXED sizes for consistent appearance.
      */
     private void updateSelectionHighlight() {
         if (selectionHighlight == null || clawkinWrapper == null) {
             return;
         }
 
-        float w = stage.getViewport().getWorldWidth();
-        float h = stage.getViewport().getWorldHeight();
+        // Use fixed virtual dimensions
+        float w = VIRTUAL_WIDTH;
+        float h = VIRTUAL_HEIGHT;
 
-        // Container sizing (must match positionClawkinContainer)
-        float containerW = MathUtils.clamp(w * 0.08f, 60f, 100f);
-        float containerH = MathUtils.clamp(h * 0.4f, 150f, 300f);
+        // Use fixed container sizes (must match positionClawkinContainer)
+        float containerW = CONTAINER_WIDTH;
+        float containerH = CONTAINER_HEIGHT;
 
         // Slot dimensions
         int numSlots = 3;
