@@ -499,7 +499,7 @@ public class BattleOverlay implements Disposable {
 
         battleService.submitPlayerSkill(skillSlot);
         if (battleActionSfxHandler != null) {
-            battleActionSfxHandler.playForActionResult(machine.getLastLogSpans());
+            battleActionSfxHandler.playForPlayerAction(skillSlot, machine.getLastLogSpans());
         }
         openDialogue(null, machine.getLastLog(), machine.getLastLogSpans(), DialogueFlowPhase.PLAYER_RESULT);
     }
@@ -522,6 +522,9 @@ public class BattleOverlay implements Disposable {
             if (isInteractionPressed()) {
                 // Confirmed - attempt to run
                 battleService.submitEscapeAction();
+                if (battleActionSfxHandler != null) {
+                    battleActionSfxHandler.playEscapeAction();
+                }
                 openDialogue(null, machine.getLastLog(), machine.getLastLogSpans(), DialogueFlowPhase.PLAYER_RESULT);
             } else if (Gdx.input.isKeyJustPressed(Keys.X) || Gdx.input.isKeyJustPressed(Keys.ESCAPE)) {
                 // Cancelled - return to battle
@@ -548,7 +551,7 @@ public class BattleOverlay implements Disposable {
             if (machine.canExecuteEnemyAction()) {
                 battleService.resolveEnemyTurn();
                 if (battleActionSfxHandler != null) {
-                    battleActionSfxHandler.playForActionResult(machine.getLastLogSpans());
+                    battleActionSfxHandler.playForEnemyActionResult(machine.getLastLogSpans());
                 }
                 openDialogue(null, machine.getLastLog(), machine.getLastLogSpans(), DialogueFlowPhase.ENEMY_RESULT);
                 return;
@@ -751,7 +754,7 @@ public class BattleOverlay implements Disposable {
         if (machine != null && machine.canExecuteEnemyAction()) {
             battleService.resolveEnemyTurn();
             if (battleActionSfxHandler != null) {
-                battleActionSfxHandler.playForActionResult(machine.getLastLogSpans());
+                battleActionSfxHandler.playForEnemyActionResult(machine.getLastLogSpans());
             }
             openDialogue(null, machine.getLastLog(), machine.getLastLogSpans(), DialogueFlowPhase.ENEMY_RESULT);
         }

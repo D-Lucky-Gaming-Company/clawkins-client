@@ -15,34 +15,53 @@ public class BattleActionSfxHandler {
         this.audioService = audioService;
     }
 
-    public void playForActionResult(List<BattleTextSpan> spans) {
+    public void playForPlayerAction(int skillSlot, List<BattleTextSpan> spans) {
+        if (audioService == null) {
+            return;
+        }
+        if (skillSlot == 1) {
+            audioService.playSound(SoundEffect.BATTLE_ATTACK);
+            return;
+        }
+        if (skillSlot == 2) {
+            audioService.playSound(SoundEffect.BATTLE_DEFEND);
+            return;
+        }
+        if (containsRole(spans, BattleTextRole.HEAL)) {
+            audioService.playSound(SoundEffect.BATTLE_HEAL);
+            return;
+        }
+        audioService.playSound(SoundEffect.BATTLE_SPECIAL);
+    }
+
+    public void playForEnemyActionResult(List<BattleTextSpan> spans) {
         if (audioService == null) {
             return;
         }
         if (containsRole(spans, BattleTextRole.DAMAGE)) {
-            audioService.playSound(SoundEffect.HIT);
+            audioService.playSound(SoundEffect.BATTLE_ENEMY_ACTION);
             return;
         }
         if (containsRole(spans, BattleTextRole.HEAL)) {
-            audioService.playSound(SoundEffect.CONFIRM);
+            audioService.playSound(SoundEffect.BATTLE_HEAL);
             return;
         }
         if (containsRole(spans, BattleTextRole.DEFENSE_UP)) {
-            audioService.playSound(SoundEffect.UI_HOVER);
+            audioService.playSound(SoundEffect.BATTLE_DEFEND);
             return;
         }
-        audioService.playSound(SoundEffect.UI_SELECT);
+        audioService.playSound(SoundEffect.BATTLE_ENEMY_ACTION);
     }
 
     public void playSwitchAction() {
         if (audioService != null) {
-            audioService.playSound(SoundEffect.UI_SELECT);
+            audioService.playSound(SoundEffect.BATTLE_SWITCH);
         }
     }
 
     public void playEscapeAction() {
         if (audioService != null) {
-            audioService.playSound(SoundEffect.UI_BACK);
+            audioService.playSound(SoundEffect.BATTLE_ESCAPE);
         }
     }
 
