@@ -25,6 +25,8 @@ import com.badlogic.gdx.scenes.scene2d.utils.ClickListener;
 import com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable;
 import com.badlogic.gdx.utils.viewport.FitViewport;
 
+import github.dluckycompany.clawkins.asset.MapAsset;
+import github.dluckycompany.clawkins.asset.MapAssetName;
 import github.dluckycompany.clawkins.audio.AudioService;
 import github.dluckycompany.clawkins.audio.SoundEffect;
 import github.dluckycompany.clawkins.save.SaveState;
@@ -247,8 +249,7 @@ public class SaveStateScreen implements Screen {
 
         for (int i = 0; i < saveStates.size(); i++) {
             SaveState state = saveStates.get(i);
-            String mapLabel = state.getMapKey() == null || state.getMapKey().isBlank() ? "UNKNOWN" : state.getMapKey();
-            String labelText = state.getDisplayName() + " | " + state.getCreatedAt() + " | " + mapLabel;
+            String labelText = buildSaveEntryLabel(state);
             Label label = new Label(labelText, new Label.LabelStyle(font, Color.valueOf("#C9C2B6")));
             label.setFontScale(1.05f);
             int index = i;
@@ -267,6 +268,91 @@ public class SaveStateScreen implements Screen {
         }
         updateSelectionVisuals();
         updateButtonStates();
+    }
+
+    private String buildSaveEntryLabel(SaveState state) {
+        String base = state.getDisplayName() + " | " + state.getCreatedAt();
+
+        if (mode != Mode.LOAD) {
+            return base;
+        }
+
+        String playerNameLine = buildPlayerIdentityLine(state);
+        String playerStatsLine = buildPlayerStatsLine(state);
+
+        if (playerNameLine.isEmpty() && playerStatsLine.isEmpty()) {
+            return base;
+        }
+        if (playerNameLine.isEmpty()) {
+            return base + "\n" + playerStatsLine;
+        }
+        if (playerStatsLine.isEmpty()) {
+            return base + "\n" + playerNameLine;
+        }
+        return base + "\n" + playerNameLine + "\n" + playerStatsLine;
+    }
+
+    private static String buildPlayerIdentityLine(SaveState state) {
+        if (state == null) {
+            return "";
+        }
+        String playerName = state.getPlayerName() == null ? "" : state.getPlayerName().trim();
+        String locationName = resolveMapLocationName(state.getMapKey());
+
+        if (!playerName.isEmpty() && !locationName.isEmpty()) {
+            return playerName + " | " + locationName;
+        }
+        if (!playerName.isEmpty()) {
+            return playerName;
+        }
+        return locationName;
+    }
+
+    private static String resolveMapLocationName(String mapKey) {
+        if (mapKey == null || mapKey.isBlank()) {
+            return "";
+        }
+        MapAsset mapAsset = MapAsset.fromKey(mapKey);
+        if (mapAsset == null) {
+            return "";
+        }
+        String label = MapAssetName.fromAsset(mapAsset);
+        return label == null ? "" : label;
+    }
+
+    private static String buildPlayerStatsLine(SaveState state) {
+        if (state == null || state.getParty().isEmpty()) {
+            return "";
+        }
+
+        SaveState.PartyEntry playerEntry = resolvePrimaryPlayerEntry(state);
+        if (playerEntry == null) {
+            return "";
+        }
+
+        String levelText = playerEntry.getLevel() > 0 ? "Level " + playerEntry.getLevel() : "";
+        String hpText = playerEntry.getMaxHp() > 0
+                ? "HP " + Math.max(0, playerEntry.getCurrentHp()) + "/" + playerEntry.getMaxHp()
+                : "";
+
+        if (!levelText.isEmpty() && !hpText.isEmpty()) {
+            return levelText + "  " + hpText;
+        }
+        if (!levelText.isEmpty()) {
+            return levelText;
+        }
+        return hpText;
+    }
+
+    private static SaveState.PartyEntry resolvePrimaryPlayerEntry(SaveState state) {
+        if (state == null || state.getParty().isEmpty()) {
+            return null;
+        }
+        int activeIndex = state.getActiveClawkinIndex();
+        if (activeIndex >= 0 && activeIndex < state.getParty().size()) {
+            return state.getParty().get(activeIndex);
+        }
+        return state.getParty().get(0);
     }
 
     private void setSelectedIndex(int index) {

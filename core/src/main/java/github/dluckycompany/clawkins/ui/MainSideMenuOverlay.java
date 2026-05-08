@@ -41,7 +41,6 @@ public class MainSideMenuOverlay {
         "CLAWKINS",
         "INVENTORY",
         "SETTINGS",
-        "SAVE STATE",
         "LOAD STATE",
         "EXIT GAME"
     };
@@ -223,15 +222,9 @@ public class MainSideMenuOverlay {
                 soundHelper.playSound(SoundEffect.UI_SELECT);
                 closeSidebar(false);
                 activeSubmenu = Submenu.NONE;
-                yield Action.OPEN_SAVE_STATE;
-            }
-            case 4 -> {
-                soundHelper.playSound(SoundEffect.UI_SELECT);
-                closeSidebar(false);
-                activeSubmenu = Submenu.NONE;
                 yield Action.OPEN_LOAD_STATE;
             }
-            case 5 -> {
+            case 4 -> {
                 soundHelper.playSound(SoundEffect.UI_SELECT);
                 closeSidebar(false);
                 activeSubmenu = Submenu.NONE;

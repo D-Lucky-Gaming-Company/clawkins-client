@@ -178,6 +178,8 @@ public class SaveStateManager {
         writeField(builder, "displayName", state.getDisplayName());
         writeField(builder, "createdAt", state.getCreatedAt());
         writeField(builder, "mapKey", state.getMapKey());
+        writeField(builder, "playerName", state.getPlayerName());
+        writeField(builder, "playerGender", state.getPlayerGender());
         writeField(builder, "playerX", Float.toString(state.getPlayerX()));
         writeField(builder, "playerY", Float.toString(state.getPlayerY()));
         writeField(builder, "money", Long.toString(state.getMoney()));
@@ -265,12 +267,12 @@ public class SaveStateManager {
             if (trimmed.isEmpty() || trimmed.startsWith("#")) {
                 continue;
             }
-            int idx = trimmed.indexOf('=');
+            int idx = line.indexOf('=');
             if (idx <= 0) {
                 continue;
             }
-            String key = trimmed.substring(0, idx).trim();
-            String value = trimmed.substring(idx + 1).trim();
+            String key = unescape(line.substring(0, idx).trim());
+            String value = unescape(line.substring(idx + 1));
             values.put(key, value);
         }
 
@@ -278,6 +280,8 @@ public class SaveStateManager {
         state.setDisplayName(values.getOrDefault("displayName", ""));
         state.setCreatedAt(values.getOrDefault("createdAt", ""));
         state.setMapKey(values.getOrDefault("mapKey", ""));
+        state.setPlayerName(values.getOrDefault("playerName", ""));
+        state.setPlayerGender(values.getOrDefault("playerGender", ""));
         state.setPlayerX(parseFloat(values.get("playerX"), 0f));
         state.setPlayerY(parseFloat(values.get("playerY"), 0f));
         state.setMoney(parseLong(values.get("money"), 0L));
@@ -359,7 +363,53 @@ public class SaveStateManager {
     }
 
     private static void writeField(StringBuilder builder, String key, String value) {
-        builder.append(key).append("=").append(value == null ? "" : value).append("\n");
+        builder.append(escape(key))
+                .append("=")
+                .append(escape(value == null ? "" : value))
+                .append("\n");
+    }
+
+    private static String escape(String value) {
+        if (value == null || value.isEmpty()) {
+            return "";
+        }
+        return value
+                .replace("\\", "\\\\")
+                .replace("\n", "\\n")
+                .replace("\r", "\\r");
+    }
+
+    private static String unescape(String value) {
+        if (value == null || value.isEmpty()) {
+            return "";
+        }
+        StringBuilder out = new StringBuilder(value.length());
+        boolean escaping = false;
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (escaping) {
+                switch (c) {
+                    case 'n' -> out.append('\n');
+                    case 'r' -> out.append('\r');
+                    case '\\' -> out.append('\\');
+                    default -> {
+                        out.append('\\');
+                        out.append(c);
+                    }
+                }
+                escaping = false;
+                continue;
+            }
+            if (c == '\\') {
+                escaping = true;
+                continue;
+            }
+            out.append(c);
+        }
+        if (escaping) {
+            out.append('\\');
+        }
+        return out.toString();
     }
 
     private static int parseInt(String value, int fallback) {
