@@ -13,6 +13,11 @@ import com.badlogic.gdx.maps.MapObject;
 import com.badlogic.gdx.maps.MapProperties;
 import com.badlogic.gdx.maps.tiled.TiledMapTile;
 import com.badlogic.gdx.maps.tiled.objects.TiledMapTileMapObject;
+import com.badlogic.gdx.maps.objects.CircleMapObject;
+import com.badlogic.gdx.maps.objects.EllipseMapObject;
+import com.badlogic.gdx.maps.objects.PolygonMapObject;
+import com.badlogic.gdx.maps.objects.RectangleMapObject;
+import com.badlogic.gdx.math.Rectangle;
 import com.badlogic.gdx.math.Vector2;
 
 import github.dluckycompany.clawkins.Main;
@@ -27,6 +32,7 @@ import github.dluckycompany.clawkins.component.Interactible;
 import github.dluckycompany.clawkins.component.Move;
 import github.dluckycompany.clawkins.component.Player;
 import github.dluckycompany.clawkins.component.PlayerProfile;
+import github.dluckycompany.clawkins.component.Prop;
 import github.dluckycompany.clawkins.component.Tiled;
 import github.dluckycompany.clawkins.component.Transform;
 import github.dluckycompany.clawkins.encounter.EncounterTrigger;
@@ -71,6 +77,35 @@ public class TiledObjectConfigurator {
     public void onLoadObject(MapObject mapObject) {
         if (mapObject instanceof TiledMapTileMapObject tileMapObject) {
             onLoadObject(tileMapObject);
+            return;
+        }
+        onLoadShapeObject(mapObject);
+    }
+
+    private void onLoadShapeObject(MapObject mapObject) {
+        if (mapObject == null) {
+            return;
+        }
+
+        ObjectType objectType = readObjectType(mapObject);
+        if (objectType != ObjectType.INTERACTIBLE && objectType != ObjectType.MERCHANT) {
+            return;
+        }
+
+        Rectangle bounds = getObjectBounds(mapObject);
+        if (bounds == null) {
+            return;
+        }
+
+        Entity entity = engine.createEntity();
+        addTransform(bounds, entity);
+        entity.add(new Tiled(mapObject));
+
+        boolean shouldAdd = configureShapeByType(mapObject, objectType, entity);
+        if (shouldAdd) {
+            engine.addEntity(entity);
+            Gdx.app.log(TAG, "✓ Spawned shape entity: name=" + mapObject.getName()
+                    + " bounds=" + bounds);
         }
     }
 
@@ -107,6 +142,14 @@ public class TiledObjectConfigurator {
         float rotation = tileMapObject.getRotation();
 
         entity.add(new Transform(position, 1, size, scaling, rotation));
+    }
+
+    private void addTransform(Rectangle objectBounds, Entity entity) {
+        float x = objectBounds.x * Main.UNIT_SCALE;
+        float y = objectBounds.y * Main.UNIT_SCALE;
+        float w = objectBounds.width * Main.UNIT_SCALE;
+        float h = objectBounds.height * Main.UNIT_SCALE;
+        entity.add(new Transform(new Vector2(x, y), 1, new Vector2(w, h), new Vector2(1f, 1f), 0f));
     }
 
     private boolean configureByType(TiledMapTileMapObject tileMapObject, Entity entity) {
@@ -228,6 +271,7 @@ public class TiledObjectConfigurator {
                 }
                 String dialogueDirectory = getStringProperty(tileMapObject, "DialogueDirectory", "...");
                 boolean hasCollision = getBooleanProperty(tileMapObject, "hasCollision", true);
+                boolean isTrippable = getBooleanProperty(tileMapObject, "isTrippable", false);
                 String posRaw = getStringProperty(tileMapObject, "DialoguePosition", "BOTTOM");
                 Interactible.DialoguePosition dialoguePosition = parseDialoguePosition(posRaw);
 
@@ -236,7 +280,9 @@ public class TiledObjectConfigurator {
                     objectId,
                         dialogueDirectory,
                         hasCollision,
-                        dialoguePosition
+                        dialoguePosition,
+                        false,
+                        isTrippable
                 ));
                 Gdx.app.debug(TAG, "Configured as INTERACTIBLE: " + objectName + " collision=" + hasCollision);
             }
@@ -249,6 +295,7 @@ public class TiledObjectConfigurator {
                 }
                 String dialogueDirectory = getStringProperty(tileMapObject, "DialogueDirectory", "Welcome!");
                 boolean hasCollision = getBooleanProperty(tileMapObject, "hasCollision", true);
+                boolean isTrippable = getBooleanProperty(tileMapObject, "isTrippable", false);
                 String posRaw = getStringProperty(tileMapObject, "DialoguePosition", "BOTTOM");
                 Interactible.DialoguePosition dialoguePosition = parseDialoguePosition(posRaw);
 
@@ -258,7 +305,8 @@ public class TiledObjectConfigurator {
                         dialogueDirectory,
                         hasCollision,
                         dialoguePosition,
-                        true  // isMerchant = true
+                        true,  // isMerchant = true
+                        isTrippable
                 ));
                 Gdx.app.debug(TAG, "Configured as MERCHANT: " + objectName + " collision=" + hasCollision);
             }
@@ -267,11 +315,77 @@ public class TiledObjectConfigurator {
                 Gdx.app.debug(TAG, "Configured as BARRIER (shape-based map collision)");
             }
             case PROP -> {
-                // Reserved type for future use, intentionally no behavior for now.
+                String objectIdFallback = buildPropObjectIdFallback(tileMapObject);
+                String objectId = getStringProperty(tileMapObject, "ObjectId", objectIdFallback);
+                if (objectId == null || objectId.isBlank()) {
+                    objectId = objectIdFallback;
+                }
+                applyPropFlipFromTileObject(tileMapObject, entity);
+                entity.add(new Prop(objectId));
+                Gdx.app.debug(TAG, "Configured as PROP (non-interactible cosmetic object)");
             }
             default -> Gdx.app.debug(TAG, "Unknown ObjectType for object name: " + tileMapObject.getName());
         }
         return true;
+    }
+
+    private static void applyPropFlipFromTileObject(TiledMapTileMapObject tileMapObject, Entity entity) {
+        if (tileMapObject == null || entity == null) {
+            return;
+        }
+        Transform transform = Transform.MAPPER.get(entity);
+        if (transform == null) {
+            return;
+        }
+
+        Vector2 scaling = transform.getScaling();
+        float scaleX = Math.max(0.0001f, Math.abs(scaling.x));
+        float scaleY = Math.max(0.0001f, Math.abs(scaling.y));
+
+        scaling.x = tileMapObject.isFlipHorizontally() ? -scaleX : scaleX;
+        scaling.y = tileMapObject.isFlipVertically() ? -scaleY : scaleY;
+    }
+
+    private boolean configureShapeByType(MapObject mapObject, ObjectType objectType, Entity entity) {
+        switch (objectType) {
+            case INTERACTIBLE -> {
+                addInteractibleComponent(mapObject, entity, false);
+                Gdx.app.debug(TAG, "Configured shape as INTERACTIBLE: " + mapObject.getName());
+                return true;
+            }
+            case MERCHANT -> {
+                addInteractibleComponent(mapObject, entity, true);
+                Gdx.app.debug(TAG, "Configured shape as MERCHANT: " + mapObject.getName());
+                return true;
+            }
+            default -> {
+                return false;
+            }
+        }
+    }
+
+    private void addInteractibleComponent(MapObject mapObject, Entity entity, boolean isMerchant) {
+        String objectName = getStringProperty(mapObject, "ObjectName", isMerchant ? "Merchant" : "Object");
+        String objectIdFallback = buildInteractibleObjectIdFallback(mapObject, objectName);
+        String objectId = getStringProperty(mapObject, "ObjectId", objectIdFallback);
+        if (objectId == null || objectId.isBlank()) {
+            objectId = objectIdFallback;
+        }
+        String dialogueDirectory = getStringProperty(mapObject, "DialogueDirectory", isMerchant ? "Welcome!" : "...");
+        boolean hasCollision = getBooleanProperty(mapObject, "hasCollision", true);
+        boolean isTrippable = getBooleanProperty(mapObject, "isTrippable", false);
+        String posRaw = getStringProperty(mapObject, "DialoguePosition", "BOTTOM");
+        Interactible.DialoguePosition dialoguePosition = parseDialoguePosition(posRaw);
+
+        entity.add(new Interactible(
+                objectName,
+                objectId,
+                dialogueDirectory,
+                hasCollision,
+                dialoguePosition,
+                isMerchant,
+                isTrippable
+        ));
     }
 
     private static Interactible.DialoguePosition parseDialoguePosition(String raw) {
@@ -299,16 +413,24 @@ public class TiledObjectConfigurator {
         };
     }
 
-    private static String buildInteractibleObjectIdFallback(TiledMapTileMapObject object, String objectName) {
+    private static String buildInteractibleObjectIdFallback(MapObject object, String objectName) {
         String normalizedName = (objectName == null || objectName.isBlank())
                 ? "object"
                 : objectName.trim().toLowerCase().replaceAll("\\s+", "_");
-        int x = Math.round(object.getX());
-        int y = Math.round(object.getY());
+        Rectangle bounds = getObjectBounds(object);
+        int x = Math.round(bounds != null ? bounds.x : 0f);
+        int y = Math.round(bounds != null ? bounds.y : 0f);
         return normalizedName + "_" + x + "_" + y;
     }
 
-    private static ObjectType readObjectType(TiledMapTileMapObject object) {
+    private static String buildPropObjectIdFallback(MapObject object) {
+        Rectangle bounds = getObjectBounds(object);
+        int x = Math.round(bounds != null ? bounds.x : 0f);
+        int y = Math.round(bounds != null ? bounds.y : 0f);
+        return "prop_" + x + "_" + y;
+    }
+
+    private static ObjectType readObjectType(MapObject object) {
         String rawType = getStringProperty(object, TYPE_KEY, "");
         if (!rawType.isBlank()) {
             try {
@@ -343,11 +465,12 @@ public class TiledObjectConfigurator {
             case "INTERACTIBLE" -> ObjectType.INTERACTIBLE;
             case "MERCHANT" -> ObjectType.MERCHANT;
             case "BARRIER" -> ObjectType.BARRIER;
+            case "PROP" -> ObjectType.PROP;
             default -> ObjectType.UNDEFINED;
         };
     }
 
-    private static String getStringProperty(TiledMapTileMapObject object, String key, String defaultValue) {
+    private static String getStringProperty(MapObject object, String key, String defaultValue) {
         Object value = getRawProperty(object, key);
         if (value == null) {
             return defaultValue;
@@ -358,7 +481,7 @@ public class TiledObjectConfigurator {
         return String.valueOf(value);
     }
 
-    private static int getIntProperty(TiledMapTileMapObject object, String key, int defaultValue) {
+    private static int getIntProperty(MapObject object, String key, int defaultValue) {
         Object value = getRawProperty(object, key);
         if (value == null) {
             return defaultValue;
@@ -379,7 +502,7 @@ public class TiledObjectConfigurator {
         return defaultValue;
     }
 
-    private static float getFloatProperty(TiledMapTileMapObject object, String key, float defaultValue) {
+    private static float getFloatProperty(MapObject object, String key, float defaultValue) {
         Object value = getRawProperty(object, key);
         if (value == null) {
             return defaultValue;
@@ -403,7 +526,7 @@ public class TiledObjectConfigurator {
         return defaultValue;
     }
 
-    private static boolean getBooleanProperty(TiledMapTileMapObject object, String key, boolean defaultValue) {
+    private static boolean getBooleanProperty(MapObject object, String key, boolean defaultValue) {
         Object value = getRawProperty(object, key);
         if (value == null) {
             return defaultValue;
@@ -411,14 +534,20 @@ public class TiledObjectConfigurator {
         if (value instanceof Boolean b) {
             return b;
         }
+        if (value instanceof Number n) {
+            return n.intValue() != 0;
+        }
         if (value instanceof String s) {
             if (s.equalsIgnoreCase("true")) return true;
             if (s.equalsIgnoreCase("false")) return false;
+            String trimmed = s.trim();
+            if (trimmed.equals("1")) return true;
+            if (trimmed.equals("0")) return false;
         }
         return defaultValue;
     }
 
-    private static Object getRawProperty(TiledMapTileMapObject object, String key) {
+    private static Object getRawProperty(MapObject object, String key) {
         if (object == null || key == null) {
             return null;
         }
@@ -449,6 +578,46 @@ public class TiledObjectConfigurator {
             }
             default -> {
             }
+        }
+        return null;
+    }
+
+    private static Rectangle getObjectBounds(MapObject mapObject) {
+        if (mapObject instanceof RectangleMapObject rectangleMapObject) {
+            return rectangleMapObject.getRectangle();
+        }
+        if (mapObject instanceof PolygonMapObject polygonMapObject) {
+            return polygonMapObject.getPolygon().getBoundingRectangle();
+        }
+        if (mapObject instanceof CircleMapObject circleMapObject) {
+            float radius = circleMapObject.getCircle().radius;
+            return new Rectangle(
+                    circleMapObject.getCircle().x - radius,
+                    circleMapObject.getCircle().y - radius,
+                    radius * 2f,
+                    radius * 2f
+            );
+        }
+        if (mapObject instanceof EllipseMapObject ellipseMapObject) {
+            return new Rectangle(
+                    ellipseMapObject.getEllipse().x,
+                    ellipseMapObject.getEllipse().y,
+                    ellipseMapObject.getEllipse().width,
+                    ellipseMapObject.getEllipse().height
+            );
+        }
+        if (mapObject instanceof TiledMapTileMapObject tileMapObject) {
+            TiledMapTile tile = tileMapObject.getTile();
+            TextureRegion region = tile == null ? null : tile.getTextureRegion();
+            if (region == null) {
+                return null;
+            }
+            return new Rectangle(
+                    tileMapObject.getX(),
+                    tileMapObject.getY(),
+                    region.getRegionWidth(),
+                    region.getRegionHeight()
+            );
         }
         return null;
     }
