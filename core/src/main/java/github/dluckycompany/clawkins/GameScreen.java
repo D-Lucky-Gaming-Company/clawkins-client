@@ -155,10 +155,13 @@ public class GameScreen extends ScreenAdapter {
     private static final float AREA_TITLE_FADE_OUT_SECONDS = 2f;
     private static final float END_ROAD_FORCE_MOVE_DURATION_SECONDS = 1f;
     private static final float BOSS_DECLINE_FORCE_MOVE_DURATION_SECONDS = 1f;
-    private static final String EVENT_BOSS_BERT_JR = "boss_bert_jr";
-    private static final String EVENT_BOSS_BERT_JR_DEFEATED = "boss_bert_jr_defeated";
-    private static final String ENCOUNTER_BERT_JR_ID = "bert_jr_tutorial_boss";
-    private static final String TRIGGER_BOSS_BERT_JR_ID = "trigger_boss01";
+    private static final String EVENT_BOSS_0 = "boss_0_event";
+    private static final String EVENT_BOSS_0_DEFEATED = "boss_0_defeated";
+    private static final String ENCOUNTER_BERT_JR_ID = "boss_0_encounter";
+    // Placeholder IDs for upcoming main bosses.
+    private static final String ENCOUNTER_SPARTACUS_ID = "boss_1_encounter";
+    private static final String ENCOUNTER_CERBERUS_ID = "boss_2_encounter";
+    private static final String TRIGGER_BOSS_BERT_JR_ID = "trigger_boss0";
     private static final String PROP_BERT_JR_OBJECT_ID = "bertjr_prop";
     private static final float BERT_JR_PROP_INITIAL_X_OFFSET = 6f;
     private static final float BERT_JR_PROP_WALK_IN_SPEED = 1.2f;
@@ -479,21 +482,21 @@ public class GameScreen extends ScreenAdapter {
                 audioService.playMusic(MusicTrack.BOSS_BERTJR_DIA_FIRST_ENCOUNTER, false);
                 bertJrFirstEncounterMusicStarted = true;
             }
-            return !playerProgress.isEventAccomplished(EVENT_BOSS_BERT_JR_DEFEATED);
+            return !playerProgress.isEventAccomplished(EVENT_BOSS_0_DEFEATED);
         });
         interactionSystem.registerSpecialInteraction("end_road", context -> {
             startEndRoadForcedMove(context.playerEntity());
         });
         interactionSystem.registerSpecialInteraction(TRIGGER_BOSS_BERT_JR_ID, context -> {
-            if (battleService.hasBattleSession() || playerProgress.isEventAccomplished(EVENT_BOSS_BERT_JR_DEFEATED)) {
+            if (battleService.hasBattleSession() || playerProgress.isEventAccomplished(EVENT_BOSS_0_DEFEATED)) {
                 return;
             }
-            playerProgress.incrementAttempts(EVENT_BOSS_BERT_JR);
+            playerProgress.incrementAttempts(EVENT_BOSS_0);
 
             promptBossFightChoice(
                     "Bert Jr., The House Bandit",
                     () -> {
-                        playerProgress.incrementAccepted(EVENT_BOSS_BERT_JR);
+                        playerProgress.incrementAccepted(EVENT_BOSS_0);
                         runBossPreBattleMusicHook(ENCOUNTER_BERT_JR_ID);
                         encounterEventBus.publish(new EncounterEvent(
                                 EncounterEventType.START_ENCOUNTER,
@@ -509,7 +512,7 @@ public class GameScreen extends ScreenAdapter {
                         ));
                     },
                     () -> {
-                        playerProgress.incrementDeclined(EVENT_BOSS_BERT_JR);
+                        playerProgress.incrementDeclined(EVENT_BOSS_0);
                         if (context.interactionCount() == 1) {
                             audioService.playCurrentMapMusic();
                         }
@@ -1124,15 +1127,15 @@ public class GameScreen extends ScreenAdapter {
                 audioService.onEvent(AudioEventType.BATTLE_VICTORY);
                 runBossPostBattleMusicHook(encounterId, true);
                 if (ENCOUNTER_BERT_JR_ID.equals(encounterId)) {
-                    playerProgress.incrementWins(EVENT_BOSS_BERT_JR);
-                    playerProgress.markEventAccomplished(EVENT_BOSS_BERT_JR_DEFEATED);
+                    playerProgress.incrementWins(EVENT_BOSS_0);
+                    playerProgress.markEventAccomplished(EVENT_BOSS_0_DEFEATED);
                     hideBertJrProp();
                 }
             } else if (endPhase == BattlePhase.DEFEAT) {
                 audioService.onEvent(AudioEventType.BATTLE_DEFEAT);
                 runBossPostBattleMusicHook(encounterId, false);
                 if (ENCOUNTER_BERT_JR_ID.equals(encounterId)) {
-                    playerProgress.incrementLosses(EVENT_BOSS_BERT_JR);
+                    playerProgress.incrementLosses(EVENT_BOSS_0);
                 }
             }
         }
@@ -2129,14 +2132,14 @@ public class GameScreen extends ScreenAdapter {
         bertJrPropReachedTarget = false;
         bertJrPreDialogueSequenceActive = false;
         bertJrPropTargetPosition.setZero();
-        int bertJrAttempts = playerProgress.getEventStats(EVENT_BOSS_BERT_JR).getAttemptCount();
+        int bertJrAttempts = playerProgress.getEventStats(EVENT_BOSS_0).getAttemptCount();
         bertJrFirstEncounterMusicStarted = bertJrAttempts > 0;
 
         if (bertJrPropEntity == null) {
             return;
         }
 
-        if (playerProgress.isEventAccomplished(EVENT_BOSS_BERT_JR_DEFEATED)) {
+        if (playerProgress.isEventAccomplished(EVENT_BOSS_0_DEFEATED)) {
             hideBertJrProp();
             return;
         }
@@ -2158,7 +2161,7 @@ public class GameScreen extends ScreenAdapter {
     }
 
     private void startBertJrPropEntranceIfNeeded(int interactionCount) {
-        if (interactionCount != 1 || playerProgress.isEventAccomplished(EVENT_BOSS_BERT_JR_DEFEATED)) {
+        if (interactionCount != 1 || playerProgress.isEventAccomplished(EVENT_BOSS_0_DEFEATED)) {
             return;
         }
         if (bertJrPropEntity == null) {

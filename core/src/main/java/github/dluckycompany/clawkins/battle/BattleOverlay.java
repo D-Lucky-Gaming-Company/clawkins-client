@@ -539,7 +539,10 @@ public class BattleOverlay implements Disposable {
             if (isInteractionPressed()) {
                 // Confirmed - switch Clawkin
                 performClawkinSwitch(battleService);
-                resetDialogueFlow();
+                // Keep any follow-up dialogue (e.g. enemy action) opened by the switch flow.
+                if (dialogueFlowPhase == DialogueFlowPhase.SWITCH_CONFIRMATION) {
+                    resetDialogueFlow();
+                }
             } else if (Gdx.input.isKeyJustPressed(Keys.X) || Gdx.input.isKeyJustPressed(Keys.ESCAPE)) {
                 // Cancelled - return to battle
                 resetDialogueFlow();
