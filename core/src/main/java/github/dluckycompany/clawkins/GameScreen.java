@@ -162,7 +162,7 @@ public class GameScreen extends ScreenAdapter {
     // Placeholder IDs for upcoming main bosses.
     private static final String ENCOUNTER_SPARTACUS_ID = "boss_1_encounter";
     private static final String ENCOUNTER_CERBERUS_ID = "boss_2_encounter";
-    private static final String TRIGGER_BOSS_BERT_JR_ID = "trigger_boss0";
+    private static final String TRIGGER_BOSS_BERT_JR_ID = "trigger_boss_0";
     private static final String END_ROAD_OBJECT_ID = "end_road";
     private static final String MANSION_PATH_BLOCK_OBJECT_ID = "mansion_path_block";
     private static final String PROP_BERT_JR_OBJECT_ID = "bertjr_prop";
@@ -250,6 +250,7 @@ public class GameScreen extends ScreenAdapter {
     // Cheat console system for developer debugging
     private github.dluckycompany.clawkins.debug.CheatCodeManager cheatCodeManager;
     private github.dluckycompany.clawkins.debug.CheatConsoleOverlay cheatConsoleOverlay;
+    private boolean debugWorldOverlayEnabled;
     
     // Virtual UI resolution (constant, independent of physical screen)
     private static final float VIRTUAL_UI_WIDTH = 800f;
@@ -357,6 +358,7 @@ public class GameScreen extends ScreenAdapter {
         // Initialize cheat console system
         this.cheatCodeManager = new github.dluckycompany.clawkins.debug.CheatCodeManager(playerBattleState);
         this.cheatConsoleOverlay = new github.dluckycompany.clawkins.debug.CheatConsoleOverlay(cheatConsoleStage, cheatCodeManager, uiFont, battleOverlay.getSkin());
+        this.debugWorldOverlayEnabled = false;
         
         // Set up callback to update HUD when money changes via cheats
         this.cheatCodeManager.setOnMoneyChanged(() -> {
@@ -633,6 +635,14 @@ public class GameScreen extends ScreenAdapter {
         // Handle F12 cheat console toggle (before other input processing)
         if (Gdx.input.isKeyJustPressed(Input.Keys.F12)) {
             cheatConsoleOverlay.toggle();
+        }
+        if (Gdx.input.isKeyJustPressed(Input.Keys.F11)) {
+            debugWorldOverlayEnabled = !debugWorldOverlayEnabled;
+            RenderSystem renderSystem = engine.getSystem(RenderSystem.class);
+            if (renderSystem != null) {
+                renderSystem.setDebugRenderingEnabled(debugWorldOverlayEnabled);
+            }
+            Gdx.app.log("GameScreen", "World debug overlay: " + (debugWorldOverlayEnabled ? "ON" : "OFF"));
         }
         
         // Handle cheat console input when open
