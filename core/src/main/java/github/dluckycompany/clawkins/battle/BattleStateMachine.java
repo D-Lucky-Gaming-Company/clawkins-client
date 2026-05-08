@@ -11,6 +11,15 @@ import java.util.concurrent.ThreadLocalRandom;
  */
 public class BattleStateMachine {
     private static final String TAG = BattleStateMachine.class.getSimpleName();
+
+    private enum EnemyAiTier {
+        MINOR,
+        BOSS_1,
+        BOSS_2,
+        BOSS_3,
+        BOSS_4
+    }
+
     private BattlePhase phase = BattlePhase.INIT;
     private BattleContext context;
     private String lastLog = "";
@@ -181,7 +190,7 @@ public class BattleStateMachine {
                 return;
             }
 
-            BattleSkill enemySkill = randomEnemySkill();
+            BattleSkill enemySkill = chooseEnemySkill(enemy, player);
             String enemySkillName = enemySkill != null ? enemySkill.getName() : "Attack";
             String enemyName = enemyLogName(enemy);
             String playerName = allyLogName(player);
@@ -451,6 +460,276 @@ public class BattleStateMachine {
             return fallback;
         }
         return id;
+    }
+
+    private BattleSkill chooseEnemySkill(BattleUnit enemy, BattleUnit player) {
+        if (context == null) {
+            return null;
+        }
+        List<BattleSkill> enemySkills = context.getEnemySkills();
+        if (enemySkills.isEmpty()) {
+            return null;
+        }
+        if (enemySkills.size() == 1 || enemy == null || player == null) {
+            return enemySkills.getFirst();
+        }
+
+        EnemyAiTier tier = resolveEnemyAiTier();
+
+        // Lower tiers stay less consistent, higher tiers act intentionally more often.
+        if (ThreadLocalRandom.current().nextDouble() > smartDecisionChance(tier)) {
+            return randomEnemySkill();
+        }
+
+        double[] scores = new double[enemySkills.size()];
+        double maxScore = Double.NEGATIVE_INFINITY;
+        int bestIndex = 0;
+        for (int i = 0; i < enemySkills.size(); i++) {
+            BattleSkill skill = enemySkills.get(i);
+            double score = scoreEnemySkill(skill, enemy, player, tier);
+            scores[i] = score;
+            if (score > maxScore) {
+                maxScore = score;
+                bestIndex = i;
+            }
+        }
+
+        if (maxScore <= 0.01d) {
+            return randomEnemySkill();
+        }
+
+        // Keep unpredictability using weighted sampling; boss tiers sample sharper toward the best option.
+        if (ThreadLocalRandom.current().nextDouble() < explorationChance(tier)) {
+            return weightedSampleByScore(enemySkills, scores, sharpness(tier));
+        }
+
+        return enemySkills.get(bestIndex);
+    }
+
+    private BattleSkill weightedSampleByScore(List<BattleSkill> skills, double[] scores, double sharpness) {
+        double sum = 0d;
+        double[] weights = new double[scores.length];
+        for (int i = 0; i < scores.length; i++) {
+            double normalized = Math.max(0.01d, scores[i]);
+            double w = Math.pow(normalized, Math.max(1d, sharpness));
+            weights[i] = w;
+            sum += w;
+        }
+
+        if (sum <= 0d) {
+            return randomEnemySkill();
+        }
+
+        double roll = ThreadLocalRandom.current().nextDouble(sum);
+        double running = 0d;
+        for (int i = 0; i < weights.length; i++) {
+            running += weights[i];
+            if (roll <= running) {
+                return skills.get(i);
+            }
+        }
+        return skills.getLast();
+    }
+
+    private double scoreEnemySkill(BattleSkill skill, BattleUnit enemy, BattleUnit player, EnemyAiTier tier) {
+        if (skill == null || enemy == null || player == null) {
+            return 0d;
+        }
+
+        BattleSkill.EffectType type = skill.getEffectType();
+        boolean healSkill = type == BattleSkill.EffectType.HEAL;
+        boolean attackBuffSkill = type == BattleSkill.EffectType.ATTACK && skill.getEffectDurationTurns() > 0;
+        boolean defenseBuffSkill = type == BattleSkill.EffectType.DEFENSE;
+        boolean directDamageSkill = !healSkill && !attackBuffSkill && !defenseBuffSkill;
+
+        double playerHpRatio = ratio(player.getHp(), player.getMaxHp());
+        double enemyHpRatio = ratio(enemy.getHp(), enemy.getMaxHp());
+        boolean playerLowHp = playerHpRatio <= 0.40d;
+        boolean playerCriticalHp = playerHpRatio <= 0.22d;
+        boolean enemyLowHp = enemyHpRatio <= 0.35d;
+        boolean enemyCriticalHp = enemyHpRatio <= 0.20d;
+
+        double playerThreat = player.getAttack() / (double) Math.max(1, enemy.getDefense());
+        boolean playerHasHighAttackPressure = playerThreat >= 1.55d;
+
+        int estimatedDamage = estimateEnemyDamage(skill, enemy, player);
+        int estimatedHeal = estimateEnemyHeal(skill, enemy, player);
+        int enemyMissingHp = Math.max(0, enemy.getMaxHp() - enemy.getHp());
+
+        double score = 0.4d;
+
+        if (directDamageSkill) {
+            double hpChunk = estimatedDamage / (double) Math.max(1, player.getMaxHp());
+            score += 3.0d + hpChunk * 8.0d;
+            if (playerLowHp) {
+                score += 2.0d + finishBias(tier);
+            }
+            if (estimatedDamage >= player.getHp()) {
+                score += 3.5d + finishBias(tier) * 1.8d;
+            }
+            if (player.getDefense() >= enemy.getAttack() && estimatedDamage < Math.max(2, player.getMaxHp() / 8)) {
+                score -= 1.0d;
+            }
+            if (enemyLowHp && !playerCriticalHp) {
+                score -= cautionBias(tier);
+            }
+        }
+
+        if (healSkill) {
+            if (enemyMissingHp <= 0) {
+                score -= 1.5d;
+            } else {
+                double healCoverage = Math.min(1.0d, estimatedHeal / (double) enemyMissingHp);
+                score += 1.5d + healCoverage * 4.5d;
+            }
+            if (enemyLowHp) {
+                score += 1.0d + cautionBias(tier) * 1.5d;
+            }
+            if (enemyCriticalHp) {
+                score += 1.5d + cautionBias(tier) * 2.0d;
+            }
+            if (playerCriticalHp && !enemyLowHp) {
+                score -= 1.2d;
+            }
+        }
+
+        if (defenseBuffSkill) {
+            score += 1.2d;
+            if (playerHasHighAttackPressure) {
+                score += 1.8d + cautionBias(tier);
+            }
+            if (enemyLowHp) {
+                score += 0.8d + cautionBias(tier);
+            }
+            if (playerCriticalHp) {
+                score -= 0.6d;
+            }
+        }
+
+        if (attackBuffSkill) {
+            score += 1.0d;
+            if (enemyHpRatio >= 0.55d) {
+                score += 0.8d;
+            }
+            if (player.getDefense() > enemy.getAttack()) {
+                score += 1.2d;
+            }
+            if (enemyLowHp) {
+                score -= 1.0d;
+            }
+        }
+
+        return Math.max(0.05d, score);
+    }
+
+    private int estimateEnemyDamage(BattleSkill skill, BattleUnit enemy, BattleUnit player) {
+        int offense = resolveMagnitude(enemy, player, skill, "attack[self]");
+        return Math.max(1, offense - player.getDefense());
+    }
+
+    private int estimateEnemyHeal(BattleSkill skill, BattleUnit enemy, BattleUnit player) {
+        return resolveMagnitude(enemy, player, skill, "defense[self]");
+    }
+
+    private EnemyAiTier resolveEnemyAiTier() {
+        if (context == null) {
+            return EnemyAiTier.MINOR;
+        }
+        String encounterId = safeLower(context.getEncounterId());
+        String encounterTableId = safeLower(context.getEncounterTableId());
+        String enemyName = safeLower(context.getEnemyDisplayName());
+        String merged = encounterId + " " + encounterTableId + " " + enemyName;
+
+        // New naming convention: boss_0_encounter (Bert Jr.), then boss_1_encounter, boss_2_encounter...
+        if (containsAny(merged, "boss_3_encounter", "boss_4", "boss4", "boss04", "final_boss", "finalboss")) {
+            return EnemyAiTier.BOSS_4;
+        }
+        if (containsAny(merged, "boss_2_encounter", "boss_3", "boss3", "boss03")) {
+            return EnemyAiTier.BOSS_3;
+        }
+        if (containsAny(merged, "boss_1_encounter", "boss_2", "boss2", "boss02")) {
+            return EnemyAiTier.BOSS_2;
+        }
+        if (containsAny(merged, "boss_0_encounter", "boss_1", "boss1", "boss01", "bert_jr")) {
+            return EnemyAiTier.BOSS_1;
+        }
+        if (merged.contains("boss")) {
+            return EnemyAiTier.BOSS_2;
+        }
+        return EnemyAiTier.MINOR;
+    }
+
+    private static String safeLower(String value) {
+        return value == null ? "" : value.toLowerCase();
+    }
+
+    private static boolean containsAny(String source, String... needles) {
+        if (source == null || source.isBlank() || needles == null || needles.length == 0) {
+            return false;
+        }
+        for (String needle : needles) {
+            if (needle != null && !needle.isBlank() && source.contains(needle)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static double ratio(int value, int max) {
+        if (max <= 0) {
+            return 0d;
+        }
+        return Math.max(0d, Math.min(1d, value / (double) max));
+    }
+
+    private static double smartDecisionChance(EnemyAiTier tier) {
+        return switch (tier) {
+            case MINOR -> 0.28d;
+            case BOSS_1 -> 0.58d;
+            case BOSS_2 -> 0.72d;
+            case BOSS_3 -> 0.84d;
+            case BOSS_4 -> 0.93d;
+        };
+    }
+
+    private static double explorationChance(EnemyAiTier tier) {
+        return switch (tier) {
+            case MINOR -> 0.72d;
+            case BOSS_1 -> 0.45d;
+            case BOSS_2 -> 0.33d;
+            case BOSS_3 -> 0.22d;
+            case BOSS_4 -> 0.14d;
+        };
+    }
+
+    private static double sharpness(EnemyAiTier tier) {
+        return switch (tier) {
+            case MINOR -> 1.0d;
+            case BOSS_1 -> 1.2d;
+            case BOSS_2 -> 1.45d;
+            case BOSS_3 -> 1.75d;
+            case BOSS_4 -> 2.1d;
+        };
+    }
+
+    private static double cautionBias(EnemyAiTier tier) {
+        return switch (tier) {
+            case MINOR -> 0.4d;
+            case BOSS_1 -> 0.9d;
+            case BOSS_2 -> 1.2d;
+            case BOSS_3 -> 1.5d;
+            case BOSS_4 -> 1.8d;
+        };
+    }
+
+    private static double finishBias(EnemyAiTier tier) {
+        return switch (tier) {
+            case MINOR -> 0.3d;
+            case BOSS_1 -> 0.7d;
+            case BOSS_2 -> 1.1d;
+            case BOSS_3 -> 1.4d;
+            case BOSS_4 -> 1.8d;
+        };
     }
 
     private BattleSkill randomEnemySkill() {
