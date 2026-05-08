@@ -162,7 +162,7 @@ public class GameScreen extends ScreenAdapter {
     // Placeholder IDs for upcoming main bosses.
     private static final String ENCOUNTER_SPARTACUS_ID = "boss_1_encounter";
     private static final String ENCOUNTER_CERBERUS_ID = "boss_2_encounter";
-    private static final String TRIGGER_BOSS_BERT_JR_ID = "trigger_boss0";
+    private static final String TRIGGER_BOSS_BERT_JR_ID = "trigger_boss_0";
     private static final String END_ROAD_OBJECT_ID = "end_road";
     private static final String MANSION_PATH_BLOCK_OBJECT_ID = "mansion_path_block";
     private static final String PROP_BERT_JR_OBJECT_ID = "bertjr_prop";
