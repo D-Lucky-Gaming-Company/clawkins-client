@@ -58,6 +58,7 @@ import github.dluckycompany.clawkins.encounter.EncounterEventBus;
 import github.dluckycompany.clawkins.encounter.EncounterEventType;
 import github.dluckycompany.clawkins.item.Item;
 import github.dluckycompany.clawkins.item.ItemFactory;
+import github.dluckycompany.clawkins.model.PlayerProfile;
 import github.dluckycompany.clawkins.progress.PlayerProgress;
 import github.dluckycompany.clawkins.save.SaveState;
 import github.dluckycompany.clawkins.system.AnimationSystem;
@@ -2263,7 +2264,7 @@ public class GameScreen extends ScreenAdapter {
      *
      * @param profile the player profile to set
      */
-    public void setPlayerProfile(github.dluckycompany.clawkins.model.PlayerProfile profile) {
+    public void setPlayerProfile(PlayerProfile profile) {
         this.playerProfile = profile;
     }
 
@@ -2272,7 +2273,7 @@ public class GameScreen extends ScreenAdapter {
      *
      * @return the player profile, or null if not set
      */
-    public github.dluckycompany.clawkins.model.PlayerProfile getPlayerProfile() {
+    public PlayerProfile getPlayerProfile() {
         return playerProfile;
     }
 }
