@@ -22,6 +22,7 @@ import github.dluckycompany.clawkins.audio.MusicTrack;
 import github.dluckycompany.clawkins.audio.SoundEffect;
 import github.dluckycompany.clawkins.save.SaveStateManager;
 import github.dluckycompany.clawkins.ui.CharacterSetupScreen;
+import github.dluckycompany.clawkins.ui.EndingCreditsScreen;
 import github.dluckycompany.clawkins.ui.MainMenuScreen;
 import github.dluckycompany.clawkins.ui.SaveStateScreen;
 
@@ -73,6 +74,7 @@ public class Main extends Game {
         audioService.registerMusic(MusicTrack.BOSS_SPARTACUS, "audio/music/BOSS/boss_spartacus.mp3");
         audioService.registerMusic(MusicTrack.BOSS_SANTIRAL, "audio/music/BOSS/boss_santiral.mp3");
         audioService.registerMusic(MusicTrack.BOSS_BERTJR_DIA_FIRST_ENCOUNTER, "audio/music/BOSS/boss_bertjr_dia/first_encounter.mp3");
+        audioService.registerMusic(MusicTrack.CREDITS, "audio/music/credits.mp3");
         audioService.registerSound(SoundEffect.CONFIRM, "audio/sfx/confirm.wav");
         audioService.registerSound(SoundEffect.CANCEL, "audio/sfx/cancel.wav");
         audioService.registerSound(SoundEffect.HIT, "audio/sfx/hit.wav");
@@ -104,6 +106,7 @@ public class Main extends Game {
         ));
         addScreen(new CharacterSetupScreen(this, batch));
         addScreen(new GameScreen(this));
+        addScreen(new EndingCreditsScreen(this));
         this.saveStateScreen = new SaveStateScreen(batch, saveStateManager, audioService);
         addScreen(saveStateScreen);
 
