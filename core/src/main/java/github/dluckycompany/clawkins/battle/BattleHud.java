@@ -222,6 +222,11 @@ public class BattleHud implements Disposable {
     private Label bossNameLabel;
     private ProgressBar bossHpBar;
     private Label bossHpLabel;
+    
+    // ─── EXP/Level UI Elements ─────────────────────────────────────────────────────────────────────
+    private Label playerLevelLabel;
+    private ProgressBar playerExpBar;
+    private Label playerExpLabel;
 
     // Reused UI actors/tables (for responsive relayout)
     private Image bg;
@@ -239,6 +244,7 @@ public class BattleHud implements Disposable {
     private Table bossHpTable;
     private Table playerHpCorner;
     private Table bossHpCorner;
+    private Table playerExpTable;
     private Table inventoryCorner;
     private Table fleeCorner;
     private Table root;
@@ -248,6 +254,12 @@ public class BattleHud implements Disposable {
     private float playerMaxHp = 100f;
     private float bossCurrentHp = 100f;
     private float bossMaxHp = 100f;
+    
+    // EXP/Level tracking
+    private int playerLevel = 1;
+    private float playerExpProgress = 0f;
+    private int playerCurrentExp = 0;
+    private int playerExpToNextLevel = 100;
 
     // Active clawkin portrait — loaded dynamically; disposed when clawkin changes
     private Texture activeClawkinTex;
@@ -785,6 +797,220 @@ public class BattleHud implements Disposable {
             }
         }
     }
+    
+    /**
+     * Refreshes EXP bar visuals based on current EXP values.
+     */
+    private void updateExpBar() {
+        if (playerExpBar != null) {
+            playerExpBar.setValue(playerExpProgress);
+        }
+        if (playerLevelLabel != null) {
+            playerLevelLabel.setText("LV " + playerLevel);
+        }
+        if (playerExpLabel != null) {
+            playerExpLabel.setText(String.format("EXP: %d / %d", playerCurrentExp, playerExpToNextLevel));
+        }
+    }
+    
+    /**
+     * Updates skill button labels with skill names, cooldown, and lock information.
+     * Call this method when skills change, cooldowns update, or level changes.
+     * 
+     * @param skillManager The SkillManager containing skill unlock state
+     * @param playerUnit The player's BattleUnit to check cooldowns
+     */
+    public void updateSkillLabels(SkillManager skillManager, BattleUnit playerUnit) {
+        if (skillManager == null) {
+            return;
+        }
+        
+        // Update slot 1 (Attack button)
+        updateSkillButton(
+            attackBtn,
+            attackLbl,
+            skillManager.getSkillSlot(0),
+            skillManager.getCurrentLevel(),
+            playerUnit,
+            "[1] "
+        );
+        
+        // Update slot 2 (Defend button)
+        updateSkillButton(
+            defendBtn,
+            defendLbl,
+            skillManager.getSkillSlot(1),
+            skillManager.getCurrentLevel(),
+            playerUnit,
+            "[2] "
+        );
+        
+        // Update slot 3 (Special button)
+        updateSkillButton(
+            specialBtn,
+            specialLbl,
+            skillManager.getSkillSlot(2),
+            skillManager.getCurrentLevel(),
+            playerUnit,
+            "[3] "
+        );
+    }
+    
+    /**
+     * Updates a single skill button with lock/unlock state.
+     */
+    private void updateSkillButton(
+        ImageButton button,
+        Label label,
+        SkillSlot slot,
+        int currentLevel,
+        BattleUnit playerUnit,
+        String prefix
+    ) {
+        if (button == null || label == null || slot == null) {
+            return;
+        }
+        
+        BattleSkill skill = slot.getSkill();
+        if (skill == null) {
+            label.setText(prefix + "Locked");
+            button.setDisabled(true);
+            button.setColor(0.3f, 0.3f, 0.3f, 1.0f); // Dark gray
+            return;
+        }
+        
+        // Check if skill is locked by level
+        if (slot.isLocked(currentLevel)) {
+            label.setText(prefix + slot.getLockDisplayText(currentLevel));
+            button.setDisabled(true);
+            button.setColor(0.5f, 0.5f, 0.5f, 1.0f); // Gray with lock indicator
+            return;
+        }
+        
+        // Check if skill is on cooldown
+        if (playerUnit != null && playerUnit.isSkillOnCooldown(skill.getName())) {
+            int cooldown = playerUnit.getSkillCooldown(skill.getName());
+            label.setText(prefix + skill.getName() + " (" + cooldown + ")");
+            button.setDisabled(true);
+            button.setColor(0.6f, 0.6f, 0.8f, 1.0f); // Blue-gray for cooldown
+            return;
+        }
+        
+        // Skill is available
+        label.setText(prefix + skill.getName());
+        button.setDisabled(false);
+        button.setColor(Color.WHITE);
+    }
+    
+    /**
+     * Updates skill button labels with skill names and cooldown information.
+     * Call this method when skills change or cooldowns update.
+     * 
+     * @param skill1 First skill (slot 1)
+     * @param skill2 Second skill (slot 2)
+     * @param skill3 Third skill (slot 3)
+     * @param playerUnit The player's BattleUnit to check cooldowns
+     * @deprecated Use updateSkillLabels(SkillManager, BattleUnit) instead
+     */
+    @Deprecated
+    public void updateSkillLabels(BattleSkill skill1, BattleSkill skill2, BattleSkill skill3, BattleUnit playerUnit) {
+        if (attackLbl != null && skill1 != null) {
+            int cooldown = playerUnit != null ? playerUnit.getSkillCooldown(skill1.getName()) : 0;
+            if (cooldown > 0) {
+                attackLbl.setText("[1] " + skill1.getName() + " (" + cooldown + " turns)");
+                attackBtn.setDisabled(true);
+                attackBtn.setColor(Color.GRAY);
+            } else {
+                attackLbl.setText("[1] " + skill1.getName());
+                attackBtn.setDisabled(false);
+                attackBtn.setColor(Color.WHITE);
+            }
+        }
+        
+        if (defendLbl != null && skill2 != null) {
+            int cooldown = playerUnit != null ? playerUnit.getSkillCooldown(skill2.getName()) : 0;
+            if (cooldown > 0) {
+                defendLbl.setText("[2] " + skill2.getName() + " (" + cooldown + " turns)");
+                defendBtn.setDisabled(true);
+                defendBtn.setColor(Color.GRAY);
+            } else {
+                defendLbl.setText("[2] " + skill2.getName());
+                defendBtn.setDisabled(false);
+                defendBtn.setColor(Color.WHITE);
+            }
+        }
+        
+        if (specialLbl != null && skill3 != null) {
+            int cooldown = playerUnit != null ? playerUnit.getSkillCooldown(skill3.getName()) : 0;
+            if (cooldown > 0) {
+                specialLbl.setText("[3] " + skill3.getName() + " (" + cooldown + " turns)");
+                specialBtn.setDisabled(true);
+                specialBtn.setColor(Color.GRAY);
+            } else {
+                specialLbl.setText("[3] " + skill3.getName());
+                specialBtn.setDisabled(false);
+                specialBtn.setColor(Color.WHITE);
+            }
+        }
+    }
+    
+    /**
+     * Updates EXP/Level display from ClawkinData.
+     * 
+     * @param clawkinData The ClawkinData to read from
+     */
+    public void updateExpFromClawkinData(github.dluckycompany.clawkins.character.ClawkinData clawkinData) {
+        if (clawkinData == null) {
+            return;
+        }
+        
+        this.playerLevel = clawkinData.getLevel();
+        this.playerExpProgress = clawkinData.getExpProgressToNextLevel();
+        this.playerCurrentExp = clawkinData.getCurrentExp() - github.dluckycompany.clawkins.character.LevelSystem.getExpRequiredForLevel(playerLevel);
+        this.playerExpToNextLevel = clawkinData.getExpToNextLevel();
+        
+        updateExpBar();
+    }
+    
+    /**
+     * Updates EXP/Level display from level only (simplified version).
+     * Shows level but EXP bar will be at 0% until full ClawkinData integration.
+     * 
+     * @param level The Clawkin's current level
+     */
+    public void updateExpFromLevel(int level) {
+        this.playerLevel = level;
+        this.playerExpProgress = 0f;
+        this.playerCurrentExp = 0;
+        this.playerExpToNextLevel = github.dluckycompany.clawkins.character.LevelSystem.getExpForNextLevel(level);
+        
+        updateExpBar();
+    }
+    
+    /**
+     * Grants EXP and updates the EXP bar display.
+     * Handles level-ups and EXP overflow correctly.
+     * 
+     * @param expAmount Amount of EXP to grant
+     * @param clawkinData The ClawkinData to update (for level-up processing)
+     * @return List of level-up results (empty if no level-ups occurred)
+     */
+    public java.util.List<github.dluckycompany.clawkins.character.LevelUpResult> grantExp(
+            int expAmount, 
+            github.dluckycompany.clawkins.character.ClawkinData clawkinData) {
+        if (clawkinData == null || expAmount <= 0) {
+            return java.util.List.of();
+        }
+        
+        // Grant EXP to ClawkinData (handles level-ups)
+        java.util.List<github.dluckycompany.clawkins.character.LevelUpResult> levelUpResults = 
+                clawkinData.grantExp(expAmount);
+        
+        // Update HUD display from ClawkinData
+        updateExpFromClawkinData(clawkinData);
+        
+        return levelUpResults;
+    }
 
     // -----------------------------------------------------------------------
     // Disposable
@@ -842,6 +1068,13 @@ public class BattleHud implements Disposable {
         bossHpBar = new ProgressBar(0f, 1f, 0.01f, false, bossHpStyle);
         bossHpBar.setValue(bossCurrentHp / bossMaxHp);
         bossHpLabel = new Label(String.format("%.0f / %.0f", bossCurrentHp, bossMaxHp), labelStyle);
+        
+        // ─── Create EXP/Level UI Elements ──────────────────────────────────────────────────────────
+        ProgressBar.ProgressBarStyle playerExpStyle = createExpBarStyle(Color.YELLOW, Color.DARK_GRAY);
+        playerLevelLabel = new Label("LV 1", labelStyle);
+        playerExpBar = new ProgressBar(0f, 1f, 0.01f, false, playerExpStyle);
+        playerExpBar.setValue(playerExpProgress);
+        playerExpLabel = new Label("EXP: 0 / 100", labelStyle);
 
         attackBtn = loadButton(button1Tex, () -> {
             setSelectedSkillIndex(0, true);
@@ -874,13 +1107,14 @@ public class BattleHud implements Disposable {
         inventoryBtn.getImage().setScaling(Scaling.fit);
         fleeBtn.getImage().setScaling(Scaling.fit);
 
-        attackLbl = new Label("[1] Attack", labelStyle);
-        defendLbl = new Label("[2] Defend", labelStyle);
-        specialLbl = new Label("[3] Special", labelStyle);
-        itemLbl = new Label("[4] Evolved", labelStyle);
+        attackLbl = new Label("[1] 0 Turns", labelStyle);
+        defendLbl = new Label("[2] 2 Turns", labelStyle);
+        specialLbl = new Label("[3] 4 Turns", labelStyle);
+        itemLbl = new Label("[4] Special Skill", labelStyle);
 
         playerHpTable = new Table();
         bossHpTable = new Table();
+        playerExpTable = new Table();
 
         playerHpCorner = new Table();
         playerHpCorner.setFillParent(true);
@@ -938,6 +1172,14 @@ public class BattleHud implements Disposable {
         playerHpTable.add(playerHpBar).width(HP_BAR_WIDTH).height(HP_BAR_HEIGHT).left();
         playerHpTable.row();
         playerHpTable.add(playerHpLabel).left().padTop(2f);
+        
+        // ─── Build EXP/Level Table ─────────────────────────────────────────────────────────────────
+        playerExpTable.clearChildren();
+        playerExpTable.add(playerLevelLabel).left().padTop(8f).padBottom(2f);
+        playerExpTable.row();
+        playerExpTable.add(playerExpBar).width(HP_BAR_WIDTH * 0.8f).height(12f).left();
+        playerExpTable.row();
+        playerExpTable.add(playerExpLabel).left().padTop(2f);
 
         bossHpTable.clearChildren();
         bossHpTable.add(bossNameLabel).right().padBottom(2f);
@@ -948,7 +1190,14 @@ public class BattleHud implements Disposable {
 
         playerHpCorner.clearChildren();
         playerHpCorner.top().left().pad(HP_TOP_PAD, HP_SIDE_PAD, 0f, 0f);
-        playerHpCorner.add(playerHpTable).left();
+        
+        // Stack HP and EXP tables vertically
+        Table playerStatsStack = new Table();
+        playerStatsStack.add(playerHpTable).left();
+        playerStatsStack.row();
+        playerStatsStack.add(playerExpTable).left();
+        
+        playerHpCorner.add(playerStatsStack).left();
 
         bossHpCorner.clearChildren();
         bossHpCorner.top().right().pad(HP_TOP_PAD, 0f, 0f, HP_SIDE_PAD);
@@ -1004,6 +1253,33 @@ public class BattleHud implements Disposable {
         fillPixmap.dispose();
 
         Pixmap bgPixmap = new Pixmap(4, 20, Pixmap.Format.RGBA8888);
+        bgPixmap.setColor(backgroundColor);
+        bgPixmap.fill();
+        Texture bgTexture = new Texture(bgPixmap);
+        bgPixmap.dispose();
+
+        // Set the drawable styles
+        style.knobBefore = new TextureRegionDrawable(new TextureRegion(fillTexture));
+        style.background = new TextureRegionDrawable(new TextureRegion(bgTexture));
+
+        return style;
+    }
+    
+    /**
+     * Creates a ProgressBar style for EXP bar with specified fill and background colors.
+     * EXP bar is visually smaller/thinner than HP bar.
+     */
+    private ProgressBar.ProgressBarStyle createExpBarStyle(Color fillColor, Color backgroundColor) {
+        ProgressBar.ProgressBarStyle style = new ProgressBar.ProgressBarStyle();
+
+        // Create colored pixmaps for fill and background (thinner than HP bar)
+        Pixmap fillPixmap = new Pixmap(4, 12, Pixmap.Format.RGBA8888);
+        fillPixmap.setColor(fillColor);
+        fillPixmap.fill();
+        Texture fillTexture = new Texture(fillPixmap);
+        fillPixmap.dispose();
+
+        Pixmap bgPixmap = new Pixmap(4, 12, Pixmap.Format.RGBA8888);
         bgPixmap.setColor(backgroundColor);
         bgPixmap.fill();
         Texture bgTexture = new Texture(bgPixmap);

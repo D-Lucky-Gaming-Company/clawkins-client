@@ -831,6 +831,18 @@ public class TiledObjectConfigurator {
                             + " (phase 2 enabled)."
             );
         }
+        
+        // If no skills were defined in the map, use SkillUnlockSystem
+        if (skills.isEmpty()) {
+            String clawkinId = getStringFromProps(clawkinProps, "id", "").trim();
+            int level = getIntFromProps(clawkinProps, "level", 5);
+            
+            if (!clawkinId.isBlank()) {
+                skills = github.dluckycompany.clawkins.character.SkillUnlockSystem.getAllSkillsUpToLevel(clawkinId, level);
+                Gdx.app.log(TAG, "No skills defined in map for " + clawkinName + ", using SkillUnlockSystem -> " + skills.size() + " skills loaded");
+            }
+        }
+        
         return skills;
     }
 

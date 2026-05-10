@@ -596,6 +596,7 @@ public class SummaryScreen implements InputProcessor {
             case HEAL -> "Status";
             case ATTACK -> "Status";
             case DEFENSE -> "Status";
+            case BLEED -> "Physical";
         };
     }
 

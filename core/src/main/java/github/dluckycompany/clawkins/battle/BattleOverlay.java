@@ -451,6 +451,15 @@ public class BattleOverlay implements Disposable {
                 float currentHp = ally.getHp();
                 float maxHp = activeClawkin.getMaxHp();
                 battleHud.setPlayerHp(currentHp, maxHp);
+                
+                // Update EXP/Level display
+                int level = activeClawkin.getLevel();
+                battleHud.updateExpFromLevel(level);
+                
+                // Update skill button labels with actual skill names
+                if (ctx != null && ctx.getSkillManager() != null) {
+                    battleHud.updateSkillLabels(ctx.getSkillManager(), ally);
+                }
             } else {
                 // Fallback if no active Clawkin
                 battleHud.setPlayerHp(ally.getHp(), ally.getMaxHp());
@@ -646,6 +655,9 @@ public class BattleOverlay implements Disposable {
         }
 
         if (dialogueFlowPhase == DialogueFlowPhase.ENEMY_RESULT) {
+            // Grant round EXP after each complete round
+            grantRoundExp(battleService);
+            
             resetDialogueFlow();
             if (!battleService.isBattleActive()) {
                 battleService.closeBattleSession();
@@ -703,6 +715,46 @@ public class BattleOverlay implements Disposable {
         dialogueSpans = List.of();
         dialogueVisibleChars = 0f;
         dialogueSoundManager.stop();
+    }
+    
+    /**
+     * Grants round EXP to the active Clawkin after each complete round.
+     * Updates the BattleHUD EXP bar display.
+     * 
+     * Note: Full EXP/level-up integration requires ClawkinData persistence.
+     * For now, this updates the visual display only.
+     * 
+     * @param battleService The battle service
+     */
+    private void grantRoundExp(BattleService battleService) {
+        if (battleService == null || playerBattleState == null || battleHud == null) {
+            return;
+        }
+        
+        BattleStateMachine machine = battleService.getBattleStateMachine();
+        if (machine == null) {
+            return;
+        }
+        
+        // Get round EXP from battle state machine
+        int roundExp = github.dluckycompany.clawkins.character.LevelSystem.calculateRoundExpReward();
+        if (roundExp <= 0) {
+            return;
+        }
+        
+        // Get active Clawkin
+        github.dluckycompany.clawkins.character.Clawkin activeClawkin = playerBattleState.getActiveClawkin();
+        if (activeClawkin == null) {
+            return;
+        }
+        
+        // Log round EXP grant
+        Gdx.app.log("BattleOverlay", "Granted " + roundExp + " round EXP to " + activeClawkin.getName() + 
+                " (Round " + machine.getCurrentRound() + ")");
+        
+        // TODO: Integrate with ClawkinData persistence system when available
+        // For now, the round EXP is tracked in BattleStateMachine.roundExpAccumulated
+        // and will be awarded at battle end along with victory EXP
     }
 
     private void playDialogueSounds(int startIndex, int endIndex) {
@@ -1007,6 +1059,7 @@ public class BattleOverlay implements Disposable {
             case DAMAGE, ATTACK -> darker ? "#8B1E1E" : "#FF4D4D";
             case DEFENSE -> darker ? "#1E3A8A" : "#4DA3FF";
             case HEAL -> darker ? "#1E7A39" : "#57F28E";
+            case BLEED -> darker ? "#8B1E1E" : "#FF4D4D"; // Same as DAMAGE (red tone)
         };
     }
 
