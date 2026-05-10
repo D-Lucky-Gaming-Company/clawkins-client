@@ -63,12 +63,12 @@ public class SkillUnlockSystem {
         dartSkills.add(new SkillUnlock(20, createMoonlightGreatClaw()));
         SKILL_UNLOCKS.put("clawkin_dart", dartSkills);
         
-        // Ginger skill progression (placeholder - can be customized later)
+        // Ginger skill progression
         List<SkillUnlock> gingerSkills = new ArrayList<>();
-        gingerSkills.add(new SkillUnlock(5, createBasicAttack("Quick Strike")));
-        gingerSkills.add(new SkillUnlock(5, createBasicDefense("Guard")));
-        gingerSkills.add(new SkillUnlock(10, createMediumAttack("Power Slash")));
-        gingerSkills.add(new SkillUnlock(20, createStrongAttack("Blazing Fury")));
+        gingerSkills.add(new SkillUnlock(5, createStaticScratch()));
+        gingerSkills.add(new SkillUnlock(5, createStretchAndFlex()));
+        gingerSkills.add(new SkillUnlock(10, createTheZoomies()));
+        gingerSkills.add(new SkillUnlock(20, createCinderSlash()));
         SKILL_UNLOCKS.put("clawkin_ginger", gingerSkills);
     }
     
@@ -218,7 +218,7 @@ public class SkillUnlockSystem {
             "",                    // No scaling - flat damage
             0,                     // No duration (instant)
             0,                     // No cooldown
-            "A powerful swipe with heavy paws.",
+            "A slow, weighted slap delivered with the full mass of a sleepy cat.",
             "Deals 15 Physical Damage",
             "No cooldown"
         );
@@ -232,8 +232,8 @@ public class SkillUnlockSystem {
             "maxhp[self] * 0.15",  // Heals 15% of Max HP
             2,                     // Grants +1 DEF for 2 turns
             2,                     // 2 turn cooldown
-            "Takes a quick rest to recover health.",
-            "Restores 15% Max HP, +1 DEF for 2 turns",
+            "Swee'pea lazily stretches before briefly dozing off mid-battle.",
+            "Restores 15% of Max HP and grants +1 DEF for 2 turns",
             "2 turn cooldown"
         );
     }
@@ -246,8 +246,8 @@ public class SkillUnlockSystem {
             "",                    // No scaling - flat damage
             2,                     // Bleed lasts 2 turns
             4,                     // 4 turn cooldown
-            "A fierce combination of claws and bite.",
-            "Deals 25 Physical Damage, inflicts Bleed (5% Max HP/turn for 2 turns)",
+            "A stubborn bite that refuses to let go, slowly draining the opponent.",
+            "Deals 25 Physical Damage. Inflicts Bleed (5% Max HP damage per turn for 2 turns)",
             "4 turn cooldown"
         );
     }
@@ -256,13 +256,71 @@ public class SkillUnlockSystem {
         return new BattleSkill(
             "Silent Sovereign Execution",
             BattleSkill.EffectType.DAMAGE,
-            50,                    // Base damage (ultimate)
+            60,                    // Base damage (ultimate)
             "attack[self]",        // Scales with attack
             0,                     // No duration (instant)
-            5,                     // 5 turn cooldown
-            "An overwhelming display of royal power.",
-            "Deals massive physical damage",
-            "Scales with ATK"
+            6,                     // 6 turn cooldown
+            "A calculated, silent strike that punishes weakened enemies with lethal precision.",
+            "Deals 60 Physical Damage. Ignores 25% of enemy DEF. If target HP is below 30%, damage is increased by 1.5×",
+            "6 turn cooldown"
+        );
+    }
+    
+    // ============ Ginger Skill Definitions ============
+    
+    private static BattleSkill createStaticScratch() {
+        return new BattleSkill(
+            "Static Scratch",
+            BattleSkill.EffectType.DAMAGE,
+            15,                    // Base damage (15 physical damage)
+            "",                    // No scaling - flat damage
+            0,                     // No duration (instant)
+            0,                     // No cooldown
+            "Ginger rubs its fur rapidly, building a static charge before swiping.",
+            "Deals 15 Physical Damage. 10% chance to inflict Stun (enemy skips turn).",
+            "No cooldown"
+        );
+    }
+    
+    private static BattleSkill createStretchAndFlex() {
+        return new BattleSkill(
+            "Stretch & Flex",
+            BattleSkill.EffectType.ATTACK,
+            1,                     // Base boost value
+            "speed[self]+attack[self]", // Boosts both speed and attack
+            2,                     // Lasts 2 turns
+            2,                     // 2 turn cooldown
+            "A quick, limbering stretch that readies Ginger for high-speed maneuvers.",
+            "Grants +1 SPEED and +1 ATK for 2 turns.",
+            "2 turn cooldown"
+        );
+    }
+    
+    private static BattleSkill createTheZoomies() {
+        return new BattleSkill(
+            "The Zoomies",
+            BattleSkill.EffectType.DAMAGE,
+            30,                    // Base damage (30 physical damage)
+            "",                    // No scaling - flat damage
+            2,                     // Evasion buff lasts 2 turns
+            4,                     // 4 turn cooldown
+            "Pure, unadulterated chaotic energy makes Ginger an erratic, blurring target.",
+            "Deals 30 Physical Damage. Increases EVASION (30% dodge chance) for 2 turns.",
+            "4 turn cooldown"
+        );
+    }
+    
+    private static BattleSkill createCinderSlash() {
+        return new BattleSkill(
+            "Cinder-Slash",
+            BattleSkill.EffectType.DAMAGE,
+            80,                    // Base damage (ultimate)
+            "attack[self]",        // Scales with attack
+            0,                     // No duration (instant)
+            6,                     // 6 turn cooldown
+            "A devastating swipe fueled by molten rage, splashing heat onto all nearby foes.",
+            "Deals 80 Physical Damage. Ignores Evasion buffs. 20% chance to inflict Burn (damage over time).",
+            "6 turn cooldown"
         );
     }
     
@@ -334,13 +392,13 @@ public class SkillUnlockSystem {
         return new BattleSkill(
             "Waterfowl Flurry",
             BattleSkill.EffectType.DAMAGE,
-            12,                    // Base damage
+            10,                    // Base damage (10 × 3 hits)
             "attack[self]",        // Scales with attack
             0,                     // No duration (instant)
             0,                     // No cooldown
-            "A rapid series of precise strikes.",
-            "Deals physical damage with multiple hits",
-            "Scales with ATK"
+            "Dart unleashes a rapid sequence of precision slashes aimed at weak points.",
+            "Deals 10 Physical Damage × 3 hits. Grants +10% Crit Rate on the next turn",
+            "No cooldown"
         );
     }
     
@@ -348,13 +406,13 @@ public class SkillUnlockSystem {
         return new BattleSkill(
             "Pounce Step",
             BattleSkill.EffectType.DAMAGE,
-            18,                    // Base damage
+            20,                    // Base damage
             "attack[self]",        // Scales with attack
-            0,                     // No duration (instant)
+            1,                     // Speed buff lasts 1 turn
             2,                     // 2 turn cooldown
-            "A swift dash that closes distance and strikes.",
-            "Deals heavy physical damage",
-            "Scales with ATK"
+            "Dart lunges forward, strikes, then immediately retreats to reposition.",
+            "Deals 20 Physical Damage. Grants +1 SPEED for 1 turn. If this attack critically hits, the enemy skips their next turn",
+            "2 turn cooldown"
         );
     }
     
@@ -363,7 +421,7 @@ public class SkillUnlockSystem {
             "Buckler Paw (Parry)",
             BattleSkill.EffectType.DEFENSE,
             "defense[self]",       // Scales with defense
-            3                      // Lasts 3 turns
+            1                      // Parry stance lasts 1 turn
         );
     }
     
@@ -371,13 +429,13 @@ public class SkillUnlockSystem {
         return new BattleSkill(
             "Moonlight Great-Claw",
             BattleSkill.EffectType.DAMAGE,
-            45,                    // Base damage (ultimate)
+            80,                    // Base damage (ultimate)
             "attack[self]",        // Scales with attack
             0,                     // No duration (instant)
             5,                     // 5 turn cooldown
-            "A devastating moonlit strike.",
-            "Deals massive physical damage",
-            "Scales with ATK"
+            "Dart channels spectral energy into a devastating, sweeping execution strike.",
+            "Deals 80 Physical Damage. If this attack defeats an enemy, Dart immediately gains another turn",
+            "5 turn cooldown"
         );
     }
     
