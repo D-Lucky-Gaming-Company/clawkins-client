@@ -135,13 +135,13 @@ public class BattleOverlay implements Disposable {
      *
      * <p>Current values:<br>
      * - boss_0 (Bert Jr.)  : 500 coins<br>
-     * - boss_1 (Spartacus) : TBD<br>
-     * - boss_2 (Cerberus)  : TBD
+     * - boss_1 (Spartacus) : 650 coins<br>
+     * - boss_2 (Cerberus)  : 750 coins
      */
     private static final Map<String, Integer> BOSS_COIN_REWARDS_BY_ENCOUNTER_ID = Map.ofEntries(
             Map.entry("boss_0_encounter", 500),
-            // Map.entry("boss_1_encounter", ???),  // TODO: set when boss_1 (Spartacus) is implemented
-            Map.entry("boss_2_encounter", 750) // Placeholder; tune with boss difficulty
+            Map.entry("boss_1_encounter", 650),
+            Map.entry("boss_2_encounter", 750)
     );
     /** True when inventory is open from battle. */
     private boolean inventoryOpen = false;
@@ -523,6 +523,7 @@ public class BattleOverlay implements Disposable {
             if (ctx != null) {
                 battleHud.updateEnemyCombatant(
                         ctx.getEncounterId(),
+                        ctx.getEncounterTableId(),
                         ctx.getEnemyDisplayName(),
                         ctx.getEnemyPortraitPath());
             }

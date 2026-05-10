@@ -578,8 +578,10 @@ public class BattleHud implements Disposable {
 
     /**
      * Updates the enemy-side portrait and name from encounter data.
+     *
+     * @param encounterTableId optional table id from the map; included in the portrait cache key when present
      */
-    public void updateEnemyCombatant(String encounterId, String displayName, String portraitPath) {
+    public void updateEnemyCombatant(String encounterId, String encounterTableId, String displayName, String portraitPath) {
         String label = displayName != null && !displayName.isBlank()
                 ? displayName
                 : (encounterId != null && !encounterId.isBlank() ? encounterId : "Enemy");
@@ -587,7 +589,9 @@ public class BattleHud implements Disposable {
             bossNameLabel.setText(label);
         }
 
-        String pathKey = (encounterId == null ? "" : encounterId) + "\0" + (portraitPath == null ? "" : portraitPath);
+        String pathKey = (encounterId == null ? "" : encounterId)
+                + "\0" + (encounterTableId == null ? "" : encounterTableId)
+                + "\0" + (portraitPath == null ? "" : portraitPath);
         if (pathKey.equals(lastEnemyPortraitKey)) {
             return;
         }
@@ -605,7 +609,7 @@ public class BattleHud implements Disposable {
                 activeEnemyTex = null;
             }
             activeEnemyTex = new Texture(Gdx.files.internal(path));
-           // applyLeftFlippedTextureToBossImage(activeEnemyTex);
+            applyTextureToBossImage(activeEnemyTex, isBertJrBossEncounter(encounterId));
             return;
         }
         restoreBossPlaceholderPortrait();
@@ -641,14 +645,24 @@ public class BattleHud implements Disposable {
         }
     }
 
-    // private void applyLeftFlippedTextureToBossImage(Texture tex) {
-    //     if (bossImage == null || tex == null) {
-    //         return;
-    //     }
-    //     TextureRegion region = new TextureRegion(tex);
-    //     region.flip(true, false);
-    //     bossImage.setDrawable(new TextureRegionDrawable(region));
-    // }
+    private void applyTextureToBossImage(Texture tex, boolean flipHorizontally) {
+        if (bossImage == null || tex == null) {
+            return;
+        }
+        TextureRegion region = new TextureRegion(tex);
+        if (flipHorizontally) {
+            region.flip(true, false);
+        }
+        bossImage.setDrawable(new TextureRegionDrawable(region));
+    }
+
+    /**
+     * Horizontal mirror for the boss HUD portrait only on the Bert Jr. fight
+     * ({@code boss_0_encounter}, same id as {@link github.dluckycompany.clawkins.GameScreen}).
+     */
+    private static boolean isBertJrBossEncounter(String encounterId) {
+        return encounterId != null && "boss_0_encounter".equalsIgnoreCase(encounterId.trim());
+    }
 
     /** Same resolution order as ClawkinCard portrait loading. */
     private static String[] resolvePlayerPortraitCandidates(Clawkin clawkin) {

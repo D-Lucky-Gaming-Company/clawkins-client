@@ -173,6 +173,8 @@ public class GameScreen extends ScreenAdapter {
     public static final int DEFAULT_BATTLE_XP_REWARD = 25;
     private static final String EVENT_BOSS_0 = "boss_0_event";
     private static final String EVENT_BOSS_0_DEFEATED = "boss_0_defeated";
+    private static final String EVENT_BOSS_1 = "boss_1_event";
+    private static final String EVENT_BOSS_1_DEFEATED = "boss_1_defeated";
     private static final String EVENT_BOSS_2 = "boss_2_event";
     private static final String EVENT_BOSS_2_DEFEATED = "boss_2_defeated";
     private static final String ENCOUNTER_BERT_JR_ID = "boss_0_encounter";
@@ -182,19 +184,30 @@ public class GameScreen extends ScreenAdapter {
     /** Placeholder combat tuning for Cerberus; replace when Boss 1 progression is locked. */
     private static final String ENCOUNTER_TABLE_CERBERUS_ID = "main_boss_cerberus";
     private static final String CERBERUS_PORTRAIT_PATH = "characters/boss_placeholder.png";
+    private static final int CERBERUS_PLACEHOLDER_LEVEL = 18;
+    private static final int CERBERUS_PLACEHOLDER_HP = 420;
+    private static final int CERBERUS_PLACEHOLDER_ATTACK = 48;
+    private static final int CERBERUS_PLACEHOLDER_DEFENSE = 42;
+    private static final int CERBERUS_PLACEHOLDER_SPEED = 32;
+    private static final int CERBERUS_VICTORY_XP_PLACEHOLDER = 250;
+    private static final String ENCOUNTER_TABLE_SPARTACUS_ID = "main_boss_spartacus";
+    private static final String SPARTACUS_PORTRAIT_PATH = "entities/clawkins/Clawkin_08_Spartacus.png";
     private static final int SPARTACUS_PLACEHOLDER_LEVEL = 10;
     private static final int SPARTACUS_PLACEHOLDER_HP = 280;
     private static final int SPARTACUS_PLACEHOLDER_ATTACK = 42;
     private static final int SPARTACUS_PLACEHOLDER_DEFENSE = 38;
     private static final int SPARTACUS_PLACEHOLDER_SPEED = 28;
-    /** Placeholder; tune with {@link LevelSystem} targets after Boss 1 rewards are set. */
-    private static final int SPARTACUS_VICTORY_XP_PLACEHOLDER = 200;
+    /** Marginal XP for L10→L11 ({@link LevelSystem#getExpForNextLevel(int)} at 10). */
+    private static final int SPARTACUS_VICTORY_XP_PLACEHOLDER = 140;
     /** Optional per-encounter XP; see {@link BattleOverlay} boss reward notes. */
     private static final Map<String, Integer> BOSS_XP_REWARDS_BY_ENCOUNTER_ID = Map.ofEntries(
             Map.entry(ENCOUNTER_BERT_JR_ID, 50),
+            Map.entry(ENCOUNTER_SPARTACUS_ID, SPARTACUS_VICTORY_XP_PLACEHOLDER),
             Map.entry(ENCOUNTER_CERBERUS_ID, CERBERUS_VICTORY_XP_PLACEHOLDER)
     );
     private static final String TRIGGER_BOSS_BERT_JR_ID = "trigger_boss_0";
+    /** Map {@code ObjectId} for Spartacus (Boss 1); set {@code DialogueDirectory} on the object (e.g. dialogue/spartacus_boss.json). */
+    private static final String TRIGGER_BOSS_1_ID = "trigger_boss1";
     /** Matches {@code ObjectId} on cave_3.tmx Cerberus trigger. */
     private static final String TRIGGER_BOSS_2_ID = "trigger_boss_2";
     private static final String END_ROAD_OBJECT_ID = "end_road";
@@ -281,6 +294,7 @@ public class GameScreen extends ScreenAdapter {
     private BossFightPromptState activeBossFightPrompt;
     private SaveGamePromptState activeSaveGamePrompt;
     private SaveActionPromptState activeSaveActionPrompt;
+    private NurseStationPromptState activeNurseStationPrompt;
     private FallenPromptState activeFallenPrompt;
     private boolean queuedFallenScreenAfterBattle;
     private boolean defeatSessionEffectsApplied;
@@ -592,7 +606,7 @@ public class GameScreen extends ScreenAdapter {
         });
         registerSavePointInteractions();
         for (String nurseHealObjectId : NURSE_HEAL_OBJECT_IDS) {
-            interactionSystem.registerSpecialInteraction(nurseHealObjectId, context -> applyNurseStationHeal());
+            interactionSystem.registerSpecialInteraction(nurseHealObjectId, context -> openNurseStationMenu());
         }
         
         // Register merchant shop interactions (shop_01 and shop_02)
@@ -639,6 +653,39 @@ public class GameScreen extends ScreenAdapter {
             );
         });
 
+        interactionSystem.registerPreDialogueCheck(TRIGGER_BOSS_1_ID, context ->
+                !playerProgress.isEventAccomplished(EVENT_BOSS_1_DEFEATED));
+        interactionSystem.registerSpecialInteraction(TRIGGER_BOSS_1_ID, context -> {
+            if (battleService.hasBattleSession() || playerProgress.isEventAccomplished(EVENT_BOSS_1_DEFEATED)) {
+                return;
+            }
+            playerProgress.incrementAttempts(EVENT_BOSS_1);
+            promptBossFightChoice(
+                    "Spartacus",
+                    () -> {
+                        playerProgress.incrementAccepted(EVENT_BOSS_1);
+                        runBossPreBattleMusicHook(ENCOUNTER_SPARTACUS_ID);
+                        encounterEventBus.publish(new EncounterEvent(
+                                EncounterEventType.START_ENCOUNTER,
+                                ENCOUNTER_SPARTACUS_ID,
+                                ENCOUNTER_TABLE_SPARTACUS_ID,
+                                SPARTACUS_PLACEHOLDER_LEVEL,
+                                SPARTACUS_PLACEHOLDER_HP,
+                                SPARTACUS_PLACEHOLDER_ATTACK,
+                                SPARTACUS_PLACEHOLDER_DEFENSE,
+                                SPARTACUS_PLACEHOLDER_SPEED,
+                                createSpartacusBossSkills(),
+                                "Spartacus",
+                                SPARTACUS_PORTRAIT_PATH
+                        ));
+                    },
+                    () -> applySpartacusEncounterDeclineOutcome(
+                            context.playerEntity(),
+                            context.interactionCount() == 1
+                    )
+            );
+        });
+
         interactionSystem.registerPreDialogueCheck(TRIGGER_BOSS_2_ID, context ->
                 !playerProgress.isEventAccomplished(EVENT_BOSS_2_DEFEATED));
         interactionSystem.registerSpecialInteraction(TRIGGER_BOSS_2_ID, context -> {
@@ -677,6 +724,15 @@ public class GameScreen extends ScreenAdapter {
         // Keep Bert Jr. on default battle music flow.
         bossMusicHooksByEncounterId.remove(ENCOUNTER_BERT_JR_ID);
         bossMusicHooksByEncounterId.put(
+                ENCOUNTER_SPARTACUS_ID,
+                new BossMusicHooks(
+                        ENCOUNTER_SPARTACUS_ID,
+                        null,
+                        MusicTrack.BOSS_SPARTACUS,
+                        List.of(),
+                        null,
+                        null));
+        bossMusicHooksByEncounterId.put(
                 ENCOUNTER_CERBERUS_ID,
                 new BossMusicHooks(
                         ENCOUNTER_CERBERUS_ID,
@@ -706,14 +762,23 @@ public class GameScreen extends ScreenAdapter {
 
     private void openSavePromptFromInteractible() {
         if (isBossFightPromptVisible() || isSaveGamePromptVisible() || isSaveActionPromptVisible()
-                || isFallenPromptVisible()) {
+                || isFallenPromptVisible() || isNurseStationPromptVisible()) {
             return;
         }
         promptSaveGameChoice(this::openSaveActionPrompt, () -> {});
     }
 
+    /** Opens after nursery greeting dialogue: Save / Heal / Exit. */
+    private void openNurseStationMenu() {
+        if (isBossFightPromptVisible() || isSaveGamePromptVisible() || isSaveActionPromptVisible()
+                || isFallenPromptVisible() || isNurseStationPromptVisible()) {
+            return;
+        }
+        activeNurseStationPrompt = new NurseStationPromptState();
+    }
+
     /**
-     * Full heal for all party members after nursery heal-pad dialogue (special interaction).
+     * Full heal for all party members from the nursery station menu.
      * Plays the same heal sting as battle / item use when anyone actually gains HP.
      */
     private void applyNurseStationHeal() {
@@ -736,7 +801,8 @@ public class GameScreen extends ScreenAdapter {
     }
 
     private void openSaveActionPrompt() {
-        if (isBossFightPromptVisible() || isSaveActionPromptVisible() || isFallenPromptVisible()) {
+        if (isBossFightPromptVisible() || isSaveActionPromptVisible() || isFallenPromptVisible()
+                || isNurseStationPromptVisible()) {
             return;
         }
         activeSaveActionPrompt = new SaveActionPromptState(game.getSaveStateManager().hasSaveStates());
@@ -764,6 +830,36 @@ public class GameScreen extends ScreenAdapter {
                         "Junk Toss",
                         BattleSkill.EffectType.DAMAGE,
                         8,
+                        "attack[self]",
+                        0,
+                        0
+                )
+        );
+    }
+
+    /** Placeholder kit; replace with authored Spartacus skills. */
+    private static List<BattleSkill> createSpartacusBossSkills() {
+        return List.of(
+                new BattleSkill(
+                        "Gladius Rush",
+                        BattleSkill.EffectType.DAMAGE,
+                        24,
+                        "attack[self]",
+                        0,
+                        1
+                ),
+                new BattleSkill(
+                        "Arena Roar",
+                        BattleSkill.EffectType.DAMAGE,
+                        16,
+                        "attack[self]",
+                        0,
+                        0
+                ),
+                new BattleSkill(
+                        "Lion's Chain",
+                        BattleSkill.EffectType.DAMAGE,
+                        18,
                         "attack[self]",
                         0,
                         0
@@ -902,6 +998,7 @@ public class GameScreen extends ScreenAdapter {
         updateBossFightPromptInput();
         updateSaveGamePromptInput();
         updateSaveActionPromptInput();
+        updateNurseStationPromptInput();
         updateFallenPromptInput();
         saveToastTimer = Math.max(0f, saveToastTimer - delta);
         interactionRetriggerBlockSeconds = Math.max(0f, interactionRetriggerBlockSeconds - delta);
@@ -910,6 +1007,7 @@ public class GameScreen extends ScreenAdapter {
         if (!battleService.hasBattleSession() && !interactionSystem.isDialogueVisible() && !merchantShopVisible
                 && !mapTransitionFade.isTransitioning() && !isSpecialMovementActive()
                 && !isBossFightPromptVisible() && !isSaveGamePromptVisible() && !isSaveActionPromptVisible()
+                && !isNurseStationPromptVisible()
                 && !isFallenPromptVisible()
                 && !isBertJrPreDialogueSequenceActive()
                 && !teamViewerVisible && !summaryVisible
@@ -989,6 +1087,7 @@ public class GameScreen extends ScreenAdapter {
         renderBossFightPrompt();
         renderSaveGamePrompt();
         renderSaveActionPrompt();
+        renderNurseStationPrompt();
         
         // ============================================================
         // UI Rendering with Proper Viewport Coordinate Management
@@ -1189,6 +1288,7 @@ public class GameScreen extends ScreenAdapter {
         boolean bossPromptLocked = isBossFightPromptVisible();
         boolean savePromptLocked = isSaveGamePromptVisible();
         boolean saveActionPromptLocked = isSaveActionPromptVisible();
+        boolean nursePromptLocked = isNurseStationPromptVisible();
         boolean fallenPromptLocked = isFallenPromptVisible();
         boolean interactionRetriggerLocked = interactionRetriggerBlockSeconds > 0f;
         boolean merchantLocked = merchantShopVisible;
@@ -1200,6 +1300,7 @@ public class GameScreen extends ScreenAdapter {
                 && !bossPromptLocked
                 && !savePromptLocked
                 && !saveActionPromptLocked
+                && !nursePromptLocked
                 && !fallenPromptLocked
                 && !merchantLocked
                 && !mapTransitionLocked
@@ -1210,6 +1311,7 @@ public class GameScreen extends ScreenAdapter {
                     && !bossPromptLocked
                     && !savePromptLocked
                     && !saveActionPromptLocked
+                    && !nursePromptLocked
                     && !fallenPromptLocked
                     && !interactionRetriggerLocked
                     && !merchantLocked
@@ -1225,6 +1327,7 @@ public class GameScreen extends ScreenAdapter {
                 && !bossPromptLocked
                 && !savePromptLocked
                 && !saveActionPromptLocked
+                && !nursePromptLocked
                 && !fallenPromptLocked
                 && !interactionRetriggerLocked
                 && !merchantLocked
@@ -1250,6 +1353,10 @@ public class GameScreen extends ScreenAdapter {
 
     private boolean isSaveActionPromptVisible() {
         return activeSaveActionPrompt != null;
+    }
+
+    private boolean isNurseStationPromptVisible() {
+        return activeNurseStationPrompt != null;
     }
 
     private boolean isBertJrPreDialogueSequenceActive() {
@@ -1378,7 +1485,7 @@ public class GameScreen extends ScreenAdapter {
 
     private void updateBossFightPromptInput() {
         BossFightPromptState prompt = activeBossFightPrompt;
-        if (prompt == null) {
+        if (prompt == null || isNurseStationPromptVisible()) {
             return;
         }
 
@@ -1539,6 +1646,62 @@ public class GameScreen extends ScreenAdapter {
         dialogueOverlay.renderPrompt(batch, inventoryStage.getViewport(), text, Interactible.DialoguePosition.BOTTOM);
     }
 
+    private void updateNurseStationPromptInput() {
+        NurseStationPromptState prompt = activeNurseStationPrompt;
+        if (prompt == null || isBossFightPromptVisible() || isSaveGamePromptVisible() || isSaveActionPromptVisible()) {
+            return;
+        }
+        boolean changed = false;
+        if (InputConventions.isMenuLeftJustPressed()) {
+            prompt.selectedIndex = (prompt.selectedIndex + 2) % 3;
+            changed = true;
+        } else if (InputConventions.isMenuRightJustPressed()) {
+            prompt.selectedIndex = (prompt.selectedIndex + 1) % 3;
+            changed = true;
+        } else if (InputConventions.isMenuUpJustPressed()) {
+            prompt.selectedIndex = (prompt.selectedIndex + 2) % 3;
+            changed = true;
+        } else if (InputConventions.isMenuDownJustPressed()) {
+            prompt.selectedIndex = (prompt.selectedIndex + 1) % 3;
+            changed = true;
+        }
+        if (changed) {
+            audioService.playSound(SoundEffect.UI_HOVER);
+        }
+        if (InputConventions.isCancelJustPressed()) {
+            activeNurseStationPrompt = null;
+            blockInteractionRetrigger();
+            return;
+        }
+        if (InputConventions.isInteractJustPressed()) {
+            handleNurseStationChoice(prompt.selectedIndex);
+        }
+    }
+
+    private void handleNurseStationChoice(int optionIndex) {
+        activeNurseStationPrompt = null;
+        blockInteractionRetrigger();
+        audioService.playSound(SoundEffect.UI_SELECT);
+        switch (optionIndex) {
+            case 0 -> promptSaveGameChoice(this::openSaveActionPrompt, () -> {});
+            case 1 -> applyNurseStationHeal();
+            default -> {
+            }
+        }
+    }
+
+    private void renderNurseStationPrompt() {
+        NurseStationPromptState prompt = activeNurseStationPrompt;
+        if (prompt == null || isBossFightPromptVisible() || isSaveGamePromptVisible() || isSaveActionPromptVisible()) {
+            return;
+        }
+        String saveLine = promptOptionText("Save", prompt.selectedIndex == 0);
+        String healLine = promptOptionText("Heal", prompt.selectedIndex == 1);
+        String exitLine = promptOptionText("Exit", prompt.selectedIndex == 2);
+        String text = "What would you like to do?\n\n" + saveLine + "\n" + healLine + "\n" + exitLine;
+        dialogueOverlay.renderPrompt(batch, inventoryStage.getViewport(), text, Interactible.DialoguePosition.BOTTOM);
+    }
+
     private String promptOptionText(String text, boolean selected) {
         if (selected) {
             return "[#F2C14E]" + text + "[]";
@@ -1617,6 +1780,9 @@ public class GameScreen extends ScreenAdapter {
                     playerProgress.incrementWins(EVENT_BOSS_0);
                     playerProgress.markEventAccomplished(EVENT_BOSS_0_DEFEATED);
                     hideBertJrProp();
+                } else if (ENCOUNTER_SPARTACUS_ID.equals(encounterId)) {
+                    playerProgress.incrementWins(EVENT_BOSS_1);
+                    playerProgress.markEventAccomplished(EVENT_BOSS_1_DEFEATED);
                 } else if (ENCOUNTER_CERBERUS_ID.equals(encounterId)) {
                     playerProgress.incrementWins(EVENT_BOSS_2);
                     playerProgress.markEventAccomplished(EVENT_BOSS_2_DEFEATED);
@@ -1635,6 +1801,8 @@ public class GameScreen extends ScreenAdapter {
             refreshProgressSnapshots();
             if (ENCOUNTER_BERT_JR_ID.equals(encounterId)) {
                 playerProgress.incrementLosses(EVENT_BOSS_0);
+            } else if (ENCOUNTER_SPARTACUS_ID.equals(encounterId)) {
+                playerProgress.incrementLosses(EVENT_BOSS_1);
             } else if (ENCOUNTER_CERBERUS_ID.equals(encounterId)) {
                 playerProgress.incrementLosses(EVENT_BOSS_2);
             }
@@ -1685,9 +1853,28 @@ public class GameScreen extends ScreenAdapter {
     private void applyEncounterEscapeOutcome(String encounterId) {
         if (ENCOUNTER_BERT_JR_ID.equals(encounterId)) {
             applyBertJrEncounterDeclineOutcome(findPlayerEntity(), false);
+        } else if (ENCOUNTER_SPARTACUS_ID.equals(encounterId)) {
+            applySpartacusEncounterDeclineOutcome(findPlayerEntity(), false);
         } else if (ENCOUNTER_CERBERUS_ID.equals(encounterId)) {
             applyCerberusEncounterDeclineOutcome(findPlayerEntity(), false);
         }
+    }
+
+    private void applySpartacusEncounterDeclineOutcome(Entity playerEntity, boolean playCurrentMapMusic) {
+        playerProgress.incrementDeclined(EVENT_BOSS_1);
+        if (playCurrentMapMusic) {
+            audioService.playCurrentMapMusic();
+        }
+        if (playerEntity == null) {
+            return;
+        }
+        startForcedMove(
+                playerEntity,
+                -1f,
+                0f,
+                PlayerAnimation.Direction.WEST,
+                BOSS_DECLINE_FORCE_MOVE_DURATION_SECONDS
+        );
     }
 
     private void applyCerberusEncounterDeclineOutcome(Entity playerEntity, boolean playCurrentMapMusic) {
@@ -2860,6 +3047,7 @@ public class GameScreen extends ScreenAdapter {
                 || isBossFightPromptVisible()
                 || isSaveGamePromptVisible()
                 || isSaveActionPromptVisible()
+                || isNurseStationPromptVisible()
                 || cheatConsoleOverlay.isVisible()
                 || isFallenPromptVisible();
     }
@@ -2870,7 +3058,8 @@ public class GameScreen extends ScreenAdapter {
 
     private void updateFallenPromptInput() {
         FallenPromptState prompt = activeFallenPrompt;
-        if (prompt == null || isBossFightPromptVisible() || isSaveGamePromptVisible() || isSaveActionPromptVisible()) {
+        if (prompt == null || isNurseStationPromptVisible() || isBossFightPromptVisible() || isSaveGamePromptVisible()
+                || isSaveActionPromptVisible()) {
             return;
         }
 
@@ -2899,7 +3088,8 @@ public class GameScreen extends ScreenAdapter {
 
     private void renderFallenPrompt() {
         FallenPromptState prompt = activeFallenPrompt;
-        if (prompt == null || isBossFightPromptVisible() || isSaveGamePromptVisible() || isSaveActionPromptVisible()) {
+        if (prompt == null || isNurseStationPromptVisible() || isBossFightPromptVisible() || isSaveGamePromptVisible()
+                || isSaveActionPromptVisible()) {
             return;
         }
         renderFullBlackoutOverlay();
@@ -2965,6 +3155,12 @@ public class GameScreen extends ScreenAdapter {
         private SaveActionPromptState(boolean overwriteMode) {
             this.overwriteMode = overwriteMode;
         }
+    }
+
+    /** Nursery station: Save / Heal / Exit (after greeting dialogue). */
+    private static final class NurseStationPromptState {
+        /** 0 Save, 1 Heal, 2 Exit */
+        private int selectedIndex;
     }
 
     private static final class FallenPromptState {
