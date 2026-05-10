@@ -14,9 +14,9 @@ public class LevelSystem {
     
     /**
      * Calculates the total EXP required to reach a specific level.
-     * Uses a quadratic formula for smooth progression.
+     * Uses a flat 50 EXP per level for consistent, fast progression.
      * 
-     * Formula: EXP = baseEXP * (level - 1)^2 + linearEXP * (level - 1)
+     * Formula: EXP = 50 * (level - 1)
      * 
      * @param level The target level (1-30)
      * @return Total EXP required to reach that level from level 1
@@ -29,12 +29,11 @@ public class LevelSystem {
             level = MAX_LEVEL;
         }
         
-        // Quadratic growth: starts slow, accelerates at higher levels
-        int baseEXP = 50;  // Base EXP per level
-        int linearEXP = 25; // Linear component
+        // Flat 50 EXP per level for fast, consistent progression
+        int expPerLevel = 50;
         int levelDiff = level - 1;
         
-        return (baseEXP * levelDiff * levelDiff) + (linearEXP * levelDiff);
+        return expPerLevel * levelDiff;
     }
     
     /**
@@ -80,22 +79,34 @@ public class LevelSystem {
     
     /**
      * Calculates EXP reward for defeating an enemy.
-     * Scales based on enemy level and difficulty.
+     * Balanced to grant approximately 2 levels per victory (100 EXP total).
      * 
      * @param enemyLevel The level of the defeated enemy
      * @param isWildBattle True if wild encounter, false if trainer battle
      * @return EXP reward amount
      */
     public static int calculateExpReward(int enemyLevel, boolean isWildBattle) {
-        // Base EXP formula
-        int baseExp = 30 + (enemyLevel * 10);
+        // Base EXP: ~100 EXP per victory = 2 levels (50 EXP per level)
+        int baseExp = 100;
         
-        // Trainer battles give more EXP
+        // Trainer battles give slightly more EXP
         if (!isWildBattle) {
-            baseExp = (int) (baseExp * 1.5f);
+            baseExp = (int) (baseExp * 1.2f); // 120 EXP = ~2.4 levels
         }
         
-        return Math.max(10, baseExp);
+        return Math.max(50, baseExp);
+    }
+    
+    /**
+     * Calculates EXP reward for completing a battle round.
+     * Grants small EXP after each round to reward participation.
+     * 
+     * @return EXP reward per round
+     */
+    public static int calculateRoundExpReward() {
+        // Grant 5 EXP per round (10% of a level)
+        // This ensures progression even in difficult/lost battles
+        return 5;
     }
     
     /**

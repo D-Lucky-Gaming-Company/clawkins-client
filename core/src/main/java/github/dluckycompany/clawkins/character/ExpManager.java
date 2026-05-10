@@ -74,6 +74,16 @@ public class ExpManager {
     }
     
     /**
+     * Calculates EXP reward for completing a battle round.
+     * Grants EXP after each round regardless of outcome.
+     * 
+     * @return EXP reward per round
+     */
+    public static int calculateRoundExpReward() {
+        return LevelSystem.calculateRoundExpReward();
+    }
+    
+    /**
      * Estimates an enemy's level based on their max HP.
      * Used when enemy level is not explicitly set.
      * 
