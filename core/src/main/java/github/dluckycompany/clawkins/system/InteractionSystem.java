@@ -718,16 +718,18 @@ public class InteractionSystem extends EntitySystem {
     }
 
     private List<DialogueEntry> resolveDialogueFlow(Interactible interactible, String playerName, String source) {
+        String trimmedSource = source == null ? "" : source.trim();
+        boolean isFileBackedDialogue = isJsonDialoguePath(trimmedSource);
+        String fallbackObjectName = isFileBackedDialogue ? "Object" : "";
         Map<String, String> objectNamesById = buildObjectNameLookup();
         DialogueContext context = new DialogueContext(
-                safeText(interactible.getObjectName(), "Object"),
+                safeText(interactible.getObjectName(), fallbackObjectName),
                 safeText(interactible.getObjectId(), safeText(interactible.getObjectName(), "Object")),
                 safeText(playerName, "Player"),
                 objectNamesById
         );
 
-        String trimmedSource = source == null ? "" : source.trim();
-        if (isJsonDialoguePath(trimmedSource)) {
+        if (isFileBackedDialogue) {
             List<DialogueEntry> fileFlow = loadDialogueFlowFromFile(trimmedSource, context, interactible.getInteractionCount());
             if (!fileFlow.isEmpty()) {
                 return fileFlow;

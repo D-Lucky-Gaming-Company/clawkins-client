@@ -608,10 +608,16 @@ public class BattleOverlay implements Disposable {
         }
 
         battleService.submitPlayerSkill(skillSlot);
-        if (battleActionSfxHandler != null) {
+        String lastLog = machine.getLastLog();
+        boolean cooldownRejected = lastLog != null && lastLog.toLowerCase().contains("cooldown");
+        if (cooldownRejected) {
+            if (game != null && game.getAudioService() != null) {
+                game.getAudioService().playSound(SoundEffect.FAILURE_1);
+            }
+        } else if (battleActionSfxHandler != null) {
             battleActionSfxHandler.playForPlayerAction(skillSlot, machine.getLastLogSpans());
         }
-        openDialogue(null, machine.getLastLog(), machine.getLastLogSpans(), DialogueFlowPhase.PLAYER_RESULT);
+        openDialogue(null, lastLog, machine.getLastLogSpans(), DialogueFlowPhase.PLAYER_RESULT);
     }
 
     private void handleDialogueAdvance(BattleService battleService) {
