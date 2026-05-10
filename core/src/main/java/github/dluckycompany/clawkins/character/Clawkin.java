@@ -18,12 +18,12 @@ public class Clawkin {
     private final String imagePath;
     private final String iconImagePath;
     private int level;
-    
-    private final int maxHp;
+
+    private int maxHp;
     private int currentHp;
-    private final int baseAttack;
-    private final int baseDefense;
-    private final int baseSpeed;
+    private int baseAttack;
+    private int baseDefense;
+    private int baseSpeed;
     private final List<BattleSkill> skills;
     private final SummaryProfile summaryProfile;
     
@@ -100,6 +100,34 @@ public class Clawkin {
 
     public void setLevel(int level) {
         this.level = Math.max(1, level);
+    }
+
+    /**
+     * Applies {@link LevelSystem} clamped {@code sharedLevel} and recomputes HP / ATK / DEF / SPD from
+     * {@link StatGrowth} for this clawkin's id (same curves as {@link ClawkinData}).
+     * <p>
+     * When max HP increases, current HP rises by the same delta so wounded clawkins keep their relative
+     * buffer after leveling (mirrors {@link ClawkinData#performLevelUp()}).
+     */
+    public void syncStatsToSharedExperienceLevel(int sharedLevel) {
+        int clamped = Math.max(LevelSystem.MIN_LEVEL, Math.min(LevelSystem.MAX_LEVEL, sharedLevel));
+        StatGrowth growth = StatGrowth.getGrowthForClawkin(id);
+
+        int oldMaxHp = maxHp;
+        int newMaxHp = Math.max(1, growth.calculateHpAtLevel(clamped));
+        int newAtk = Math.max(1, growth.calculateAttackAtLevel(clamped));
+        int newDef = Math.max(0, growth.calculateDefenseAtLevel(clamped));
+        int newSpd = Math.max(1, growth.calculateSpeedAtLevel(clamped));
+
+        int hpGain = newMaxHp - oldMaxHp;
+        maxHp = newMaxHp;
+        baseAttack = newAtk;
+        baseDefense = newDef;
+        baseSpeed = newSpd;
+        level = clamped;
+
+        int adjustedHp = currentHp + hpGain;
+        currentHp = Math.max(0, Math.min(maxHp, adjustedHp));
     }
 
     public int getMaxHp() {
