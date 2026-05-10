@@ -55,6 +55,14 @@ public class SkillUnlockSystem {
         sweepeaSkills.add(new SkillUnlock(20, createSilentSovereignExecution()));
         SKILL_UNLOCKS.put("clawkin_sweepea", sweepeaSkills);
         
+        // Dart skill progression
+        List<SkillUnlock> dartSkills = new ArrayList<>();
+        dartSkills.add(new SkillUnlock(5, createWaterfowlFlurry()));
+        dartSkills.add(new SkillUnlock(5, createPounceStep()));
+        dartSkills.add(new SkillUnlock(10, createBucklerPawParry()));
+        dartSkills.add(new SkillUnlock(20, createMoonlightGreatClaw()));
+        SKILL_UNLOCKS.put("clawkin_dart", dartSkills);
+        
         // Ginger skill progression (placeholder - can be customized later)
         List<SkillUnlock> gingerSkills = new ArrayList<>();
         gingerSkills.add(new SkillUnlock(5, createBasicAttack("Quick Strike")));
@@ -62,14 +70,6 @@ public class SkillUnlockSystem {
         gingerSkills.add(new SkillUnlock(10, createMediumAttack("Power Slash")));
         gingerSkills.add(new SkillUnlock(20, createStrongAttack("Blazing Fury")));
         SKILL_UNLOCKS.put("clawkin_ginger", gingerSkills);
-        
-        // Dart skill progression (placeholder - can be customized later)
-        List<SkillUnlock> dartSkills = new ArrayList<>();
-        dartSkills.add(new SkillUnlock(5, createBasicAttack("Swift Strike")));
-        dartSkills.add(new SkillUnlock(5, createSpeedBoost("Agility Up")));
-        dartSkills.add(new SkillUnlock(10, createMediumAttack("Rapid Assault")));
-        dartSkills.add(new SkillUnlock(20, createStrongAttack("Lightning Barrage")));
-        SKILL_UNLOCKS.put("clawkin_dart", dartSkills);
     }
     
     /**
@@ -325,6 +325,59 @@ public class SkillUnlockSystem {
             BattleSkill.EffectType.ATTACK,
             "speed[self]",
             3
+        );
+    }
+    
+    // ============ Dart Skill Definitions ============
+    
+    private static BattleSkill createWaterfowlFlurry() {
+        return new BattleSkill(
+            "Waterfowl Flurry",
+            BattleSkill.EffectType.DAMAGE,
+            12,                    // Base damage
+            "attack[self]",        // Scales with attack
+            0,                     // No duration (instant)
+            0,                     // No cooldown
+            "A rapid series of precise strikes.",
+            "Deals physical damage with multiple hits",
+            "Scales with ATK"
+        );
+    }
+    
+    private static BattleSkill createPounceStep() {
+        return new BattleSkill(
+            "Pounce Step",
+            BattleSkill.EffectType.DAMAGE,
+            18,                    // Base damage
+            "attack[self]",        // Scales with attack
+            0,                     // No duration (instant)
+            2,                     // 2 turn cooldown
+            "A swift dash that closes distance and strikes.",
+            "Deals heavy physical damage",
+            "Scales with ATK"
+        );
+    }
+    
+    private static BattleSkill createBucklerPawParry() {
+        return new BattleSkill(
+            "Buckler Paw (Parry)",
+            BattleSkill.EffectType.DEFENSE,
+            "defense[self]",       // Scales with defense
+            3                      // Lasts 3 turns
+        );
+    }
+    
+    private static BattleSkill createMoonlightGreatClaw() {
+        return new BattleSkill(
+            "Moonlight Great-Claw",
+            BattleSkill.EffectType.DAMAGE,
+            45,                    // Base damage (ultimate)
+            "attack[self]",        // Scales with attack
+            0,                     // No duration (instant)
+            5,                     // 5 turn cooldown
+            "A devastating moonlit strike.",
+            "Deals massive physical damage",
+            "Scales with ATK"
         );
     }
     

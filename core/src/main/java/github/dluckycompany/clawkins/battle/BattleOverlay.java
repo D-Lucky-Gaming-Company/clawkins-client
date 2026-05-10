@@ -1059,6 +1059,7 @@ public class BattleOverlay implements Disposable {
             case DAMAGE, ATTACK -> darker ? "#8B1E1E" : "#FF4D4D";
             case DEFENSE -> darker ? "#1E3A8A" : "#4DA3FF";
             case HEAL -> darker ? "#1E7A39" : "#57F28E";
+            case BLEED -> darker ? "#8B1E1E" : "#FF4D4D"; // Same as DAMAGE (red tone)
         };
     }
 
