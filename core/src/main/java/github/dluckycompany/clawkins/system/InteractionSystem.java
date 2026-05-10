@@ -21,7 +21,6 @@ import com.badlogic.ashley.core.EntitySystem;
 import com.badlogic.ashley.core.Family;
 import com.badlogic.ashley.utils.ImmutableArray;
 import com.badlogic.gdx.Gdx;
-import com.badlogic.gdx.Input;
 import com.badlogic.gdx.files.FileHandle;
 import com.badlogic.gdx.maps.MapObject;
 import com.badlogic.gdx.maps.objects.CircleMapObject;
@@ -35,13 +34,13 @@ import com.badlogic.gdx.utils.JsonValue;
 
 import github.dluckycompany.clawkins.Main;
 import github.dluckycompany.clawkins.audio.DialogueSoundManager;
+import github.dluckycompany.clawkins.character.Clawkin;
 import github.dluckycompany.clawkins.component.Interactible;
 import github.dluckycompany.clawkins.component.Player;
 import github.dluckycompany.clawkins.component.PlayerAnimation;
 import github.dluckycompany.clawkins.component.PlayerProfile;
 import github.dluckycompany.clawkins.component.Tiled;
 import github.dluckycompany.clawkins.component.Transform;
-import github.dluckycompany.clawkins.character.Clawkin;
 import github.dluckycompany.clawkins.encounter.EncounterZone;
 import github.dluckycompany.clawkins.input.InputConventions;
 
@@ -523,15 +522,10 @@ public class InteractionSystem extends EntitySystem {
         }
         interactible.incrementInteractionCount();
 
-        // Merchant interactions stay key-compatible with existing UI flow.
-        if (interactible.isMerchant()) {
-            isMerchantMode = true;
-            onMerchantInteraction.run();
-            return;
-        }
-
         String dialogueSource = resolveDialogueSource(interactible);
         List<DialogueEntry> resolvedFlow = resolveDialogueFlow(interactible, playerName, dialogueSource);
+        
+        // All interactions follow the same pattern: dialogue first, then special interaction
         if (resolvedFlow.isEmpty()) {
             runSpecialInteraction(specialInteraction, specialContext);
             return;
