@@ -32,6 +32,9 @@ public class Lwjgl3Launcher {
         configuration.setWindowedMode(800, 600);
         //// Set the window icon to GameIcon.png
         //// The icon file is located in assets/GameIcon.png
+        //// For optimal display across different platforms and window sizes, you can provide multiple sizes:
+        //// configuration.setWindowIcon("GameIcon128.png", "GameIcon64.png", "GameIcon32.png", "GameIcon16.png");
+        //// Currently using a single icon file which will be scaled as needed
         configuration.setWindowIcon("GameIcon.png");
 
         //// This could improve compatibility with Windows machines with buggy OpenGL drivers, Macs
