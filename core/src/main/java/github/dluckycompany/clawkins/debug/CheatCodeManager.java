@@ -248,6 +248,7 @@ public class CheatCodeManager {
             sb.append("heal - Heal all party members\n");
             sb.append("items - Add test items\n");
             sb.append("whereami - Show current location\n");
+            sb.append("end - Trigger ending credits\n");
             sb.append("help - Show this help");
             
             Gdx.app.log("CheatConsole", sb.toString());

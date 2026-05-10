@@ -6,6 +6,7 @@ import com.badlogic.gdx.graphics.Pixmap;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.TextureRegion;
+import com.badlogic.gdx.scenes.scene2d.Touchable;
 import com.badlogic.gdx.scenes.scene2d.InputEvent;
 import com.badlogic.gdx.scenes.scene2d.Stage;
 import com.badlogic.gdx.scenes.scene2d.ui.Image;
@@ -288,6 +289,12 @@ public class BattleHud implements Disposable {
     private Runnable onInventory = () -> {};
     private Runnable onFlee = () -> {};
     private Runnable onClawkinSelected = () -> {}; // Called when a Clawkin icon is clicked
+    private Runnable onSkillSelectionChanged = () -> {};
+
+    /** Currently selected skill button (0=Attack, 1=Defend, 2=Special, 3=Item). */
+    private int selectedSkillIndex = 0;
+
+    private static final float SELECTED_SKILL_SCALE = 1.08f;
 
     // -----------------------------------------------------------------------
     // Construction
@@ -424,6 +431,9 @@ public class BattleHud implements Disposable {
     public void setOnInventory(Runnable onInventory) { this.onInventory = onInventory != null ? onInventory : () -> {}; }
     public void setOnFlee(Runnable onFlee) { this.onFlee = onFlee != null ? onFlee : () -> {}; }
     public void setOnClawkinSelected(Runnable onClawkinSelected) { this.onClawkinSelected = onClawkinSelected != null ? onClawkinSelected : () -> {}; }
+    public void setOnSkillSelectionChanged(Runnable onSkillSelectionChanged) {
+        this.onSkillSelectionChanged = onSkillSelectionChanged != null ? onSkillSelectionChanged : () -> {};
+    }
 
     /** Sets whether this is a wild battle (enables/disables flee button). */
     public void setWildBattle(boolean isWildBattle) { 
@@ -448,6 +458,61 @@ public class BattleHud implements Disposable {
 
     /** Invoke current Item action callback. */
     public void triggerItem() { onItem.run(); }
+
+    /** Invoke currently selected skill action callback. */
+    public void triggerSelectedSkill() {
+        int safeSelectedSkill = resolveNearestEnabledSkillIndex(selectedSkillIndex);
+        if (safeSelectedSkill != selectedSkillIndex) {
+            selectedSkillIndex = safeSelectedSkill;
+            updateSelectedSkillVisuals();
+            return;
+        }
+        switch (safeSelectedSkill) {
+            case 0 -> triggerAttack();
+            case 1 -> triggerDefend();
+            case 2 -> triggerSpecial();
+            case 3 -> triggerItem();
+            default -> {
+            }
+        }
+    }
+
+    public void setSelectedSkillIndex(int index, boolean notifySelectionChanged) {
+        if (index < 0 || index > 3) {
+            return;
+        }
+        if (!isSkillSlotEnabled(index)) {
+            return;
+        }
+        if (selectedSkillIndex == index) {
+            return;
+        }
+        selectedSkillIndex = index;
+        updateSelectedSkillVisuals();
+        if (notifySelectionChanged) {
+            onSkillSelectionChanged.run();
+        }
+    }
+
+    public int getSelectedSkillIndex() {
+        return selectedSkillIndex;
+    }
+
+    public void moveSelectedSkill(int direction) {
+        int next = selectedSkillIndex;
+        for (int i = 0; i < 4; i++) {
+            next += direction;
+            if (next < 0) {
+                next = 3;
+            } else if (next > 3) {
+                next = 0;
+            }
+            if (isSkillSlotEnabled(next)) {
+                setSelectedSkillIndex(next, true);
+                return;
+            }
+        }
+    }
 
     /** Invoke current Inventory action callback. */
     public void triggerInventory() { onInventory.run(); }
@@ -1011,10 +1076,26 @@ public class BattleHud implements Disposable {
         playerExpBar.setValue(playerExpProgress);
         playerExpLabel = new Label("EXP: 0 / 100", labelStyle);
 
-        attackBtn = loadButton(button1Tex, () -> this.onAttack.run());
-        defendBtn = loadButton(button2Tex, () -> this.onDefend.run());
-        specialBtn = loadButton(button3Tex, () -> this.onSpecial.run());
-        itemBtn = loadButton(button4Tex, () -> this.onItem.run());
+        attackBtn = loadButton(button1Tex, () -> {
+            setSelectedSkillIndex(0, true);
+            this.onAttack.run();
+        });
+        defendBtn = loadButton(button2Tex, () -> {
+            setSelectedSkillIndex(1, true);
+            this.onDefend.run();
+        });
+        specialBtn = loadButton(button3Tex, () -> {
+            setSelectedSkillIndex(2, true);
+            this.onSpecial.run();
+        });
+        itemBtn = loadButton(button4Tex, () -> {
+            setSelectedSkillIndex(3, true);
+            this.onItem.run();
+        });
+        registerSkillHoverSelection(attackBtn, 0);
+        registerSkillHoverSelection(defendBtn, 1);
+        registerSkillHoverSelection(specialBtn, 2);
+        registerSkillHoverSelection(itemBtn, 3);
         attackBtn.getImage().setScaling(Scaling.fit);
         defendBtn.getImage().setScaling(Scaling.fit);
         specialBtn.getImage().setScaling(Scaling.fit);
@@ -1073,6 +1154,8 @@ public class BattleHud implements Disposable {
         stage.addActor(inventoryCorner);
         stage.addActor(fleeCorner);
         stage.addActor(root);
+        updateSkillButtonAvailability();
+        updateSelectedSkillVisuals();
     }
 
     /** 
@@ -1150,6 +1233,7 @@ public class BattleHud implements Disposable {
         root.invalidateHierarchy();
         playerHpCorner.invalidateHierarchy();
         bossHpCorner.invalidateHierarchy();
+        updateSelectedSkillVisuals();
 
         // Position Clawkin container
         positionClawkinContainer();
@@ -1340,6 +1424,107 @@ public class BattleHud implements Disposable {
             @Override public void clicked(InputEvent e, float x, float y) { onClick.run(); }
         });
         return btn;
+    }
+
+    private void registerSkillHoverSelection(ImageButton button, int skillIndex) {
+        if (button == null) {
+            return;
+        }
+        button.addListener(new ClickListener() {
+            @Override
+            public void enter(InputEvent event, float x, float y, int pointer, com.badlogic.gdx.scenes.scene2d.Actor fromActor) {
+                setSelectedSkillIndex(skillIndex, true);
+            }
+        });
+    }
+
+    private void updateSelectedSkillVisuals() {
+        applySkillButtonScale(attackBtn, selectedSkillIndex == 0);
+        applySkillButtonScale(defendBtn, selectedSkillIndex == 1);
+        applySkillButtonScale(specialBtn, selectedSkillIndex == 2);
+        applySkillButtonScale(itemBtn, selectedSkillIndex == 3);
+    }
+
+    private void applySkillButtonScale(ImageButton button, boolean selected) {
+        if (button == null) {
+            return;
+        }
+        button.setTransform(true);
+        button.setOrigin(button.getWidth() * 0.5f, button.getHeight() * 0.5f);
+        float scale = selected && !button.isDisabled() ? SELECTED_SKILL_SCALE : 1f;
+        button.setScale(scale);
+    }
+
+    private void updateSkillButtonAvailability() {
+        int skillCount = getActiveSkillCount();
+        updateSkillButtonAvailability(attackBtn, 0, skillCount);
+        updateSkillButtonAvailability(defendBtn, 1, skillCount);
+        updateSkillButtonAvailability(specialBtn, 2, skillCount);
+        updateSkillButtonAvailability(itemBtn, 3, skillCount);
+
+        int safeIndex = resolveNearestEnabledSkillIndex(selectedSkillIndex);
+        if (safeIndex != selectedSkillIndex) {
+            selectedSkillIndex = safeIndex;
+        }
+        updateSelectedSkillVisuals();
+    }
+
+    private void updateSkillButtonAvailability(ImageButton button, int skillIndex, int availableSkillCount) {
+        if (button == null) {
+            return;
+        }
+        boolean enabled = skillIndex < availableSkillCount;
+        button.setDisabled(!enabled);
+        button.setTouchable(enabled ? Touchable.enabled : Touchable.disabled);
+        button.setColor(enabled ? new Color(1f, 1f, 1f, 1f) : new Color(1f, 1f, 1f, 0.5f));
+    }
+
+    private int getActiveSkillCount() {
+        Clawkin active = getClawkinAtSlot(activeClawkinIndex);
+        if (active == null) {
+            return 3;
+        }
+        List<BattleSkill> skills = active.getSkills();
+        if (skills == null || skills.isEmpty()) {
+            return 1;
+        }
+        int count = 0;
+        for (BattleSkill skill : skills) {
+            if (skill == null) {
+                break;
+            }
+            count++;
+            if (count >= 4) {
+                break;
+            }
+        }
+        if (count <= 0) {
+            return 1;
+        }
+        return Math.min(4, count);
+    }
+
+    private int resolveNearestEnabledSkillIndex(int preferredIndex) {
+        if (isSkillSlotEnabled(preferredIndex)) {
+            return preferredIndex;
+        }
+        for (int i = 0; i < 4; i++) {
+            if (isSkillSlotEnabled(i)) {
+                return i;
+            }
+        }
+        return 0;
+    }
+
+    public boolean isSkillSlotEnabled(int index) {
+        ImageButton button = switch (index) {
+            case 0 -> attackBtn;
+            case 1 -> defendBtn;
+            case 2 -> specialBtn;
+            case 3 -> itemBtn;
+            default -> null;
+        };
+        return button != null && !button.isDisabled();
     }
 
     /**
@@ -1585,6 +1770,7 @@ public class BattleHud implements Disposable {
         // After first initialization, DO NOT sync highlight - let player continue navigating
         // Refresh container to update visual indicator
         positionClawkinContainer();
+        updateSkillButtonAvailability();
     }
 
     /**

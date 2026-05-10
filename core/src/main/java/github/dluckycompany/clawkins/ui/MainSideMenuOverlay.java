@@ -6,6 +6,8 @@ import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.scenes.scene2d.Stage;
 import com.badlogic.gdx.scenes.scene2d.actions.Actions;
+import com.badlogic.gdx.scenes.scene2d.InputEvent;
+import com.badlogic.gdx.scenes.scene2d.InputListener;
 import com.badlogic.gdx.scenes.scene2d.ui.Label;
 import com.badlogic.gdx.scenes.scene2d.ui.Skin;
 import com.badlogic.gdx.scenes.scene2d.ui.Slider;
@@ -14,12 +16,17 @@ import com.badlogic.gdx.scenes.scene2d.ui.TextButton;
 
 import github.dluckycompany.clawkins.audio.AudioService;
 import github.dluckycompany.clawkins.audio.SoundEffect;
+import github.dluckycompany.clawkins.input.InputConventions;
 
 /**
  * Main side-menu + settings submenu controller rendered on a shared UI stage.
  * GameScreen owns world/screen transitions; this class owns menu visuals/state/input.
  */
 public class MainSideMenuOverlay {
+    private static final Color SETTINGS_TEXT_COLOR = Color.valueOf("#3B342A");
+    private static final Color SETTINGS_FOCUSED_COLOR = Color.valueOf("#D4A035");
+    private static final Color SETTINGS_SELECTED_COLOR = Color.valueOf("#ECCD61");
+
     public enum Action {
         NONE,
         OPEN_CLAWKINS,
@@ -55,6 +62,14 @@ public class MainSideMenuOverlay {
     private static final float SETTINGS_TITLE_SCALE = 1.3f;
     private static final float SETTINGS_LABEL_SCALE = 1.15f;
     private static final float SETTINGS_BUTTON_SCALE = 1.1f;
+    private static final float VOLUME_STEP = 0.10f;
+    private static final int MASTER_VOLUME_INDEX = 0;
+    private static final int MUSIC_VOLUME_INDEX = 1;
+    private static final int SFX_VOLUME_INDEX = 2;
+    private static final int VOLUME_SLIDER_COUNT = 3;
+    private static final int SETTINGS_ACTION_MUTE_INDEX = 0;
+    private static final int SETTINGS_ACTION_BACK_INDEX = 1;
+    private static final int SETTINGS_ACTION_COUNT = 2;
 
     private final Stage stage;
     private final Skin skin;
@@ -72,7 +87,18 @@ public class MainSideMenuOverlay {
 
     private Table settingsPanel;
     private Slider masterVolumeSlider;
+    private Slider musicVolumeSlider;
+    private Slider sfxVolumeSlider;
+    private Label masterVolumeLabel;
+    private Label musicVolumeLabel;
+    private Label sfxVolumeLabel;
     private TextButton muteButton;
+    private TextButton backButton;
+    private boolean volumeAdjustmentActive;
+    private int selectedVolumeIndex;
+    private boolean actionButtonsFocused;
+    private int selectedActionIndex;
+    private boolean syncingSettingsValues;
 
     public MainSideMenuOverlay(Stage stage, Skin skin, BitmapFont font, AudioService audioService) {
         this.stage = stage;
@@ -95,7 +121,11 @@ public class MainSideMenuOverlay {
             return Action.NONE;
         }
 
-        if (Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE)) {
+        if (activeSubmenu == Submenu.SETTINGS) {
+            return handleSettingsInput();
+        }
+
+        if (isMenuCancelPressed()) {
             if (activeSubmenu != Submenu.NONE) {
                 return Action.RETURN_TO_SIDEBAR;
             }
@@ -136,6 +166,7 @@ public class MainSideMenuOverlay {
             case INVENTORY:
             case SETTINGS:
                 activeSubmenu = Submenu.NONE;
+                setVolumeAdjustmentActive(false);
                 openSidebar();
                 break;
             case NONE:
@@ -182,21 +213,109 @@ public class MainSideMenuOverlay {
     }
 
     private boolean isMenuUpPressed() {
-        return Gdx.input.isKeyJustPressed(Input.Keys.W)
-            || Gdx.input.isKeyJustPressed(Input.Keys.UP)
-            || Gdx.input.isKeyJustPressed(Input.Keys.DPAD_UP);
+        return InputConventions.isMenuUpJustPressed();
     }
 
     private boolean isMenuDownPressed() {
-        return Gdx.input.isKeyJustPressed(Input.Keys.S)
-            || Gdx.input.isKeyJustPressed(Input.Keys.DOWN)
-            || Gdx.input.isKeyJustPressed(Input.Keys.DPAD_DOWN);
+        return InputConventions.isMenuDownJustPressed();
     }
 
     private boolean isMenuSelectPressed() {
-        return Gdx.input.isKeyJustPressed(Input.Keys.ENTER)
-            || Gdx.input.isKeyJustPressed(Input.Keys.SPACE)
-            || Gdx.input.isKeyJustPressed(Input.Keys.BUTTON_A);
+        return InputConventions.isInteractJustPressed();
+    }
+
+    private boolean isMenuCancelPressed() {
+        return InputConventions.isCancelJustPressed();
+    }
+
+    private boolean isMenuLeftPressed() {
+        return InputConventions.isMenuLeftJustPressed();
+    }
+
+    private boolean isMenuRightPressed() {
+        return InputConventions.isMenuRightJustPressed();
+    }
+
+    private Action handleSettingsInput() {
+        if (isMenuCancelPressed()) {
+            if (volumeAdjustmentActive) {
+                setVolumeAdjustmentActive(false);
+                soundHelper.playSound(SoundEffect.UI_BACK);
+                return Action.NONE;
+            }
+            return Action.RETURN_TO_SIDEBAR;
+        }
+
+        if (isMenuSelectPressed()) {
+            if (actionButtonsFocused) {
+                activateSelectedSettingsButton();
+                return Action.NONE;
+            }
+            if (!volumeAdjustmentActive) {
+                setVolumeAdjustmentActive(true);
+                soundHelper.playSound(SoundEffect.UI_SELECT);
+            }
+            return Action.NONE;
+        }
+
+        if (!volumeAdjustmentActive) {
+            if (actionButtonsFocused) {
+                if (isMenuUpPressed()) {
+                    actionButtonsFocused = false;
+                    selectedVolumeIndex = SFX_VOLUME_INDEX;
+                    refreshSettingsValues();
+                    soundHelper.playSound(SoundEffect.UI_HOVER);
+                    return Action.NONE;
+                }
+
+                if (isMenuLeftPressed()) {
+                    selectedActionIndex = (selectedActionIndex + SETTINGS_ACTION_COUNT - 1) % SETTINGS_ACTION_COUNT;
+                    refreshSettingsValues();
+                    soundHelper.playSound(SoundEffect.UI_HOVER);
+                    return Action.NONE;
+                }
+
+                if (isMenuRightPressed()) {
+                    selectedActionIndex = (selectedActionIndex + 1) % SETTINGS_ACTION_COUNT;
+                    refreshSettingsValues();
+                    soundHelper.playSound(SoundEffect.UI_HOVER);
+                    return Action.NONE;
+                }
+                return Action.NONE;
+            }
+
+            if (isMenuUpPressed()) {
+                selectedVolumeIndex = Math.max(MASTER_VOLUME_INDEX, selectedVolumeIndex - 1);
+                refreshSettingsValues();
+                soundHelper.playSound(SoundEffect.UI_HOVER);
+                return Action.NONE;
+            }
+
+            if (isMenuDownPressed()) {
+                if (selectedVolumeIndex == SFX_VOLUME_INDEX) {
+                    actionButtonsFocused = true;
+                    selectedActionIndex = SETTINGS_ACTION_MUTE_INDEX;
+                } else {
+                    selectedVolumeIndex = Math.min(SFX_VOLUME_INDEX, selectedVolumeIndex + 1);
+                }
+                refreshSettingsValues();
+                soundHelper.playSound(SoundEffect.UI_HOVER);
+                return Action.NONE;
+            }
+            return Action.NONE;
+        }
+
+        if (isMenuLeftPressed()) {
+            stepSelectedVolume(-VOLUME_STEP);
+            return Action.NONE;
+        }
+
+        if (isMenuRightPressed()) {
+            stepSelectedVolume(VOLUME_STEP);
+            return Action.NONE;
+        }
+
+        return Action.NONE;
     }
 
     private Action activateSelectedOption() {
@@ -289,6 +408,10 @@ public class MainSideMenuOverlay {
         closeSidebar(false);
         activeSubmenu = Submenu.SETTINGS;
         ensureSettingsBuilt();
+        selectedVolumeIndex = MASTER_VOLUME_INDEX;
+        selectedActionIndex = SETTINGS_ACTION_MUTE_INDEX;
+        actionButtonsFocused = false;
+        setVolumeAdjustmentActive(false);
         refreshSettingsValues();
         stage.clear();
         stage.addActor(settingsPanel);
@@ -339,69 +462,242 @@ public class MainSideMenuOverlay {
             Color.valueOf("#ECE8DF"), 10, 1));
         settingsPanel.pad(16);
         settingsPanel.top().left();
-        settingsPanel.defaults().left().padBottom(10);
+        settingsPanel.defaults().left().padBottom(4);
 
         Label title = new Label("SETTINGS", new Label.LabelStyle(font, Color.valueOf("#252018")));
         title.setFontScale(SETTINGS_TITLE_SCALE);
         settingsPanel.add(title).left().row();
 
-        // Volume label with current value display
-        final Label audioLabel = new Label("Audio Volume: 100%", new Label.LabelStyle(font, Color.valueOf("#3B342A")));
-        audioLabel.setFontScale(SETTINGS_LABEL_SCALE);
-        settingsPanel.add(audioLabel).left().padTop(10).row();
-        
-        // Create custom slider style with visible knob and track
-        masterVolumeSlider = new Slider(0f, 1f, 0.01f, false, createSliderStyle());
-        
-        // Track last slider value to debounce sound
-        final float[] lastSliderValue = {masterVolumeSlider.getValue()};
-        
+        // Master volume row
+        masterVolumeLabel = new Label("Master Volume: 100%", new Label.LabelStyle(font, SETTINGS_TEXT_COLOR));
+        masterVolumeLabel.setFontScale(SETTINGS_LABEL_SCALE);
+        settingsPanel.add(masterVolumeLabel).left().padTop(6).row();
+        masterVolumeSlider = createSettingsSlider();
+        bindSliderSelection(masterVolumeSlider, MASTER_VOLUME_INDEX);
         masterVolumeSlider.addListener(event -> {
+            if (syncingSettingsValues) {
+                return false;
+            }
             float currentValue = masterVolumeSlider.getValue();
             audioService.setMasterVolume(currentValue);
-            
-            // Update label with percentage
-            int percentage = Math.round(currentValue * 100);
-            audioLabel.setText("Audio Volume: " + percentage + "%");
-            
-            // Play sound only when value changes significantly (debounce)
-            if (Math.abs(currentValue - lastSliderValue[0]) > 0.05f) {
-                soundHelper.playSound(SoundEffect.UI_HOVER);
-                lastSliderValue[0] = currentValue;
-            }
-            
+            refreshSettingsValues();
             return false;
         });
-        settingsPanel.add(masterVolumeSlider).width(410f).height(40f).left().padBottom(15).row();
+        settingsPanel.add(masterVolumeSlider).width(410f).height(32f).left().padBottom(4).row();
+
+        // Music volume row
+        musicVolumeLabel = new Label("Music Volume: 100%", new Label.LabelStyle(font, SETTINGS_TEXT_COLOR));
+        musicVolumeLabel.setFontScale(SETTINGS_LABEL_SCALE);
+        settingsPanel.add(musicVolumeLabel).left().row();
+        musicVolumeSlider = createSettingsSlider();
+        bindSliderSelection(musicVolumeSlider, MUSIC_VOLUME_INDEX);
+        musicVolumeSlider.addListener(event -> {
+            if (syncingSettingsValues) {
+                return false;
+            }
+            float currentValue = musicVolumeSlider.getValue();
+            audioService.setMusicVolume(currentValue);
+            refreshSettingsValues();
+            return false;
+        });
+        settingsPanel.add(musicVolumeSlider).width(410f).height(32f).left().padBottom(4).row();
+
+        // SFX volume row
+        sfxVolumeLabel = new Label("SFX Volume: 100%", new Label.LabelStyle(font, SETTINGS_TEXT_COLOR));
+        sfxVolumeLabel.setFontScale(SETTINGS_LABEL_SCALE);
+        settingsPanel.add(sfxVolumeLabel).left().row();
+        sfxVolumeSlider = createSettingsSlider();
+        bindSliderSelection(sfxVolumeSlider, SFX_VOLUME_INDEX);
+        sfxVolumeSlider.addListener(event -> {
+            if (syncingSettingsValues) {
+                return false;
+            }
+            float currentValue = sfxVolumeSlider.getValue();
+            audioService.setSoundVolume(currentValue);
+            refreshSettingsValues();
+            return false;
+        });
+        settingsPanel.add(sfxVolumeSlider).width(410f).height(32f).left().padBottom(8).row();
 
         Table actions = new Table();
         actions.left();
 
-        muteButton = new TextButton("Mute: OFF", skin);
+        muteButton = new TextButton("Mute: OFF", createSettingsActionButtonStyle());
         muteButton.getLabel().setFontScale(SETTINGS_BUTTON_SCALE);
         soundHelper.addButtonSounds(muteButton, () -> {
             audioService.setMuted(!audioService.isMuted());
             refreshSettingsValues();
         });
+        muteButton.addListener(new InputListener() {
+            @Override
+            public void enter(InputEvent event, float x, float y, int pointer, com.badlogic.gdx.scenes.scene2d.Actor fromActor) {
+                if (!actionButtonsFocused || selectedActionIndex != SETTINGS_ACTION_MUTE_INDEX) {
+                    actionButtonsFocused = true;
+                    selectedActionIndex = SETTINGS_ACTION_MUTE_INDEX;
+                    refreshSettingsValues();
+                    soundHelper.playSound(SoundEffect.UI_HOVER);
+                }
+            }
+        });
 
-        TextButton backButton = new TextButton("Back", skin);
+        backButton = new TextButton("Back", createSettingsActionButtonStyle());
         backButton.getLabel().setFontScale(SETTINGS_BUTTON_SCALE);
         soundHelper.addButtonSounds(backButton, () -> {
             returnToSidebarFromSubmenu();
         }, SoundEffect.UI_BACK);
+        backButton.addListener(new InputListener() {
+            @Override
+            public void enter(InputEvent event, float x, float y, int pointer, com.badlogic.gdx.scenes.scene2d.Actor fromActor) {
+                if (!actionButtonsFocused || selectedActionIndex != SETTINGS_ACTION_BACK_INDEX) {
+                    actionButtonsFocused = true;
+                    selectedActionIndex = SETTINGS_ACTION_BACK_INDEX;
+                    refreshSettingsValues();
+                    soundHelper.playSound(SoundEffect.UI_HOVER);
+                }
+            }
+        });
 
         actions.add(muteButton).height(44f).padRight(10);
         actions.add(backButton).height(44f);
-        settingsPanel.add(actions).left().padTop(12).row();
+        settingsPanel.add(actions).left().padTop(6).row();
     }
 
     private void refreshSettingsValues() {
+        syncingSettingsValues = true;
         if (masterVolumeSlider != null) {
             masterVolumeSlider.setValue(audioService.getMasterVolume());
+            updateVolumeLabel(masterVolumeLabel, "Master", masterVolumeSlider.getValue(), MASTER_VOLUME_INDEX);
         }
+        if (musicVolumeSlider != null) {
+            musicVolumeSlider.setValue(audioService.getMusicVolume());
+            updateVolumeLabel(musicVolumeLabel, "Music", musicVolumeSlider.getValue(), MUSIC_VOLUME_INDEX);
+        }
+        if (sfxVolumeSlider != null) {
+            sfxVolumeSlider.setValue(audioService.getSoundVolume());
+            updateVolumeLabel(sfxVolumeLabel, "SFX", sfxVolumeSlider.getValue(), SFX_VOLUME_INDEX);
+        }
+        syncingSettingsValues = false;
         if (muteButton != null) {
             muteButton.setText(audioService.isMuted() ? "Mute: ON" : "Mute: OFF");
         }
+        updateActionButtonVisuals();
+    }
+
+    private Slider createSettingsSlider() {
+        return new Slider(0f, 1f, VOLUME_STEP, false, createSliderStyle());
+    }
+
+    private void bindSliderSelection(Slider slider, int sliderIndex) {
+        slider.addListener(new InputListener() {
+            @Override
+            public boolean touchDown(InputEvent event, float x, float y, int pointer, int button) {
+                actionButtonsFocused = false;
+                selectedVolumeIndex = sliderIndex;
+                if (!volumeAdjustmentActive) {
+                    setVolumeAdjustmentActive(true);
+                    soundHelper.playSound(SoundEffect.UI_SELECT);
+                    return true;
+                }
+                return false;
+            }
+
+            @Override
+            public void enter(InputEvent event, float x, float y, int pointer, com.badlogic.gdx.scenes.scene2d.Actor fromActor) {
+                if (selectedVolumeIndex != sliderIndex) {
+                    actionButtonsFocused = false;
+                    selectedVolumeIndex = sliderIndex;
+                    refreshSettingsValues();
+                    soundHelper.playSound(SoundEffect.UI_HOVER);
+                }
+            }
+        });
+    }
+
+    private void stepSelectedVolume(float delta) {
+        Slider selectedSlider = getSelectedSlider();
+        if (selectedSlider == null) {
+            return;
+        }
+        float currentValue = selectedSlider.getValue();
+        float nextValue = Math.max(0f, Math.min(1f, selectedSlider.getValue() + delta));
+        if (nextValue == currentValue) {
+            return;
+        }
+        selectedSlider.setValue(nextValue);
+        soundHelper.playSound(SoundEffect.UI_HOVER);
+    }
+
+    private Slider getSelectedSlider() {
+        return switch (selectedVolumeIndex) {
+            case MASTER_VOLUME_INDEX -> masterVolumeSlider;
+            case MUSIC_VOLUME_INDEX -> musicVolumeSlider;
+            case SFX_VOLUME_INDEX -> sfxVolumeSlider;
+            default -> null;
+        };
+    }
+
+    private void setVolumeAdjustmentActive(boolean active) {
+        volumeAdjustmentActive = active;
+        refreshSettingsValues();
+    }
+
+    private void activateSelectedSettingsButton() {
+        if (selectedActionIndex == SETTINGS_ACTION_BACK_INDEX) {
+            soundHelper.playSound(SoundEffect.UI_BACK);
+            returnToSidebarFromSubmenu();
+            return;
+        }
+
+        soundHelper.playSound(SoundEffect.UI_SELECT);
+        audioService.setMuted(!audioService.isMuted());
+        refreshSettingsValues();
+    }
+
+    private void updateActionButtonVisuals() {
+        if (muteButton == null || backButton == null) {
+            return;
+        }
+        boolean muteFocused = actionButtonsFocused && selectedActionIndex == SETTINGS_ACTION_MUTE_INDEX;
+        boolean backFocused = actionButtonsFocused && selectedActionIndex == SETTINGS_ACTION_BACK_INDEX;
+        muteButton.setChecked(muteFocused);
+        backButton.setChecked(backFocused);
+    }
+
+    private TextButton.TextButtonStyle createSettingsActionButtonStyle() {
+        TextButton.TextButtonStyle style = new TextButton.TextButtonStyle();
+        style.up = RoundedPanelDrawable.createRoundedPanelWithStrokeAndGrain(Color.valueOf("#C19253"), 8, 1, 0.75f);
+        style.down = RoundedPanelDrawable.createRoundedPanelWithStrokeAndGrain(Color.valueOf("#8F6232"), 8, 1, 0.70f);
+        style.over = RoundedPanelDrawable.createRoundedPanelWithStrokeAndGrain(SETTINGS_FOCUSED_COLOR, 8, 1, 0.85f);
+        style.checked = RoundedPanelDrawable.createRoundedPanelWithStrokeAndGrain(SETTINGS_FOCUSED_COLOR, 8, 1, 0.90f);
+        style.checkedOver = RoundedPanelDrawable.createRoundedPanelWithStrokeAndGrain(SETTINGS_SELECTED_COLOR, 8, 1, 0.92f);
+        style.font = font;
+        style.fontColor = Color.valueOf("#1E1912");
+        style.overFontColor = Color.valueOf("#1E1912");
+        style.downFontColor = Color.valueOf("#1E1912");
+        style.checkedFontColor = Color.valueOf("#1E1912");
+        return style;
+    }
+
+    private void updateVolumeLabel(Label label, String name, float volume, int sliderIndex) {
+        if (label == null) {
+            return;
+        }
+        int percentage = Math.round(volume * 100f);
+        boolean focused = sliderIndex == selectedVolumeIndex;
+        boolean activelyAdjusting = focused && volumeAdjustmentActive;
+        String suffix = activelyAdjusting ? " (Adjusting)" : "";
+        label.setText(name + " Volume: " + percentage + "%" + suffix);
+        Color targetColor;
+        if (activelyAdjusting) {
+            targetColor = SETTINGS_SELECTED_COLOR;
+        } else if (focused) {
+            targetColor = SETTINGS_FOCUSED_COLOR;
+        } else {
+            targetColor = SETTINGS_TEXT_COLOR;
+        }
+        Label.LabelStyle style = label.getStyle();
+        style.fontColor = targetColor;
+        label.setStyle(style);
     }
 
     private void updateSelectionVisuals() {

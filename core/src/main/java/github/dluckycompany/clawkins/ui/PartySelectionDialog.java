@@ -14,8 +14,12 @@ import com.badlogic.gdx.scenes.scene2d.ui.Skin;
 import com.badlogic.gdx.scenes.scene2d.ui.Table;
 import com.badlogic.gdx.scenes.scene2d.ui.TextButton;
 import com.badlogic.gdx.scenes.scene2d.utils.ClickListener;
+import com.badlogic.gdx.utils.Align;
 
+import github.dluckycompany.clawkins.audio.AudioService;
+import github.dluckycompany.clawkins.audio.SoundEffect;
 import github.dluckycompany.clawkins.character.Clawkin;
+import github.dluckycompany.clawkins.input.InputConventions;
 import github.dluckycompany.clawkins.item.Inventory;
 import github.dluckycompany.clawkins.item.Item;
 
@@ -40,10 +44,14 @@ public class PartySelectionDialog extends Dialog {
     private final Item item;
     private final Inventory inventory;
     private final BitmapFont font;
+    private final AudioService audioService;
+    private final boolean battleContext;
     
     // Post-transaction callback to refresh inventory UI
     private Runnable onItemApplied;
     private Runnable onClosed;
+    private Dialog activeStatusDialog;
+    private Runnable activeStatusOnClose;
 
     private final List<Table> rowActors = new java.util.ArrayList<>();
     private final List<Clawkin> rowTargets = new java.util.ArrayList<>();
@@ -52,6 +60,13 @@ public class PartySelectionDialog extends Dialog {
     private static final Color ORANGE = new Color(1.0f, 0.64f, 0.0f, 1.0f);
     private static final Color BLACK = Color.BLACK;
     private static final Color WHITE = Color.WHITE;
+    private static final Color DIALOG_BG = Color.valueOf("#2D241B");
+    private static final Color TITLE_BG = Color.valueOf("#3A2E22");
+    private static final Color INFO_BG = Color.valueOf("#3F3226");
+    private static final Color ROW_BG = Color.valueOf("#221B14");
+    private static final Color ROW_SELECTED_BG = Color.valueOf("#E0BF4A");
+    private static final Color CANCEL_BG = Color.valueOf("#B7833A");
+    private static final Color STATUS_BG = Color.valueOf("#2B2219");
 
     /**
      * Constructor
@@ -62,12 +77,21 @@ public class PartySelectionDialog extends Dialog {
      * @param skin The Scene2D Skin for styling
      * @param font The BitmapFont for text
      */
-    public PartySelectionDialog(List<Clawkin> party, Item item, Inventory inventory, Skin skin, BitmapFont font) {
+    public PartySelectionDialog(
+            List<Clawkin> party,
+            Item item,
+            Inventory inventory,
+            Skin skin,
+            BitmapFont font,
+            AudioService audioService,
+            boolean battleContext) {
         super("Use " + item.getName(), skin);
         this.party = party;
         this.item = item;
         this.inventory = inventory;
         this.font = font;
+        this.audioService = audioService;
+        this.battleContext = battleContext;
 
         setModal(true);      // Prevent input bleed-through to inventory
         setMovable(false);   // Fixed position in viewport center
@@ -80,17 +104,26 @@ public class PartySelectionDialog extends Dialog {
      * Build the dialog content with data-bound party member selection rows
      */
     private void buildContent() {
+        getContentTable().setBackground(RoundedPanelDrawable.createRoundedPanelWithStroke(DIALOG_BG, 12, 2));
+        getContentTable().pad(14f);
+
         // Title row
         Table titleTable = new Table();
+        titleTable.setBackground(RoundedPanelDrawable.createRoundedPanelWithStroke(TITLE_BG, 8, 1));
+        titleTable.pad(8f, 10f, 8f, 10f);
         Label titleLabel = new Label("Select a target for " + item.getName(), new Label.LabelStyle(font, ORANGE));
         titleLabel.setFontScale(1.6f);
-        titleTable.add(titleLabel).pad(10f).expandX().fillX();
+        titleTable.add(titleLabel).expandX().fillX();
         getContentTable().add(titleTable).expandX().fillX().row();
 
         // Item effect description
+        Table infoTable = new Table();
+        infoTable.setBackground(RoundedPanelDrawable.createRoundedPanelWithStroke(INFO_BG, 8, 1));
+        infoTable.pad(8f, 10f, 8f, 10f);
         Label effectLabel = new Label("Effect: " + item.getEffectDescription(), new Label.LabelStyle(font, WHITE));
         effectLabel.setFontScale(1.2f);
-        getContentTable().add(effectLabel).pad(10f).expandX().fillX().row();
+        infoTable.add(effectLabel).expandX().fillX();
+        getContentTable().add(infoTable).padTop(8f).expandX().fillX().row();
 
         // Separator
         getContentTable().add().height(10f).row();
@@ -114,11 +147,12 @@ public class PartySelectionDialog extends Dialog {
 
         // Cancel button
         TextButton cancelBtn = new TextButton("Cancel", new TextButton.TextButtonStyle(
-            new ColorDrawable(ORANGE),
-            new ColorDrawable(ORANGE),
-            new ColorDrawable(BLACK),
+            RoundedPanelDrawable.createRoundedPanelWithStroke(CANCEL_BG, 8, 1),
+            RoundedPanelDrawable.createRoundedPanelWithStroke(ORANGE, 8, 1),
+            RoundedPanelDrawable.createRoundedPanelWithStroke(BLACK, 8, 1),
             font
         ));
+        cancelBtn.getLabel().setColor(Color.valueOf("#1F1A13"));
         cancelBtn.getLabel().setFontScale(1.2f);
         cancelBtn.addListener(new ClickListener() {
             @Override
@@ -143,7 +177,7 @@ public class PartySelectionDialog extends Dialog {
         // Create the row Table
         Table memberRow = new Table();
         memberRow.setFillParent(false);
-        memberRow.setBackground(new ColorDrawable(BLACK));
+        memberRow.setBackground(createRowBackground(false));
         memberRow.pad(10f);
         memberRow.setTouchable(Touchable.enabled);  // Enable touch input on this Table
         
@@ -209,6 +243,16 @@ public class PartySelectionDialog extends Dialog {
             return;
         }
 
+        if (!isUseAllowedInCurrentContext()) {
+            showStatusDialog(
+                "Use Not Allowed",
+                battleContext
+                        ? item.getName() + " cannot be used in combat."
+                        : item.getName() + " cannot be used outside combat."
+            );
+            return;
+        }
+
         try {
             // ============ PHASE 1: VALIDATION ============
             // Verify the item can be used on this target
@@ -217,6 +261,10 @@ public class PartySelectionDialog extends Dialog {
             
             if (!canUseOnTarget) {
                 Gdx.app.log("PartySelectionDialog", target.getName() + " doesn't need " + item.getName());
+                showStatusDialog(
+                    "Use Not Allowed",
+                    target.getName() + " is already at full HP."
+                );
                 return;  // Don't close dialog, allow user to select someone else
             }
 
@@ -231,6 +279,10 @@ public class PartySelectionDialog extends Dialog {
 
             if (!effectApplied) {
                 Gdx.app.log("PartySelectionDialog", "Item effect was not applicable to " + target.getName());
+                showStatusDialog(
+                    "Use Not Allowed",
+                    item.getName() + " had no effect on " + target.getName() + "."
+                );
                 return;  // Don't close dialog, allow user to select someone else
             }
 
@@ -259,6 +311,9 @@ public class PartySelectionDialog extends Dialog {
                 hpRestored
             );
             Gdx.app.log("PartySelectionDialog", feedback);
+            if (audioService != null) {
+                audioService.playSound(SoundEffect.BATTLE_HEAL);
+            }
 
             // ============ PHASE 5: STATE RECONCILIATION ============
             // Trigger the callback to refresh inventory UI
@@ -266,7 +321,6 @@ public class PartySelectionDialog extends Dialog {
             if (onItemApplied != null) {
                 onItemApplied.run();
             }
-
             // Close the dialog
             closeDialog();
 
@@ -298,6 +352,16 @@ public class PartySelectionDialog extends Dialog {
         };
     }
 
+    private boolean isUseAllowedInCurrentContext() {
+        if (item == null) {
+            return false;
+        }
+        if (battleContext) {
+            return item.isUsableInBattle();
+        }
+        return item.getType() == Item.ItemType.POTION;
+    }
+
     /**
      * Set the callback to trigger inventory UI refresh after item use.
      * 
@@ -315,8 +379,18 @@ public class PartySelectionDialog extends Dialog {
     }
 
     public boolean handleNavigationKey(int keycode) {
+        if (activeStatusDialog != null) {
+            if (isInteractKey(keycode) || isCancelKey(keycode)) {
+                closeActiveStatusDialog();
+            }
+            return true;
+        }
+
         if (rowTargets.isEmpty()) {
-            if (keycode == Input.Keys.ESCAPE) {
+            if (keycode == Input.Keys.ESCAPE
+                    || keycode == Input.Keys.X
+                    || keycode == Input.Keys.BACKSPACE
+                    || keycode == Input.Keys.BUTTON_B) {
                 closeDialog();
                 return true;
             }
@@ -337,12 +411,19 @@ public class PartySelectionDialog extends Dialog {
                 return true;
 
             case Input.Keys.ENTER:
+            case Input.Keys.NUMPAD_ENTER:
+            case Input.Keys.Z:
+            case Input.Keys.SPACE:
+            case Input.Keys.BUTTON_A:
                 if (selectedRowIndex >= 0 && selectedRowIndex < rowTargets.size()) {
                     onClawkinSelected(rowTargets.get(selectedRowIndex));
                 }
                 return true;
 
             case Input.Keys.ESCAPE:
+            case Input.Keys.X:
+            case Input.Keys.BACKSPACE:
+            case Input.Keys.BUTTON_B:
                 closeDialog();
                 return true;
 
@@ -354,14 +435,91 @@ public class PartySelectionDialog extends Dialog {
     private void refreshRowHighlight() {
         for (int i = 0; i < rowActors.size(); i++) {
             Table row = rowActors.get(i);
-            row.setBackground(new ColorDrawable(i == selectedRowIndex ? ORANGE : BLACK));
+            row.setBackground(createRowBackground(i == selectedRowIndex));
         }
     }
 
+    private com.badlogic.gdx.scenes.scene2d.utils.NinePatchDrawable createRowBackground(boolean selected) {
+        if (selected) {
+            return RoundedPanelDrawable.createRoundedPanelWithStroke(ROW_SELECTED_BG, 8, 2);
+        }
+        return RoundedPanelDrawable.createRoundedPanelWithStroke(ROW_BG, 8, 1);
+    }
+
     private void closeDialog() {
-        hide();
+        hide(null);
         if (onClosed != null) {
             onClosed.run();
         }
+    }
+
+    private void showStatusDialog(String title, String message) {
+        showStatusDialog(title, message, null);
+    }
+
+    private void showStatusDialog(String title, String message, Runnable onClose) {
+        Dialog statusDialog = new Dialog(title, getSkin()) {
+            @Override
+            public void hide() {
+                hide(null);
+            }
+
+            @Override
+            protected void result(Object object) {
+                Runnable callback = activeStatusOnClose;
+                activeStatusDialog = null;
+                activeStatusOnClose = null;
+                if (callback != null) callback.run();
+            }
+        };
+        statusDialog.setModal(true);
+        statusDialog.setMovable(false);
+        statusDialog.getTitleLabel().setColor(ORANGE);
+        statusDialog.getTitleLabel().setFontScale(1.05f);
+        statusDialog.getContentTable().setBackground(
+            RoundedPanelDrawable.createRoundedPanelWithStroke(STATUS_BG, 10, 2)
+        );
+        statusDialog.getContentTable().pad(8f);
+
+        Label messageLabel = new Label(message, new Label.LabelStyle(font, WHITE));
+        messageLabel.setWrap(true);
+        messageLabel.setFontScale(0.95f);
+        messageLabel.setAlignment(Align.center);
+        statusDialog.getContentTable().add(messageLabel).width(360f).pad(14f);
+        TextButton okButton = new TextButton("OK", new TextButton.TextButtonStyle(
+            RoundedPanelDrawable.createRoundedPanelWithStroke(CANCEL_BG, 8, 2),
+            RoundedPanelDrawable.createRoundedPanelWithStroke(ORANGE, 8, 2),
+            RoundedPanelDrawable.createRoundedPanelWithStroke(BLACK, 8, 2),
+            font
+        ));
+        okButton.getLabel().setColor(BLACK);
+        okButton.getLabel().setFontScale(1.0f);
+        statusDialog.button(okButton, true);
+        statusDialog.getButtonTable().pad(6f, 12f, 10f, 12f);
+        activeStatusDialog = statusDialog;
+        activeStatusOnClose = onClose;
+        statusDialog.show(getStage(), null);
+    }
+
+    private void closeActiveStatusDialog() {
+        if (activeStatusDialog == null) {
+            return;
+        }
+        Dialog dialog = activeStatusDialog;
+        Runnable callback = activeStatusOnClose;
+        activeStatusDialog = null;
+        activeStatusOnClose = null;
+        dialog.hide(null);
+        if (callback != null) {
+            callback.run();
+        }
+    }
+
+    private boolean isInteractKey(int keycode) {
+        return InputConventions.isInteractKey(keycode);
+    }
+
+    private boolean isCancelKey(int keycode) {
+        return InputConventions.isCancelKey(keycode);
     }
 }

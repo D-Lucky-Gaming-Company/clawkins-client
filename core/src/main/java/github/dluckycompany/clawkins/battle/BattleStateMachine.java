@@ -558,10 +558,8 @@ public class BattleStateMachine {
         if (context == null || context.getPlayerSkills().isEmpty()) {
             return null;
         }
-        int idx = Math.max(1, Math.min(3, slot)) - 1;
-        if (idx >= context.getPlayerSkills().size()) {
-            return context.getPlayerSkills().getFirst();
-        }
+        int size = context.getPlayerSkills().size();
+        int idx = Math.max(1, Math.min(size, slot)) - 1;
         return context.getPlayerSkills().get(idx);
     }
 

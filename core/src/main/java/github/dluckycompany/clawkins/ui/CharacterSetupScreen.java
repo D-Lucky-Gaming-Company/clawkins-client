@@ -1,6 +1,7 @@
 package github.dluckycompany.clawkins.ui;
 
 import com.badlogic.gdx.Gdx;
+import com.badlogic.gdx.Input.Keys;
 import com.badlogic.gdx.Screen;
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.GL20;
@@ -23,11 +24,14 @@ import com.badlogic.gdx.scenes.scene2d.utils.ClickListener;
 import com.badlogic.gdx.scenes.scene2d.utils.NinePatchDrawable;
 import com.badlogic.gdx.utils.Align;
 import com.badlogic.gdx.utils.viewport.FitViewport;
+import java.util.ArrayList;
+import java.util.List;
 
 import github.dluckycompany.clawkins.GameScreen;
 import github.dluckycompany.clawkins.Main;
 import github.dluckycompany.clawkins.audio.AudioService;
 import github.dluckycompany.clawkins.audio.SoundEffect;
+import github.dluckycompany.clawkins.input.InputConventions;
 import github.dluckycompany.clawkins.model.Gender;
 import github.dluckycompany.clawkins.model.PlayerProfile;
 
@@ -104,13 +108,20 @@ public class CharacterSetupScreen implements Screen {
     private String playerName;
     private PlayerProfile profile;
     private boolean isTransitioning;
+    private float inputGuardTimer;
+    private boolean waitForConfirmRelease;
     
     // Hover debounce tracking
     private TextButton lastHoveredButton;
+    private final List<TextButton> currentStepButtons = new ArrayList<>();
+    private final List<Runnable> currentStepActions = new ArrayList<>();
+    private int selectedButtonIndex = 0;
     
     // Virtual UI resolution (fixed, independent of physical screen)
     private static final float VIRTUAL_UI_WIDTH = 800f;
     private static final float VIRTUAL_UI_HEIGHT = 600f;
+    private static final float SCREEN_ENTRY_INPUT_GUARD_SECONDS = 0.15f;
+    private static final float STEP_TRANSITION_INPUT_GUARD_SECONDS = 0.15f;
 
     // -----------------------------------------------------------------------
     // Constructor
@@ -148,6 +159,8 @@ public class CharacterSetupScreen implements Screen {
         selectedGender = null;
         playerName = null;
         isTransitioning = false;
+        inputGuardTimer = SCREEN_ENTRY_INPUT_GUARD_SECONDS;
+        waitForConfirmRelease = true;
         
         // Build gender selection UI
         buildGenderSelectionUI();
@@ -169,6 +182,13 @@ public class CharacterSetupScreen implements Screen {
         // Draw Stage UI
         stage.act(delta);
         stage.draw();
+
+        if (inputGuardTimer > 0f) {
+            inputGuardTimer = Math.max(0f, inputGuardTimer - delta);
+        }
+        if (waitForConfirmRelease && !isMenuConfirmHeld()) {
+            waitForConfirmRelease = false;
+        }
         
         // Handle keyboard shortcuts only if not transitioning
         if (!isTransitioning) {
@@ -180,21 +200,44 @@ public class CharacterSetupScreen implements Screen {
      * Handles keyboard shortcuts for the character setup screen.
      */
     private void handleKeyboardShortcuts() {
-        // Check if Enter key pressed when currentStep is NAME_INPUT
-        if (currentStep == SetupStep.NAME_INPUT) {
-            if (Gdx.input.isKeyJustPressed(com.badlogic.gdx.Input.Keys.ENTER)) {
-                completeSetup();
-            }
+        if (isInputGuardActive()) {
+            return;
         }
-        
-        // Check if Escape key pressed
-        if (Gdx.input.isKeyJustPressed(com.badlogic.gdx.Input.Keys.ESCAPE)) {
-            if (currentStep == SetupStep.NAME_INPUT) {
-                // If Escape pressed and currentStep is NAME_INPUT, call transitionToGenderSelection()
-                transitionToGenderSelection();
-            } else if (currentStep == SetupStep.GENDER_SELECTION) {
-                // If Escape pressed and currentStep is GENDER_SELECTION, transition to MainMenuScreen
-                game.setScreen(MainMenuScreen.class);
+
+        if (currentStep == SetupStep.GENDER_SELECTION) {
+            handleStepButtonInput();
+        } else if (currentStep == SetupStep.NAME_INPUT) {
+            handleNameInputKeyboard();
+        }
+
+        if (currentStep == SetupStep.GENDER_SELECTION && Gdx.input.isKeyJustPressed(Keys.ESCAPE)) {
+            game.setScreen(MainMenuScreen.class);
+        }
+    }
+
+    private void handleNameInputKeyboard() {
+        if (Gdx.input.isKeyJustPressed(Keys.ESCAPE)) {
+            AudioService audio = game.getAudioService();
+            if (audio != null) {
+                audio.playSound(SoundEffect.UI_BACK);
+            }
+            transitionToGenderSelection();
+            return;
+        }
+
+        // On name-entry screen, avoid WASD so typing letters doesn't move selection.
+        if (isNameInputNavigateBackwardPressed()) {
+            moveSelection(-1);
+        } else if (isNameInputNavigateForwardPressed()) {
+            moveSelection(1);
+        }
+
+        // Enter confirms currently selected action (default = Start).
+        if (Gdx.input.isKeyJustPressed(Keys.ENTER) || Gdx.input.isKeyJustPressed(Keys.NUMPAD_ENTER)) {
+            if (!currentStepButtons.isEmpty()) {
+                triggerSelectedButton();
+            } else {
+                completeSetup();
             }
         }
     }
@@ -311,7 +354,7 @@ public class CharacterSetupScreen implements Screen {
             Gdx.app.log("CharacterSetup", "Male selected");
             selectedGender = Gender.MALE;
             transitionToNameInput();
-        });
+        }, () -> setSelectedButtonByReference(maleButton));
         
         // Create Female button
         TextButton femaleButton = new TextButton("Female", buttonStyle);
@@ -322,7 +365,7 @@ public class CharacterSetupScreen implements Screen {
             Gdx.app.log("CharacterSetup", "Female selected");
             selectedGender = Gender.FEMALE;
             transitionToNameInput();
-        });
+        }, () -> setSelectedButtonByReference(femaleButton));
         
         // Create Back button
         TextButton backButton = new TextButton("Back", buttonStyle);
@@ -332,7 +375,7 @@ public class CharacterSetupScreen implements Screen {
             if (audio != null) audio.playSound(SoundEffect.UI_BACK);
             Gdx.app.log("CharacterSetup", "Back to main menu");
             game.setScreen(MainMenuScreen.class);
-        });
+        }, () -> setSelectedButtonByReference(backButton));
         
         // Fixed button sizing for consistent layout
         float btnWidth = 250f;
@@ -349,6 +392,29 @@ public class CharacterSetupScreen implements Screen {
         
         // Add root table to stage
         stage.addActor(rootTable);
+
+        registerCurrentStepButtons(
+            List.of(maleButton, femaleButton, backButton),
+            List.of(
+                () -> {
+                    AudioService audio = game.getAudioService();
+                    if (audio != null) audio.playSound(SoundEffect.UI_SELECT);
+                    selectedGender = Gender.MALE;
+                    transitionToNameInput();
+                },
+                () -> {
+                    AudioService audio = game.getAudioService();
+                    if (audio != null) audio.playSound(SoundEffect.UI_SELECT);
+                    selectedGender = Gender.FEMALE;
+                    transitionToNameInput();
+                },
+                () -> {
+                    AudioService audio = game.getAudioService();
+                    if (audio != null) audio.playSound(SoundEffect.UI_BACK);
+                    game.setScreen(MainMenuScreen.class);
+                }
+            )
+        );
     }
 
     /**
@@ -390,7 +456,13 @@ public class CharacterSetupScreen implements Screen {
         nameField = new TextField("", textFieldStyle);
         nameField.setMessageText("Your character name...");
         nameField.setMaxLength(20);  // Reasonable name length limit
-        nameField.setAlignment(Align.center);
+        // Keep caret movement stable during editing (center-aligned TextField can jump cursor).
+        nameField.setAlignment(Align.left);
+        String defaultName = getDefaultNameForSelectedGender();
+        if (!defaultName.isEmpty()) {
+            nameField.setText(defaultName);
+            nameField.setCursorPosition(defaultName.length());
+        }
         
         // Add listener to clear errors when text changes
         nameField.addListener(new com.badlogic.gdx.scenes.scene2d.utils.ChangeListener() {
@@ -407,26 +479,25 @@ public class CharacterSetupScreen implements Screen {
         
         // Create button style
         TextButtonStyle buttonStyle = createButtonStyle();
-        
+
         // Create Back button
         TextButton backButton = new TextButton("Back", buttonStyle);
         addButtonSoundEffects(backButton, () -> {
-            if (isTransitioning) return;
+            if (isTransitioning || isInputGuardActive()) return;
             AudioService audio = game.getAudioService();
             if (audio != null) audio.playSound(SoundEffect.UI_BACK);
             Gdx.app.log("CharacterSetup", "Back to gender selection");
             transitionToGenderSelection();
-        });
-        
+        }, () -> setSelectedButtonByReference(backButton));
+
         // Create Start button
         TextButton startButton = new TextButton("Start", buttonStyle);
         addButtonSoundEffects(startButton, () -> {
-            if (isTransitioning) return;
+            if (isTransitioning || isInputGuardActive()) return;
             Gdx.app.log("CharacterSetup", "Start button clicked");
             completeSetup();
-        });
-        
-        // Fixed sizing for consistent layout
+        }, () -> setSelectedButtonByReference(startButton));
+
         float btnWidth = 200f;
         float btnHeight = 60f;
         float btnSpacing = 15f;
@@ -437,12 +508,13 @@ public class CharacterSetupScreen implements Screen {
         contentTable.add(nameField).width(textFieldWidth).height(textFieldHeight).padTop(btnSpacing).row();
         contentTable.add(errorLabel).padTop(btnSpacing * 0.5f).row();
         
-        // Button row with both buttons side by side
         Table buttonRow = new Table();
         buttonRow.add(backButton).width(btnWidth).height(btnHeight).padRight(btnSpacing);
         buttonRow.add(startButton).width(btnWidth).height(btnHeight).padLeft(btnSpacing);
-        
         contentTable.add(buttonRow).padTop(btnSpacing * 2).row();
+
+        Label controlsLabel = new Label("Enter: Confirm    Esc: Back    Arrow Keys: Select", labelStyle);
+        contentTable.add(controlsLabel).padTop(btnSpacing).row();
         
         // Add content table to root
         rootTable.add(contentTable).padBottom(25).row();
@@ -452,6 +524,18 @@ public class CharacterSetupScreen implements Screen {
         
         // Set keyboard focus to TextField
         stage.setKeyboardFocus(nameField);
+        registerCurrentStepButtons(
+            List.of(backButton, startButton),
+            List.of(
+                () -> {
+                    AudioService audio = game.getAudioService();
+                    if (audio != null) audio.playSound(SoundEffect.UI_BACK);
+                    transitionToGenderSelection();
+                },
+                this::completeSetup
+            )
+        );
+        setSelectedButtonByReference(startButton);
     }
     
     /**
@@ -547,32 +631,44 @@ public class CharacterSetupScreen implements Screen {
      * @return TextButtonStyle with gold/orange theme
      */
     private TextButtonStyle createButtonStyle() {
-        // Create button background textures (up, over, down)
+        // Create button background textures (up, over, down, checked)
         Pixmap upPixmap = createRoundedRectangle(200, 50, Color.valueOf("#C58A2B"));
         Pixmap overPixmap = createRoundedRectangle(200, 50, Color.valueOf("#D4A035"));
         Pixmap downPixmap = createRoundedRectangle(200, 50, Color.valueOf("#A66F1F"));
+        Pixmap checkedPixmap = createRoundedRectangle(200, 50, Color.valueOf("#E0BF4A"));
+        Pixmap checkedOverPixmap = createRoundedRectangle(200, 50, Color.valueOf("#ECCD61"));
 
         Texture upTexture = new Texture(upPixmap);
         Texture overTexture = new Texture(overPixmap);
         Texture downTexture = new Texture(downPixmap);
+        Texture checkedTexture = new Texture(checkedPixmap);
+        Texture checkedOverTexture = new Texture(checkedOverPixmap);
 
         upPixmap.dispose();
         overPixmap.dispose();
         downPixmap.dispose();
+        checkedPixmap.dispose();
+        checkedOverPixmap.dispose();
 
         // Create 9-patch for stretching
         NinePatch upPatch = new NinePatch(upTexture, 10, 10, 10, 10);
         NinePatch overPatch = new NinePatch(overTexture, 10, 10, 10, 10);
         NinePatch downPatch = new NinePatch(downTexture, 10, 10, 10, 10);
+        NinePatch checkedPatch = new NinePatch(checkedTexture, 10, 10, 10, 10);
+        NinePatch checkedOverPatch = new NinePatch(checkedOverTexture, 10, 10, 10, 10);
 
         TextButtonStyle style = new TextButtonStyle();
         style.up = new NinePatchDrawable(upPatch);
         style.over = new NinePatchDrawable(overPatch);
         style.down = new NinePatchDrawable(downPatch);
+        style.checked = new NinePatchDrawable(checkedPatch);
+        style.checkedOver = new NinePatchDrawable(checkedOverPatch);
+        style.checkedDown = new NinePatchDrawable(checkedPatch);
         style.font = buttonFont;
         style.fontColor = Color.BLACK;
         style.downFontColor = Color.valueOf("#2B2B2B");
         style.overFontColor = Color.BLACK;
+        style.checkedFontColor = Color.valueOf("#1F1A13");
 
         return style;
     }
@@ -612,6 +708,9 @@ public class CharacterSetupScreen implements Screen {
     private void transitionToNameInput() {
         // Clear stage
         stage.clear();
+
+        inputGuardTimer = STEP_TRANSITION_INPUT_GUARD_SECONDS;
+        waitForConfirmRelease = true;
         
         // Set current step to NAME_INPUT
         currentStep = SetupStep.NAME_INPUT;
@@ -721,12 +820,30 @@ public class CharacterSetupScreen implements Screen {
         
         // Create new PlayerProfile with playerName and selectedGender
         profile = new PlayerProfile(playerName, selectedGender);
+        handleIntroSequenceEvent(profile);
         
         // Log for debugging
         Gdx.app.log("CharacterSetup", "Character created: " + playerName + " (" + selectedGender + ")");
         
         // Start welcome transition sequence
         showWelcomeTransition();
+    }
+
+    private String getDefaultNameForSelectedGender() {
+        if (selectedGender == Gender.MALE) {
+            return "Mark";
+        }
+        if (selectedGender == Gender.FEMALE) {
+            return "Alice";
+        }
+        return "";
+    }
+
+    private void handleIntroSequenceEvent(PlayerProfile createdProfile) {
+        // Placeholder hook for intro sequence logic (to be implemented later).
+        if (createdProfile != null) {
+            Gdx.app.log("CharacterSetup", "Intro sequence handler placeholder invoked.");
+        }
     }
     
     /**
@@ -824,7 +941,7 @@ public class CharacterSetupScreen implements Screen {
      * @param button the button to add sound effects to
      * @param onClickAction the action to run when clicked (should include sound)
      */
-    private void addButtonSoundEffects(TextButton button, Runnable onClickAction) {
+    private void addButtonSoundEffects(TextButton button, Runnable onClickAction, Runnable onHoverAction) {
         button.addListener(new ClickListener() {
             @Override
             public void clicked(InputEvent event, float x, float y) {
@@ -841,7 +958,160 @@ public class CharacterSetupScreen implements Screen {
                         audio.playSound(SoundEffect.UI_HOVER);
                     }
                 }
+                if (onHoverAction != null) {
+                    onHoverAction.run();
+                }
             }
         });
+    }
+
+    private void registerCurrentStepButtons(List<TextButton> buttons, List<Runnable> actions) {
+        clearCurrentStepButtons();
+        if (buttons != null) {
+            currentStepButtons.addAll(buttons);
+        }
+        if (actions != null) {
+            currentStepActions.addAll(actions);
+        }
+        selectedButtonIndex = findFirstEnabledButtonIndex();
+        updateSelectedButtonVisuals();
+    }
+
+    private void clearCurrentStepButtons() {
+        currentStepButtons.clear();
+        currentStepActions.clear();
+        selectedButtonIndex = 0;
+    }
+
+    private void handleStepButtonInput() {
+        if (currentStepButtons.isEmpty()) {
+            return;
+        }
+
+        if (isMenuUpPressed()) {
+            moveSelection(-1);
+        } else if (isMenuDownPressed()) {
+            moveSelection(1);
+        }
+
+        if (isMenuConfirmPressed()) {
+            triggerSelectedButton();
+        }
+    }
+
+    private boolean isMenuUpPressed() {
+        return InputConventions.isMenuUpJustPressed();
+    }
+
+    private boolean isMenuDownPressed() {
+        return InputConventions.isMenuDownJustPressed();
+    }
+
+    private boolean isMenuLeftPressed() {
+        return InputConventions.isMenuLeftJustPressed();
+    }
+
+    private boolean isMenuRightPressed() {
+        return InputConventions.isMenuRightJustPressed();
+    }
+
+    private boolean isMenuConfirmPressed() {
+        return InputConventions.isInteractJustPressed();
+    }
+
+    private boolean isNameInputNavigateBackwardPressed() {
+        return Gdx.input.isKeyJustPressed(Keys.UP)
+                || Gdx.input.isKeyJustPressed(Keys.LEFT)
+                || Gdx.input.isKeyJustPressed(Keys.DPAD_UP)
+                || Gdx.input.isKeyJustPressed(Keys.DPAD_LEFT);
+    }
+
+    private boolean isNameInputNavigateForwardPressed() {
+        return Gdx.input.isKeyJustPressed(Keys.DOWN)
+                || Gdx.input.isKeyJustPressed(Keys.RIGHT)
+                || Gdx.input.isKeyJustPressed(Keys.DPAD_DOWN)
+                || Gdx.input.isKeyJustPressed(Keys.DPAD_RIGHT);
+    }
+
+    private boolean isMenuConfirmHeld() {
+        return Gdx.input.isKeyPressed(Keys.Z)
+                || Gdx.input.isKeyPressed(Keys.SPACE)
+                || Gdx.input.isKeyPressed(Keys.ENTER)
+                || Gdx.input.isKeyPressed(Keys.NUMPAD_ENTER)
+                || Gdx.input.isKeyPressed(Keys.BUTTON_A);
+    }
+
+    private boolean isInputGuardActive() {
+        return inputGuardTimer > 0f || waitForConfirmRelease;
+    }
+
+    private void setSelectedButtonByReference(TextButton button) {
+        if (button == null || button.isDisabled()) {
+            return;
+        }
+        int index = currentStepButtons.indexOf(button);
+        if (index >= 0) {
+            selectedButtonIndex = index;
+            updateSelectedButtonVisuals();
+        }
+    }
+
+    private void moveSelection(int direction) {
+        int size = currentStepButtons.size();
+        int next = selectedButtonIndex;
+        for (int i = 0; i < size; i++) {
+            next = (next + direction + size) % size;
+            TextButton candidate = currentStepButtons.get(next);
+            if (candidate != null && !candidate.isDisabled()) {
+                if (selectedButtonIndex != next) {
+                    selectedButtonIndex = next;
+                    updateSelectedButtonVisuals();
+                    AudioService audio = game.getAudioService();
+                    if (audio != null) {
+                        audio.playSound(SoundEffect.UI_HOVER);
+                    }
+                }
+                return;
+            }
+        }
+    }
+
+    private void triggerSelectedButton() {
+        if (selectedButtonIndex < 0 || selectedButtonIndex >= currentStepButtons.size()) {
+            return;
+        }
+        TextButton selectedButton = currentStepButtons.get(selectedButtonIndex);
+        if (selectedButton == null || selectedButton.isDisabled()) {
+            AudioService audio = game.getAudioService();
+            if (audio != null) {
+                audio.playSound(SoundEffect.UI_ERROR);
+            }
+            return;
+        }
+        if (selectedButtonIndex < currentStepActions.size()) {
+            Runnable action = currentStepActions.get(selectedButtonIndex);
+            if (action != null) {
+                action.run();
+            }
+        }
+    }
+
+    private void updateSelectedButtonVisuals() {
+        for (int i = 0; i < currentStepButtons.size(); i++) {
+            TextButton button = currentStepButtons.get(i);
+            if (button != null) {
+                button.setChecked(i == selectedButtonIndex);
+            }
+        }
+    }
+
+    private int findFirstEnabledButtonIndex() {
+        for (int i = 0; i < currentStepButtons.size(); i++) {
+            TextButton button = currentStepButtons.get(i);
+            if (button != null && !button.isDisabled()) {
+                return i;
+            }
+        }
+        return 0;
     }
 }

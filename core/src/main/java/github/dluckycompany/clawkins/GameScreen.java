@@ -1,10 +1,10 @@
 package github.dluckycompany.clawkins;
 
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.HashMap;
 import java.util.Set;
-import java.util.HashSet;
 import java.util.function.Consumer;
 
 import com.badlogic.ashley.core.Engine;
@@ -57,6 +57,7 @@ import github.dluckycompany.clawkins.encounter.EncounterDetectionSystem;
 import github.dluckycompany.clawkins.encounter.EncounterEvent;
 import github.dluckycompany.clawkins.encounter.EncounterEventBus;
 import github.dluckycompany.clawkins.encounter.EncounterEventType;
+import github.dluckycompany.clawkins.input.InputConventions;
 import github.dluckycompany.clawkins.item.Item;
 import github.dluckycompany.clawkins.item.ItemFactory;
 import github.dluckycompany.clawkins.model.Gender;
@@ -385,6 +386,14 @@ public class GameScreen extends ScreenAdapter {
         this.cheatCodeManager.setOnMoneyChanged(() -> {
             hudWallet.updateDisplay();
             Gdx.app.log("GameScreen", "HUD wallet updated after cheat: " + playerBattleState.getWallet().getMoney());
+        });
+        
+        // Register the "end" cheat to trigger the ending credits screen
+        this.cheatCodeManager.registerCheat("end", () -> {
+            Gdx.app.log("CheatCodeManager", "Triggering ending credits via cheat 'end'");
+            // Defer to next frame so the cheat console can close cleanly first
+            Gdx.app.postRunnable(this::triggerEndingCredits);
+            return github.dluckycompany.clawkins.debug.CheatCodeManager.CheatResult.success("Rolling credits...");
         });
     }
 
@@ -726,6 +735,7 @@ public class GameScreen extends ScreenAdapter {
                 && !mapTransitionFade.isTransitioning() && !isSpecialMovementActive()
                 && !isBossFightPromptVisible() && !isSaveGamePromptVisible() && !isSaveActionPromptVisible()
                 && !isBertJrPreDialogueSequenceActive()
+                && !teamViewerVisible && !summaryVisible
                 && !cheatConsoleOverlay.isVisible()) {
             MainSideMenuOverlay.Action menuAction = sideMenuOverlay.handleInput();
             switch (menuAction) {
@@ -793,7 +803,7 @@ public class GameScreen extends ScreenAdapter {
         float worldDelta = mapTransitionFade.isTransitioning() ? 0f : delta;
         engine.update(worldDelta);
         battleOverlay.render(batch, battleService);
-        dialogueOverlay.render(batch, interactionSystem);
+        dialogueOverlay.render(batch, inventoryStage.getViewport(), interactionSystem);
         renderBossFightPrompt();
         renderSaveGamePrompt();
         renderSaveActionPrompt();
@@ -1160,11 +1170,11 @@ public class GameScreen extends ScreenAdapter {
             return;
         }
 
-        if (Gdx.input.isKeyJustPressed(Input.Keys.LEFT) || Gdx.input.isKeyJustPressed(Input.Keys.A)) {
+        if (InputConventions.isMenuLeftJustPressed()) {
             prompt.yesSelected = true;
             return;
         }
-        if (Gdx.input.isKeyJustPressed(Input.Keys.RIGHT) || Gdx.input.isKeyJustPressed(Input.Keys.D)) {
+        if (InputConventions.isMenuRightJustPressed()) {
             prompt.yesSelected = false;
             return;
         }
@@ -1178,9 +1188,7 @@ public class GameScreen extends ScreenAdapter {
             return;
         }
 
-        if (Gdx.input.isKeyJustPressed(Input.Keys.Z)
-                || Gdx.input.isKeyJustPressed(Input.Keys.SPACE)
-                || Gdx.input.isKeyJustPressed(Input.Keys.ENTER)) {
+        if (InputConventions.isInteractJustPressed()) {
             handleBossFightPromptChoice(prompt.yesSelected);
         }
     }
@@ -1203,10 +1211,10 @@ public class GameScreen extends ScreenAdapter {
         if (prompt == null) {
             return;
         }
-        String yesOption = prompt.yesSelected ? "> Yes <" : "  Yes  ";
-        String noOption = prompt.yesSelected ? "  No  " : "> No <";
+        String yesOption = promptOptionText("Yes", prompt.yesSelected);
+        String noOption = promptOptionText("No", !prompt.yesSelected);
         String text = "Fight " + prompt.enemyName + "?\n\n" + yesOption + "    " + noOption;
-        dialogueOverlay.renderPrompt(batch, text, Interactible.DialoguePosition.BOTTOM);
+        dialogueOverlay.renderPrompt(batch, inventoryStage.getViewport(), text, Interactible.DialoguePosition.BOTTOM);
     }
 
     private void updateSaveGamePromptInput() {
@@ -1215,11 +1223,11 @@ public class GameScreen extends ScreenAdapter {
             return;
         }
 
-        if (Gdx.input.isKeyJustPressed(Input.Keys.LEFT) || Gdx.input.isKeyJustPressed(Input.Keys.A)) {
+        if (InputConventions.isMenuLeftJustPressed()) {
             prompt.yesSelected = true;
             return;
         }
-        if (Gdx.input.isKeyJustPressed(Input.Keys.RIGHT) || Gdx.input.isKeyJustPressed(Input.Keys.D)) {
+        if (InputConventions.isMenuRightJustPressed()) {
             prompt.yesSelected = false;
             return;
         }
@@ -1233,9 +1241,7 @@ public class GameScreen extends ScreenAdapter {
             return;
         }
 
-        if (Gdx.input.isKeyJustPressed(Input.Keys.Z)
-                || Gdx.input.isKeyJustPressed(Input.Keys.SPACE)
-                || Gdx.input.isKeyJustPressed(Input.Keys.ENTER)) {
+        if (InputConventions.isInteractJustPressed()) {
             handleSaveGamePromptChoice(prompt.yesSelected);
         }
     }
@@ -1259,10 +1265,10 @@ public class GameScreen extends ScreenAdapter {
         if (prompt == null || isBossFightPromptVisible() || isSaveActionPromptVisible()) {
             return;
         }
-        String yesOption = prompt.yesSelected ? "> Yes <" : "  Yes  ";
-        String noOption = prompt.yesSelected ? "  No  " : "> No <";
+        String yesOption = promptOptionText("Yes", prompt.yesSelected);
+        String noOption = promptOptionText("No", !prompt.yesSelected);
         String text = "Do you want to save your game?\n\n" + yesOption + "    " + noOption;
-        dialogueOverlay.renderPrompt(batch, text, Interactible.DialoguePosition.BOTTOM);
+        dialogueOverlay.renderPrompt(batch, inventoryStage.getViewport(), text, Interactible.DialoguePosition.BOTTOM);
     }
 
     private void updateSaveActionPromptInput() {
@@ -1271,11 +1277,11 @@ public class GameScreen extends ScreenAdapter {
             return;
         }
 
-        if (Gdx.input.isKeyJustPressed(Input.Keys.LEFT) || Gdx.input.isKeyJustPressed(Input.Keys.A)) {
+        if (InputConventions.isMenuLeftJustPressed()) {
             prompt.actionSelected = true;
             return;
         }
-        if (Gdx.input.isKeyJustPressed(Input.Keys.RIGHT) || Gdx.input.isKeyJustPressed(Input.Keys.D)) {
+        if (InputConventions.isMenuRightJustPressed()) {
             prompt.actionSelected = false;
             return;
         }
@@ -1289,9 +1295,7 @@ public class GameScreen extends ScreenAdapter {
             return;
         }
 
-        if (Gdx.input.isKeyJustPressed(Input.Keys.Z)
-                || Gdx.input.isKeyJustPressed(Input.Keys.SPACE)
-                || Gdx.input.isKeyJustPressed(Input.Keys.ENTER)) {
+        if (InputConventions.isInteractJustPressed()) {
             handleSaveActionPromptChoice(prompt.actionSelected);
         }
     }
@@ -1317,10 +1321,17 @@ public class GameScreen extends ScreenAdapter {
             return;
         }
         String actionLabel = prompt.overwriteMode ? "Overwrite" : "Save";
-        String actionOption = prompt.actionSelected ? "> " + actionLabel + " <" : "  " + actionLabel + "  ";
-        String cancelOption = prompt.actionSelected ? "  Cancel  " : "> Cancel <";
+        String actionOption = promptOptionText(actionLabel, prompt.actionSelected);
+        String cancelOption = promptOptionText("Cancel", !prompt.actionSelected);
         String text = actionOption + "    " + cancelOption;
-        dialogueOverlay.renderPrompt(batch, text, Interactible.DialoguePosition.BOTTOM);
+        dialogueOverlay.renderPrompt(batch, inventoryStage.getViewport(), text, Interactible.DialoguePosition.BOTTOM);
+    }
+
+    private String promptOptionText(String text, boolean selected) {
+        if (selected) {
+            return "[#F2C14E]" + text + "[]";
+        }
+        return text;
     }
 
     private boolean performSavePointSave(boolean overwriteMode) {
@@ -1818,6 +1829,18 @@ public class GameScreen extends ScreenAdapter {
         
         // Properly transition to MainMenuScreen using the screen cache system
         game.setScreen(MainMenuScreen.class);
+    }
+
+    /**
+     * Trigger the ending credits sequence.
+     * Called by the "end" cheat code.
+     */
+    public void triggerEndingCredits() {
+        closeAllMenuUi();
+        inventoryStage.clear();
+        audioService.stopAll();
+        Gdx.input.setInputProcessor(null);
+        game.setScreen(github.dluckycompany.clawkins.ui.EndingCreditsScreen.class);
     }
 
     private SaveState buildSaveState() {

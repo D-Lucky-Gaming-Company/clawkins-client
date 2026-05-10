@@ -22,6 +22,7 @@ import github.dluckycompany.clawkins.audio.MusicTrack;
 import github.dluckycompany.clawkins.audio.SoundEffect;
 import github.dluckycompany.clawkins.save.SaveStateManager;
 import github.dluckycompany.clawkins.ui.CharacterSetupScreen;
+import github.dluckycompany.clawkins.ui.EndingCreditsScreen;
 import github.dluckycompany.clawkins.ui.MainMenuScreen;
 import github.dluckycompany.clawkins.ui.SaveStateScreen;
 
@@ -73,12 +74,13 @@ public class Main extends Game {
         audioService.registerMusic(MusicTrack.BOSS_SPARTACUS, "audio/music/BOSS/boss_spartacus.mp3");
         audioService.registerMusic(MusicTrack.BOSS_SANTIRAL, "audio/music/BOSS/boss_santiral.mp3");
         audioService.registerMusic(MusicTrack.BOSS_BERTJR_DIA_FIRST_ENCOUNTER, "audio/music/BOSS/boss_bertjr_dia/first_encounter.mp3");
+        audioService.registerMusic(MusicTrack.CREDITS, "audio/music/credits.mp3");
         audioService.registerSound(SoundEffect.CONFIRM, "audio/sfx/confirm.wav");
         audioService.registerSound(SoundEffect.CANCEL, "audio/sfx/cancel.wav");
         audioService.registerSound(SoundEffect.HIT, "audio/sfx/hit.wav");
         audioService.registerSound(SoundEffect.BATTLE_ATTACK, "audio/soundEffects/SFX_RPGMaker2000/Attack1.wav");
         audioService.registerSound(SoundEffect.BATTLE_DEFEND, "audio/soundEffects/SFX_RPGMaker2000/Barrier.wav");
-        audioService.registerSound(SoundEffect.BATTLE_HEAL, "audio/soundEffects/SFX_RPGMaker2000/Recovery1.wav");
+        audioService.registerSound(SoundEffect.BATTLE_HEAL, "audio/soundEffects/SFX_RPGMAKER2000/Recovery3.wav");
         audioService.registerSound(SoundEffect.BATTLE_SPECIAL, "audio/soundEffects/SFX_RPGMaker2000/Teleport1.wav");
         audioService.registerSound(SoundEffect.BATTLE_SWITCH, "audio/soundEffects/SFX_RPGMaker2000/Teleport2.wav");
         audioService.registerSound(SoundEffect.BATTLE_ESCAPE, "audio/soundEffects/SFX_RPGMaker2000/Escape.wav");
@@ -104,6 +106,7 @@ public class Main extends Game {
         ));
         addScreen(new CharacterSetupScreen(this, batch));
         addScreen(new GameScreen(this));
+        addScreen(new EndingCreditsScreen(this));
         this.saveStateScreen = new SaveStateScreen(batch, saveStateManager, audioService);
         addScreen(saveStateScreen);
 
@@ -116,7 +119,16 @@ public class Main extends Game {
      */
     private void startNewGame() {
         Gdx.app.log("Main", "Start New Game");
+        rebuildGameScreenForFreshSession();
         setScreen(CharacterSetupScreen.class);
+    }
+
+    private void rebuildGameScreenForFreshSession() {
+        Screen existingGameScreen = screenCache.remove(GameScreen.class);
+        if (existingGameScreen != null) {
+            existingGameScreen.dispose();
+        }
+        addScreen(new GameScreen(this));
     }
 
     /**
