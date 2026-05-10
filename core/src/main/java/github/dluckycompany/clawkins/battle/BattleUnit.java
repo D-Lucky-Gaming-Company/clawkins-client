@@ -20,6 +20,8 @@ public class BattleUnit {
     private final Map<StatType, TimedBoost> temporaryBoosts = new EnumMap<>(StatType.class);
     private final Map<String, Integer> skillCooldowns = new HashMap<>();
     private BleedEffect bleedEffect = null;
+    private int parryTurnsRemaining = 0;
+    private String activeParrySkillName = null;
 
     public BattleUnit(String id, int hp, int attack, int defense, int speed) {
         this.id = id;
@@ -133,6 +135,30 @@ public class BattleUnit {
             entry.setValue(entry.getValue() - 1);
             return entry.getValue() <= 0;
         });
+    }
+
+    public void activateParry(String skillName, int durationTurns) {
+        parryTurnsRemaining = Math.max(1, durationTurns);
+        activeParrySkillName = skillName == null ? null : skillName.trim();
+    }
+
+    public boolean hasActiveParry() {
+        return parryTurnsRemaining > 0;
+    }
+
+    public void consumeParryTurn() {
+        if (parryTurnsRemaining <= 0) {
+            return;
+        }
+        parryTurnsRemaining--;
+        if (parryTurnsRemaining <= 0) {
+            parryTurnsRemaining = 0;
+            activeParrySkillName = null;
+        }
+    }
+
+    public String getActiveParrySkillName() {
+        return activeParrySkillName;
     }
 
     private int getBoostAmount(StatType stat) {

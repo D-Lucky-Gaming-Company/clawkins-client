@@ -75,6 +75,7 @@ public class EncounterDetectionSystem extends EntitySystem {
                 EncounterEventType.START_ENCOUNTER,
                 zone.getEncounterId(),
                 zone.getEncounterTableId(),
+                zone.getEnemyLevel(),
                 zone.getEnemyHp(),
                 zone.getEnemyAttack(),
                 zone.getEnemyDefense(),

@@ -20,6 +20,8 @@ public enum SoundEffect {
     UI_BACK,
     UI_ERROR,
     LEVEL_UP,
+    PARRY_WIN,
+    PARRY_FAIL,
     /** Screen sting when party is wiped / battle lost */
     FALLEN
 }

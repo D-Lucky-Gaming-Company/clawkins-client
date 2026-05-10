@@ -39,8 +39,8 @@ public class SkillUnlockSystem {
      * Defines when skills unlock for Swee'pea.
      * 
      * Swee'pea's Skills:
-     * - Heavy Paw (Level 5) - Basic attack
-     * - Stretch & Nap (Level 5) - Heal/sustain
+     * - Heavy Paw (Level 4) - Basic attack
+     * - Stretch & Nap (Level 4) - Heal/sustain
      * - Claw & Chomp (Level 10) - Stronger attack
      * - Silent Sovereign Execution (Level 20) - Ultimate attack
      */
@@ -49,24 +49,24 @@ public class SkillUnlockSystem {
     static {
         // Swee'pea skill progression
         List<SkillUnlock> sweepeaSkills = new ArrayList<>();
-        sweepeaSkills.add(new SkillUnlock(5, createHeavyPaw()));
-        sweepeaSkills.add(new SkillUnlock(5, createStretchAndNap()));
+        sweepeaSkills.add(new SkillUnlock(4, createHeavyPaw()));
+        sweepeaSkills.add(new SkillUnlock(4, createStretchAndNap()));
         sweepeaSkills.add(new SkillUnlock(10, createClawAndChomp()));
         sweepeaSkills.add(new SkillUnlock(20, createSilentSovereignExecution()));
         SKILL_UNLOCKS.put("clawkin_sweepea", sweepeaSkills);
         
         // Dart skill progression
         List<SkillUnlock> dartSkills = new ArrayList<>();
-        dartSkills.add(new SkillUnlock(5, createWaterfowlFlurry()));
-        dartSkills.add(new SkillUnlock(5, createPounceStep()));
+        dartSkills.add(new SkillUnlock(4, createWaterfowlFlurry()));
+        dartSkills.add(new SkillUnlock(4, createPounceStep()));
         dartSkills.add(new SkillUnlock(10, createBucklerPawParry()));
         dartSkills.add(new SkillUnlock(20, createMoonlightGreatClaw()));
         SKILL_UNLOCKS.put("clawkin_dart", dartSkills);
         
         // Ginger skill progression
         List<SkillUnlock> gingerSkills = new ArrayList<>();
-        gingerSkills.add(new SkillUnlock(5, createStaticScratch()));
-        gingerSkills.add(new SkillUnlock(5, createStretchAndFlex()));
+        gingerSkills.add(new SkillUnlock(4, createStaticScratch()));
+        gingerSkills.add(new SkillUnlock(4, createStretchAndFlex()));
         gingerSkills.add(new SkillUnlock(10, createTheZoomies()));
         gingerSkills.add(new SkillUnlock(20, createCinderSlash()));
         SKILL_UNLOCKS.put("clawkin_ginger", gingerSkills);
@@ -419,9 +419,14 @@ public class SkillUnlockSystem {
     private static BattleSkill createBucklerPawParry() {
         return new BattleSkill(
             "Buckler Paw (Parry)",
-            BattleSkill.EffectType.DEFENSE,
-            "defense[self]",       // Scales with defense
-            1                      // Parry stance lasts 1 turn
+            BattleSkill.EffectType.PARRY,
+            0,
+            "defense[self]",
+            1,
+            3,
+            "Dart enters a focused stance, waiting for the exact moment to deflect and retaliate.",
+            "Deflects incoming damage based on incoming hit plus DEF. Failure can cause reduced chip damage.",
+            "3 turn cooldown (reduced to 1 turn on failed parry)"
         );
     }
     

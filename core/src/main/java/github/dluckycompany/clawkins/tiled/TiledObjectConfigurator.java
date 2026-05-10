@@ -25,6 +25,7 @@ import github.dluckycompany.clawkins.asset.AssetService;
 import github.dluckycompany.clawkins.battle.BattleSkill;
 import github.dluckycompany.clawkins.battle.PlayerBattleState;
 import github.dluckycompany.clawkins.character.Clawkin;
+import github.dluckycompany.clawkins.character.LevelSystem;
 import github.dluckycompany.clawkins.component.CameraFollow;
 import github.dluckycompany.clawkins.component.Enemy;
 import github.dluckycompany.clawkins.component.Graphic;
@@ -236,6 +237,11 @@ public class TiledObjectConfigurator {
                 int enemyAttack = getIntProperty(tileMapObject, "enemyAttack", 8);
                 int enemyDefense = getIntProperty(tileMapObject, "enemyDefense", 3);
                 int enemySpeed = getIntProperty(tileMapObject, "enemySpeed", 6);
+                int enemyLevel = getIntProperty(
+                        tileMapObject,
+                        "enemyLevel",
+                        inferLevelFromStats(enemyHp, enemyAttack, enemyDefense, enemySpeed)
+                );
                 List<BattleSkill> enemySkills = parseEnemySkills(tileMapObject, enemyName);
                 String enemyImagePath = getStringProperty(
                     tileMapObject,
@@ -274,6 +280,7 @@ public class TiledObjectConfigurator {
                         enemyName,
                         encounterTableId,
                         oneShot,
+                        enemyLevel,
                         enemyHp,
                         enemyAttack,
                         enemyDefense,
@@ -538,6 +545,12 @@ public class TiledObjectConfigurator {
             }
         }
         return defaultValue;
+    }
+
+    private static int inferLevelFromStats(int hp, int attack, int defense, int speed) {
+        int powerScore = Math.max(1, (hp / 10) + (attack * 2) + (defense * 2) + speed);
+        int inferred = (int) Math.round(powerScore / 8.0);
+        return Math.max(LevelSystem.MIN_LEVEL, Math.min(LevelSystem.MAX_LEVEL, inferred));
     }
 
     private static float getFloatProperty(MapObject object, String key, float defaultValue) {
@@ -892,6 +905,7 @@ public class TiledObjectConfigurator {
             case "heal" -> BattleSkill.EffectType.HEAL;
             case "attack" -> BattleSkill.EffectType.ATTACK;
             case "defense" -> BattleSkill.EffectType.DEFENSE;
+            case "parry" -> BattleSkill.EffectType.PARRY;
             default -> BattleSkill.EffectType.DAMAGE;
         };
     }

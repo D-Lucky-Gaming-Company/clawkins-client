@@ -17,7 +17,7 @@ public class Clawkin {
     private final String name;
     private final String imagePath;
     private final String iconImagePath;
-    private final int level;
+    private int level;
     
     private final int maxHp;
     private int currentHp;
@@ -96,6 +96,10 @@ public class Clawkin {
 
     public int getLevel() {
         return level;
+    }
+
+    public void setLevel(int level) {
+        this.level = Math.max(1, level);
     }
 
     public int getMaxHp() {

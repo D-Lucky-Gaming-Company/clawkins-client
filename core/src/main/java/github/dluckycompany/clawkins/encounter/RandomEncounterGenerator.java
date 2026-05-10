@@ -55,6 +55,7 @@ public final class RandomEncounterGenerator {
                 EncounterEventType.START_ENCOUNTER,
                 encounterId,
                 tableId,
+                enemyLevel,
                 hp,
                 atk,
                 defStat,
@@ -137,6 +138,11 @@ public final class RandomEncounterGenerator {
 
     private static float levelScale(int level) {
         int safeLevel = Math.max(1, level);
-        return 0.78f + (safeLevel - 1) * 0.08f;
+        if (safeLevel <= 5) {
+            // Keep Lv5 enemies around parity with Lv5 Clawkins.
+            return 0.90f + (safeLevel - 1) * 0.025f;
+        }
+        // Past Lv5, ramp steadily so Lv9 can pressure underleveled teams.
+        return 1.00f + (safeLevel - 5) * 0.045f;
     }
 }

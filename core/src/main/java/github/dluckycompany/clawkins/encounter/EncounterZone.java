@@ -18,6 +18,7 @@ public class EncounterZone implements Component {
     private final String enemyName;
     private final String encounterTableId;
     private final boolean oneShot;
+    private final int enemyLevel;
     private final int enemyHp;
     private final int enemyAttack;
     private final int enemyDefense;
@@ -31,6 +32,7 @@ public class EncounterZone implements Component {
             String enemyName,
             String encounterTableId,
             boolean oneShot,
+            int enemyLevel,
             int enemyHp,
             int enemyAttack,
             int enemyDefense,
@@ -41,6 +43,7 @@ public class EncounterZone implements Component {
         this.enemyName = enemyName;
         this.encounterTableId = encounterTableId;
         this.oneShot = oneShot;
+        this.enemyLevel = enemyLevel;
         this.enemyHp = enemyHp;
         this.enemyAttack = enemyAttack;
         this.enemyDefense = enemyDefense;
@@ -63,6 +66,10 @@ public class EncounterZone implements Component {
 
     public boolean isOneShot() {
         return oneShot;
+    }
+
+    public int getEnemyLevel() {
+        return enemyLevel;
     }
 
     public int getEnemyHp() {
