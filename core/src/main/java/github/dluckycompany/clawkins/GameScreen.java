@@ -918,6 +918,9 @@ public class GameScreen extends ScreenAdapter {
         mapTransitionSystem.setCooldown(0.2f);
 
         Entity restoredPlayer = findPlayerEntity();
+        if (restoredPlayer == null) {
+            restoredPlayer = tiledObjectConfigurator.spawnPlayerWithoutMapObject(currentMap);
+        }
         if (restoredPlayer != null) {
             centerCameraOnPlayer(restoredPlayer);
         } else {
@@ -2436,7 +2439,7 @@ public class GameScreen extends ScreenAdapter {
         }
 
         // Remove all existing entities (including player if present)
-        // The new map will spawn a fresh player entity
+        // The new map normally spawns a player from a PLAYER tile; maps without one get a fallback
         int entityCountBefore = engine.getEntities().size();
         engine.removeAllEntities();
         Gdx.app.log("GameScreen", "Removed " + entityCountBefore + " entities before loading new map");
@@ -2454,10 +2457,14 @@ public class GameScreen extends ScreenAdapter {
         
         mapTransitionSystem.setCooldown(0f);
 
-        // Find the newly spawned player entity
+        // Find the newly spawned player entity (maps without a PLAYER tile need a programmatic spawn)
         Entity loadedPlayer = findPlayerEntity();
+        if (loadedPlayer == null) {
+            Gdx.app.log("GameScreen", "No PLAYER tile on map; spawning player entity");
+            loadedPlayer = tiledObjectConfigurator.spawnPlayerWithoutMapObject(loadedMap);
+        }
         if (loadedPlayer != null) {
-            Gdx.app.log("GameScreen", "✓ Player entity found, applying saved position");
+            Gdx.app.log("GameScreen", "✓ Player entity ready, applying saved position");
             applySavedPlayerPosition(loadedPlayer, loadedMap, saveState.getPlayerX(), saveState.getPlayerY());
             applyPlayerNameToEntity(loadedPlayer, resolveCurrentPlayerName());
             
@@ -2654,7 +2661,7 @@ public class GameScreen extends ScreenAdapter {
             if (clawkin == null) {
                 continue;
             }
-            clawkin.setLevel(sharedLevel);
+            clawkin.syncStatsToSharedExperienceLevel(sharedLevel);
         }
     }
 
