@@ -70,7 +70,9 @@ import github.dluckycompany.clawkins.system.CameraSystem;
 import github.dluckycompany.clawkins.system.EnemySystem;
 import github.dluckycompany.clawkins.system.InteractionSystem;
 import github.dluckycompany.clawkins.system.MapTransitionSystem;
+import github.dluckycompany.clawkins.encounter.RandomEncounterGenerator;
 import github.dluckycompany.clawkins.system.MoveSystem;
+import github.dluckycompany.clawkins.system.RandomEncounterSystem;
 import github.dluckycompany.clawkins.system.PlayerInputSystem;
 import github.dluckycompany.clawkins.system.RenderSystem;
 import github.dluckycompany.clawkins.tiled.TiledObjectConfigurator;
@@ -192,6 +194,7 @@ public class GameScreen extends ScreenAdapter {
     private final EncounterEventBus encounterEventBus;
     private final PlayerProgress playerProgress;
     private final BattleService battleService;
+    private final RandomEncounterGenerator randomEncounterGenerator;
     private final BattleOverlay battleOverlay;
     private final InteractionSystem interactionSystem;
     private final DialogueOverlay dialogueOverlay;
@@ -314,6 +317,7 @@ public class GameScreen extends ScreenAdapter {
         this.playerBattleState = new PlayerBattleState();
         this.interactionSystem.setClawkinPartySupplier(playerBattleState::getParty);
         this.battleService = new BattleService(this.encounterEventBus, playerBattleState);
+        this.randomEncounterGenerator = new RandomEncounterGenerator();
         this.engine.addSystem(new EncounterDetectionSystem(this.encounterEventBus));
         DialogueBoxRenderer dialogueBoxRenderer = new DialogueBoxRenderer();
         this.battleOverlay = new BattleOverlay(game, dialogueBoxRenderer);
@@ -360,6 +364,11 @@ public class GameScreen extends ScreenAdapter {
         // Tiled map services
         this.tiledService = new TiledService(assetService);
         this.tiledObjectConfigurator = new TiledObjectConfigurator(engine, assetService, playerBattleState);
+        this.engine.addSystem(new RandomEncounterSystem(
+                this.tiledService,
+                this.encounterEventBus,
+                this.randomEncounterGenerator,
+                this.battleService));
 
         // Wire up callbacks:
         // - When a map object is found → TiledObjectConfigurator creates an entity
@@ -375,7 +384,15 @@ public class GameScreen extends ScreenAdapter {
             audioService.setMap(map);
             audioService.onEvent(AudioEventType.MAP_CHANGED);
         };
-        this.tiledService.setMapChangeConsumer(renderConsumer.andThen(cameraConsumer).andThen(moveConsumer).andThen(enemyConsumer).andThen(transitionConsumer).andThen(audioConsumer));
+        Consumer<TiledMap> randomEncounterReset = m -> engine.getSystem(RandomEncounterSystem.class).resetTravelLedger();
+        this.tiledService.setMapChangeConsumer(
+                renderConsumer
+                        .andThen(cameraConsumer)
+                        .andThen(moveConsumer)
+                        .andThen(enemyConsumer)
+                        .andThen(transitionConsumer)
+                        .andThen(audioConsumer)
+                        .andThen(randomEncounterReset));
         
         // Initialize cheat console system
         this.cheatCodeManager = new github.dluckycompany.clawkins.debug.CheatCodeManager(playerBattleState);
@@ -983,6 +1000,7 @@ public class GameScreen extends ScreenAdapter {
             interactionSystem.setProcessing(true);
             engine.getSystem(MoveSystem.class).setProcessing(false);
             engine.getSystem(EncounterDetectionSystem.class).setProcessing(false);
+            engine.getSystem(RandomEncounterSystem.class).setProcessing(false);
             mapTransitionSystem.setProcessing(false);
             return;
         }
@@ -992,6 +1010,7 @@ public class GameScreen extends ScreenAdapter {
             interactionSystem.setProcessing(false);
             engine.getSystem(MoveSystem.class).setProcessing(true);
             engine.getSystem(EncounterDetectionSystem.class).setProcessing(false);
+            engine.getSystem(RandomEncounterSystem.class).setProcessing(false);
             mapTransitionSystem.setProcessing(false);
             return;
         }
@@ -1024,6 +1043,7 @@ public class GameScreen extends ScreenAdapter {
                     && !merchantLocked
                     && !menuLocked
                     && !cheatConsoleLocked);
+            engine.getSystem(RandomEncounterSystem.class).setProcessing(shouldEnableExploration);
             return;
         }
 
@@ -1039,6 +1059,7 @@ public class GameScreen extends ScreenAdapter {
                 && !cheatConsoleLocked);
         engine.getSystem(MoveSystem.class).setProcessing(shouldEnableExploration);
         engine.getSystem(EncounterDetectionSystem.class).setProcessing(shouldEnableExploration);
+        engine.getSystem(RandomEncounterSystem.class).setProcessing(shouldEnableExploration);
         mapTransitionSystem.setProcessing(shouldEnableExploration);
     }
 
