@@ -290,6 +290,7 @@ public class TiledObjectConfigurator {
                 if (objectId == null || objectId.isBlank()) {
                     objectId = objectIdFallback;
                 }
+                String groupId = getOptionalGroupId(tileMapObject);
                 String dialogueDirectory = getStringProperty(tileMapObject, "DialogueDirectory", "...");
                 boolean hasCollision = getBooleanProperty(tileMapObject, "hasCollision", true);
                 boolean isTrippable = getBooleanProperty(tileMapObject, "isTrippable", false);
@@ -298,7 +299,8 @@ public class TiledObjectConfigurator {
 
                 entity.add(new Interactible(
                         objectName,
-                    objectId,
+                        objectId,
+                        groupId,
                         dialogueDirectory,
                         hasCollision,
                         dialoguePosition,
@@ -314,6 +316,7 @@ public class TiledObjectConfigurator {
                 if (objectId == null || objectId.isBlank()) {
                     objectId = objectIdFallback;
                 }
+                String groupId = getOptionalGroupId(tileMapObject);
                 String dialogueDirectory = getStringProperty(tileMapObject, "DialogueDirectory", "dialogue/merchants.json");
                 boolean hasCollision = getBooleanProperty(tileMapObject, "hasCollision", true);
                 boolean isTrippable = getBooleanProperty(tileMapObject, "isTrippable", false);
@@ -322,7 +325,8 @@ public class TiledObjectConfigurator {
 
                 entity.add(new Interactible(
                         objectName,
-                    objectId,
+                        objectId,
+                        groupId,
                         dialogueDirectory,
                         hasCollision,
                         dialoguePosition,
@@ -392,6 +396,7 @@ public class TiledObjectConfigurator {
         if (objectId == null || objectId.isBlank()) {
             objectId = objectIdFallback;
         }
+        String groupId = getOptionalGroupId(mapObject);
         String dialogueDirectory = getStringProperty(mapObject, "DialogueDirectory", isMerchant ? "dialogue/merchants.json" : "...");
         boolean hasCollision = getBooleanProperty(mapObject, "hasCollision", true);
         boolean isTrippable = getBooleanProperty(mapObject, "isTrippable", false);
@@ -401,12 +406,24 @@ public class TiledObjectConfigurator {
         entity.add(new Interactible(
                 objectName,
                 objectId,
+                groupId,
                 dialogueDirectory,
                 hasCollision,
                 dialoguePosition,
                 isMerchant,
                 isTrippable
         ));
+    }
+
+    private static String getOptionalGroupId(MapObject object) {
+        String groupId = getStringProperty(object, "GroupId", "");
+        if (groupId == null || groupId.isBlank()) {
+            groupId = getStringProperty(object, "groupId", "");
+        }
+        if (groupId == null || groupId.isBlank()) {
+            return null;
+        }
+        return groupId.trim();
     }
 
     private static Interactible.DialoguePosition parseDialoguePosition(String raw) {

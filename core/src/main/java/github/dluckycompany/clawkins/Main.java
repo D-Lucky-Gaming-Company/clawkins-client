@@ -95,6 +95,8 @@ public class Main extends Game {
         audioService.registerSound(SoundEffect.UI_SELECT, "audio/soundEffects/SFX_MayGenko/square channel SFX/menu select beep 1.ogg");
         audioService.registerSound(SoundEffect.UI_BACK, "audio/soundEffects/SFX_MayGenko/square channel SFX/menu back 1.ogg");
         audioService.registerSound(SoundEffect.UI_ERROR, "audio/soundEffects/SFX_MayGenko/square channel SFX/menu error 1.ogg");
+        audioService.registerSound(SoundEffect.LEVEL_UP, "audio/soundEffects/SFX_Others/levelUp.mp3");
+        audioService.registerSound(SoundEffect.FALLEN, "audio/soundEffects/SFX_Others/fallen.mp3");
         this.glProfiler = new GLProfiler(Gdx.graphics);
         this.glProfiler.enable();
 

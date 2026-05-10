@@ -23,15 +23,19 @@ import com.badlogic.gdx.scenes.scene2d.ui.Window.WindowStyle;
 import com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable;
 import com.badlogic.gdx.utils.Disposable;
 
+import java.util.ArrayList;
 import java.util.List;
 
+import github.dluckycompany.clawkins.GameScreen;
 import github.dluckycompany.clawkins.Main;
 import github.dluckycompany.clawkins.audio.DialogueSoundManager;
 import github.dluckycompany.clawkins.audio.SoundEffect;
 import github.dluckycompany.clawkins.asset.AssetService;
 import github.dluckycompany.clawkins.character.Clawkin;
+import github.dluckycompany.clawkins.character.LevelSystem;
 import github.dluckycompany.clawkins.component.Interactible;
 import github.dluckycompany.clawkins.input.InputConventions;
+import github.dluckycompany.clawkins.progress.PlayerProgress;
 import github.dluckycompany.clawkins.ui.DialogueBoxRenderer;
 
 /**
@@ -63,6 +67,8 @@ public class BattleOverlay implements Disposable {
         NONE,
         PLAYER_RESULT,
         ENEMY_RESULT,
+        VICTORY_REWARD,
+        VICTORY_LEVEL_UP,
         RUN_CONFIRMATION,
         SWITCH_CONFIRMATION,
         SKILL_CONFIRMATION,
@@ -107,6 +113,9 @@ public class BattleOverlay implements Disposable {
     private final DialogueSoundManager dialogueSoundManager = new DialogueSoundManager();
     private BattleActionSfxHandler battleActionSfxHandler;
     private int skillConfirmationOptionIndex = 0; // 0=Yes, 1=No, 2=Stats
+    private int pendingLevelUps = 0;
+    private int pendingLevelUpTargetLevel = LevelSystem.MIN_LEVEL;
+    private static final int VICTORY_XP_REWARD = 25;
 
     /** True when inventory is open from battle. */
     private boolean inventoryOpen = false;
@@ -284,6 +293,7 @@ public class BattleOverlay implements Disposable {
                 hideBattleHud();
                 transitionPending = false;
                 resetDialogueFlow();
+                resetVictoryDialogueState();
             }
             return;
         }
@@ -418,6 +428,7 @@ public class BattleOverlay implements Disposable {
     private void startBattle(BattleService battleService) {
         transitionPending = false;
         resetDialogueFlow();
+        resetVictoryDialogueState();
         showBattleHud();
         
         // Set wild battle flag (for now, assume all battles are wild)
@@ -455,7 +466,7 @@ public class BattleOverlay implements Disposable {
                 // Update EXP/Level display
                 int level = activeClawkin.getLevel();
                 battleHud.updateExpFromLevel(level);
-                
+
                 // Update skill button labels with actual skill names
                 if (ctx != null && ctx.getSkillManager() != null) {
                     battleHud.updateSkillLabels(ctx.getSkillManager(), ally);
@@ -604,6 +615,34 @@ public class BattleOverlay implements Disposable {
             return;
         }
 
+        if (dialogueFlowPhase == DialogueFlowPhase.VICTORY_REWARD) {
+            if (pendingLevelUps > 0) {
+                String levelUpText = buildLevelUpDialogueText(pendingLevelUps, pendingLevelUpTargetLevel);
+                openDialogue(
+                        null,
+                        levelUpText,
+                        buildLevelUpDialogueSpans(
+                                levelUpText,
+                                pendingLevelUps,
+                                pendingLevelUpTargetLevel
+                        ),
+                        DialogueFlowPhase.VICTORY_LEVEL_UP
+                );
+                playLevelUpSound();
+                pendingLevelUps = 0;
+                return;
+            }
+            resetDialogueFlow();
+            battleService.closeBattleSession();
+            return;
+        }
+
+        if (dialogueFlowPhase == DialogueFlowPhase.VICTORY_LEVEL_UP) {
+            resetDialogueFlow();
+            battleService.closeBattleSession();
+            return;
+        }
+
         // Handle run confirmation
         if (dialogueFlowPhase == DialogueFlowPhase.RUN_CONFIRMATION) {
             // Check for Yes (Z/Space/Enter) or No (X/Escape)
@@ -647,6 +686,9 @@ public class BattleOverlay implements Disposable {
                 openDialogue(null, machine.getLastLog(), machine.getLastLogSpans(), DialogueFlowPhase.ENEMY_RESULT);
                 return;
             }
+            if (tryOpenVictoryDialogue(battleService, machine)) {
+                return;
+            }
             resetDialogueFlow();
             if (!battleService.isBattleActive()) {
                 battleService.closeBattleSession();
@@ -657,7 +699,10 @@ public class BattleOverlay implements Disposable {
         if (dialogueFlowPhase == DialogueFlowPhase.ENEMY_RESULT) {
             // Grant round EXP after each complete round
             grantRoundExp(battleService);
-            
+
+            if (tryOpenVictoryDialogue(battleService, machine)) {
+                return;
+            }
             resetDialogueFlow();
             if (!battleService.isBattleActive()) {
                 battleService.closeBattleSession();
@@ -715,6 +760,87 @@ public class BattleOverlay implements Disposable {
         dialogueSpans = List.of();
         dialogueVisibleChars = 0f;
         dialogueSoundManager.stop();
+    }
+
+    private void resetVictoryDialogueState() {
+        pendingLevelUps = 0;
+        pendingLevelUpTargetLevel = LevelSystem.MIN_LEVEL;
+    }
+
+    private boolean tryOpenVictoryDialogue(BattleService battleService, BattleStateMachine machine) {
+        if (battleService == null || machine == null) {
+            return false;
+        }
+        if (battleService.isBattleActive() || machine.getPhase() != BattlePhase.VICTORY) {
+            return false;
+        }
+
+        PlayerProgress progress = resolvePlayerProgress();
+        int currentXp = progress != null ? progress.getExperiencePoints() : 0;
+        int beforeLevel = LevelSystem.calculateLevelFromExp(currentXp);
+        int afterLevel = LevelSystem.calculateLevelFromExp(currentXp + VICTORY_XP_REWARD);
+        pendingLevelUps = Math.max(0, afterLevel - beforeLevel);
+        pendingLevelUpTargetLevel = afterLevel;
+
+        String rewardText = "Victory Rewards\n"
+                + "XP Gained: +" + VICTORY_XP_REWARD + "\n"
+                + "Items Earned: None";
+        openDialogue(null, rewardText, List.of(), DialogueFlowPhase.VICTORY_REWARD);
+        return true;
+    }
+
+    private PlayerProgress resolvePlayerProgress() {
+        if (game == null) {
+            return null;
+        }
+        try {
+            GameScreen screen = game.getScreen(GameScreen.class);
+            return screen != null ? screen.getPlayerProgress() : null;
+        } catch (RuntimeException ex) {
+            return null;
+        }
+    }
+
+    private String buildLevelUpDialogueText(int levelsGained, int targetLevel) {
+        if (levelsGained <= 1) {
+            return "Level Up!\nYou reached Level " + targetLevel + "!";
+        }
+        return "Level Up!\nYou gained " + levelsGained + " levels!\nNow at Level " + targetLevel + "!";
+    }
+
+    private List<BattleTextSpan> buildLevelUpDialogueSpans(String text, int levelsGained, int targetLevel) {
+        if (text == null || text.isEmpty()) {
+            return List.of();
+        }
+
+        ArrayList<BattleTextSpan> spans = new ArrayList<>();
+
+        int headlineStart = text.indexOf("Level Up!");
+        if (headlineStart >= 0) {
+            spans.add(new BattleTextSpan(headlineStart, headlineStart + "Level Up!".length(), BattleTextRole.NAME));
+        }
+
+        if (levelsGained > 1) {
+            String gainedToken = Integer.toString(levelsGained);
+            int gainedStart = text.indexOf(gainedToken + " levels");
+            if (gainedStart >= 0) {
+                spans.add(new BattleTextSpan(gainedStart, gainedStart + gainedToken.length(), BattleTextRole.HEAL));
+            }
+        }
+
+        String targetToken = "Level " + targetLevel;
+        int targetStart = text.lastIndexOf(targetToken);
+        if (targetStart >= 0) {
+            spans.add(new BattleTextSpan(targetStart, targetStart + targetToken.length(), BattleTextRole.HEAL));
+        }
+
+        return List.copyOf(spans);
+    }
+
+    private void playLevelUpSound() {
+        if (game != null && game.getAudioService() != null) {
+            game.getAudioService().playSound(SoundEffect.LEVEL_UP);
+        }
     }
     
     /**

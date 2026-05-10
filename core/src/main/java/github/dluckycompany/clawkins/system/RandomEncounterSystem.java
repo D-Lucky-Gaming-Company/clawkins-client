@@ -5,6 +5,7 @@ import com.badlogic.ashley.core.Entity;
 import com.badlogic.ashley.core.EntitySystem;
 import com.badlogic.ashley.core.Family;
 import com.badlogic.ashley.utils.ImmutableArray;
+import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.maps.tiled.TiledMap;
 import com.badlogic.gdx.math.Vector2;
 
@@ -25,6 +26,7 @@ import java.util.concurrent.ThreadLocalRandom;
  * Tracks overworld travel and rolls for random encounters every two map tiles walked.
  */
 public class RandomEncounterSystem extends EntitySystem {
+    private static final String TAG = "RandomEncounterSystem";
     private static final float TILES_PER_ROLL = 2f;
     /** Seconds before another random encounter probability roll is allowed after the last attempt. */
     private static final float ROLL_COOLDOWN_SEC = 3f;
@@ -142,7 +144,15 @@ public class RandomEncounterSystem extends EntitySystem {
             return;
         }
         rollCooldownRemaining = ROLL_COOLDOWN_SEC;
-        if (ThreadLocalRandom.current().nextFloat() < chance) {
+        float roll = ThreadLocalRandom.current().nextFloat();
+        boolean triggered = roll < chance;
+        Gdx.app.log(
+                TAG,
+                "Random encounter roll -> tier=" + tier
+                        + ", roll=" + roll
+                        + ", chance=" + chance
+                        + ", triggered=" + triggered);
+        if (triggered) {
             randomEncounterGenerator.randomEncounter(tier, encounterEventBus);
         }
     }
