@@ -23,6 +23,7 @@ import com.badlogic.gdx.utils.Scaling;
 
 import github.dluckycompany.clawkins.battle.BattleSkill;
 import github.dluckycompany.clawkins.character.Clawkin;
+import github.dluckycompany.clawkins.input.InputConventions;
 
 /**
  * Standalone summary overlay for a selected Clawkin.
@@ -496,6 +497,13 @@ public class SummaryScreen implements InputProcessor {
 
     @Override
     public boolean keyDown(int keycode) {
+        if (InputConventions.isCancelKey(keycode)) {
+            if (onBackPressed != null) {
+                onBackPressed.run();
+            }
+            return true;
+        }
+
         switch (keycode) {
             case Input.Keys.A, Input.Keys.D, Input.Keys.LEFT, Input.Keys.RIGHT -> {
                 togglePage();
@@ -514,12 +522,6 @@ public class SummaryScreen implements InputProcessor {
                     return true;
                 }
                 return false;
-            }
-            case Input.Keys.ESCAPE -> {
-                if (onBackPressed != null) {
-                    onBackPressed.run();
-                }
-                return true;
             }
             default -> {
                 return false;
