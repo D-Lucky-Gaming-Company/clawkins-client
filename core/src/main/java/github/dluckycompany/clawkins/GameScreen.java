@@ -170,20 +170,43 @@ public class GameScreen extends ScreenAdapter {
     private static final float SAVE_TOAST_X = 20f;
     private static final float SAVE_TOAST_Y = 575f;
     private static final String SAVE_TOAST_TEXT = "SAVED";
-    private static final int DEFAULT_BATTLE_XP_REWARD = 25;
+    public static final int DEFAULT_BATTLE_XP_REWARD = 25;
     private static final String EVENT_BOSS_0 = "boss_0_event";
     private static final String EVENT_BOSS_0_DEFEATED = "boss_0_defeated";
+    private static final String EVENT_BOSS_2 = "boss_2_event";
+    private static final String EVENT_BOSS_2_DEFEATED = "boss_2_defeated";
     private static final String ENCOUNTER_BERT_JR_ID = "boss_0_encounter";
     // Placeholder IDs for upcoming main bosses.
     private static final String ENCOUNTER_SPARTACUS_ID = "boss_1_encounter";
     private static final String ENCOUNTER_CERBERUS_ID = "boss_2_encounter";
+    /** Placeholder combat tuning for Cerberus; replace when Boss 1 progression is locked. */
+    private static final String ENCOUNTER_TABLE_CERBERUS_ID = "main_boss_cerberus";
+    private static final String CERBERUS_PORTRAIT_PATH = "characters/boss_placeholder.png";
+    private static final int SPARTACUS_PLACEHOLDER_LEVEL = 10;
+    private static final int SPARTACUS_PLACEHOLDER_HP = 280;
+    private static final int SPARTACUS_PLACEHOLDER_ATTACK = 42;
+    private static final int SPARTACUS_PLACEHOLDER_DEFENSE = 38;
+    private static final int SPARTACUS_PLACEHOLDER_SPEED = 28;
+    /** Placeholder; tune with {@link LevelSystem} targets after Boss 1 rewards are set. */
+    private static final int SPARTACUS_VICTORY_XP_PLACEHOLDER = 200;
+    /** Optional per-encounter XP; see {@link BattleOverlay} boss reward notes. */
+    private static final Map<String, Integer> BOSS_XP_REWARDS_BY_ENCOUNTER_ID = Map.ofEntries(
+            Map.entry(ENCOUNTER_BERT_JR_ID, 50),
+            Map.entry(ENCOUNTER_CERBERUS_ID, CERBERUS_VICTORY_XP_PLACEHOLDER)
+    );
     private static final String TRIGGER_BOSS_BERT_JR_ID = "trigger_boss_0";
+    /** Matches {@code ObjectId} on cave_3.tmx Cerberus trigger. */
+    private static final String TRIGGER_BOSS_2_ID = "trigger_boss_2";
     private static final String END_ROAD_OBJECT_ID = "end_road";
     private static final String MANSION_PATH_BLOCK_OBJECT_ID = "mansion_path_block";
     private static final String BED_COTTAGE_OBJECT_ID = "bed_cottage";
     private static final String PROP_BERT_JR_OBJECT_ID = "bertjr_prop";
     private static final Set<String> SAVE_POINT_OBJECT_IDS = Set.of(
             BED_COTTAGE_OBJECT_ID
+    );
+    /** Heal interactibles on nursery maps (see nurse_interior*.tmx ObjectId). */
+    private static final List<String> NURSE_HEAL_OBJECT_IDS = List.of(
+            "nurse_01", "nurse_02", "nurse_03", "nurse_04"
     );
     private static final float BERT_JR_PROP_INITIAL_X_OFFSET = 6f;
     private static final float BERT_JR_PROP_WALK_IN_SPEED = 1.2f;
@@ -568,6 +591,9 @@ public class GameScreen extends ScreenAdapter {
             startMansionPathBlockForcedMove(context.playerEntity());
         });
         registerSavePointInteractions();
+        for (String nurseHealObjectId : NURSE_HEAL_OBJECT_IDS) {
+            interactionSystem.registerSpecialInteraction(nurseHealObjectId, context -> applyNurseStationHeal());
+        }
         
         // Register merchant shop interactions (shop_01 and shop_02)
         // Both shops use the same dialogue from merchants.json
@@ -612,11 +638,53 @@ public class GameScreen extends ScreenAdapter {
                     }
             );
         });
+
+        interactionSystem.registerPreDialogueCheck(TRIGGER_BOSS_2_ID, context ->
+                !playerProgress.isEventAccomplished(EVENT_BOSS_2_DEFEATED));
+        interactionSystem.registerSpecialInteraction(TRIGGER_BOSS_2_ID, context -> {
+            if (battleService.hasBattleSession() || playerProgress.isEventAccomplished(EVENT_BOSS_2_DEFEATED)) {
+                return;
+            }
+            playerProgress.incrementAttempts(EVENT_BOSS_2);
+            promptBossFightChoice(
+                    "Cerberus",
+                    () -> {
+                        playerProgress.incrementAccepted(EVENT_BOSS_2);
+                        runBossPreBattleMusicHook(ENCOUNTER_CERBERUS_ID);
+                        encounterEventBus.publish(new EncounterEvent(
+                                EncounterEventType.START_ENCOUNTER,
+                                ENCOUNTER_CERBERUS_ID,
+                                ENCOUNTER_TABLE_CERBERUS_ID,
+                                CERBERUS_PLACEHOLDER_LEVEL,
+                                CERBERUS_PLACEHOLDER_HP,
+                                CERBERUS_PLACEHOLDER_ATTACK,
+                                CERBERUS_PLACEHOLDER_DEFENSE,
+                                CERBERUS_PLACEHOLDER_SPEED,
+                                createCerberusBossSkills(),
+                                "Cerberus",
+                                CERBERUS_PORTRAIT_PATH
+                        ));
+                    },
+                    () -> applyCerberusEncounterDeclineOutcome(
+                            context.playerEntity(),
+                            context.interactionCount() == 1
+                    )
+            );
+        });
     }
 
     private void registerBossMusicHooks() {
         // Keep Bert Jr. on default battle music flow.
         bossMusicHooksByEncounterId.remove(ENCOUNTER_BERT_JR_ID);
+        bossMusicHooksByEncounterId.put(
+                ENCOUNTER_CERBERUS_ID,
+                new BossMusicHooks(
+                        ENCOUNTER_CERBERUS_ID,
+                        null,
+                        MusicTrack.BOSS_CERBERUS,
+                        List.of(),
+                        null,
+                        null));
     }
 
     private void promptBossFightChoice(String enemyName, Runnable onYes, Runnable onNo) {
@@ -642,6 +710,29 @@ public class GameScreen extends ScreenAdapter {
             return;
         }
         promptSaveGameChoice(this::openSaveActionPrompt, () -> {});
+    }
+
+    /**
+     * Full heal for all party members after nursery heal-pad dialogue (special interaction).
+     * Plays the same heal sting as battle / item use when anyone actually gains HP.
+     */
+    private void applyNurseStationHeal() {
+        int healedCount = 0;
+        for (Clawkin clawkin : playerBattleState.getParty()) {
+            if (clawkin == null) {
+                continue;
+            }
+            int beforeHp = clawkin.getCurrentHp();
+            int maxHp = clawkin.getMaxHp();
+            if (beforeHp < maxHp) {
+                clawkin.setCurrentHp(maxHp);
+                healedCount++;
+            }
+        }
+        if (healedCount > 0) {
+            audioService.playSound(SoundEffect.BATTLE_HEAL);
+            refreshProgressSnapshots();
+        }
     }
 
     private void openSaveActionPrompt() {
@@ -673,6 +764,36 @@ public class GameScreen extends ScreenAdapter {
                         "Junk Toss",
                         BattleSkill.EffectType.DAMAGE,
                         8,
+                        "attack[self]",
+                        0,
+                        0
+                )
+        );
+    }
+
+    /** Placeholder kit; replace with authored Cerberus skills. */
+    private static List<BattleSkill> createCerberusBossSkills() {
+        return List.of(
+                new BattleSkill(
+                        "Triple Bite",
+                        BattleSkill.EffectType.DAMAGE,
+                        22,
+                        "attack[self]",
+                        0,
+                        1
+                ),
+                new BattleSkill(
+                        "Infernal Howl",
+                        BattleSkill.EffectType.DAMAGE,
+                        14,
+                        "attack[self]",
+                        0,
+                        0
+                ),
+                new BattleSkill(
+                        "Chain Lash",
+                        BattleSkill.EffectType.DAMAGE,
+                        16,
                         "attack[self]",
                         0,
                         0
@@ -1492,13 +1613,13 @@ public class GameScreen extends ScreenAdapter {
                 audioService.onEvent(AudioEventType.BATTLE_VICTORY);
                 runBossPostBattleMusicHook(encounterId, true);
                 playerProgress.incrementEnemiesDefeated();
-                playerProgress.addExperiencePoints(DEFAULT_BATTLE_XP_REWARD);
-                synchronizePartyLevelsWithSharedXp();
-                refreshProgressSnapshots();
                 if (ENCOUNTER_BERT_JR_ID.equals(encounterId)) {
                     playerProgress.incrementWins(EVENT_BOSS_0);
                     playerProgress.markEventAccomplished(EVENT_BOSS_0_DEFEATED);
                     hideBertJrProp();
+                } else if (ENCOUNTER_CERBERUS_ID.equals(encounterId)) {
+                    playerProgress.incrementWins(EVENT_BOSS_2);
+                    playerProgress.markEventAccomplished(EVENT_BOSS_2_DEFEATED);
                 }
             } else if (endPhase == BattlePhase.ESCAPE) {
                 applyEncounterEscapeOutcome(encounterId);
@@ -1514,6 +1635,8 @@ public class GameScreen extends ScreenAdapter {
             refreshProgressSnapshots();
             if (ENCOUNTER_BERT_JR_ID.equals(encounterId)) {
                 playerProgress.incrementLosses(EVENT_BOSS_0);
+            } else if (ENCOUNTER_CERBERUS_ID.equals(encounterId)) {
+                playerProgress.incrementLosses(EVENT_BOSS_2);
             }
             queuedFallenScreenAfterBattle = true;
         }
@@ -1560,10 +1683,28 @@ public class GameScreen extends ScreenAdapter {
     }
 
     private void applyEncounterEscapeOutcome(String encounterId) {
-        if (!ENCOUNTER_BERT_JR_ID.equals(encounterId)) {
+        if (ENCOUNTER_BERT_JR_ID.equals(encounterId)) {
+            applyBertJrEncounterDeclineOutcome(findPlayerEntity(), false);
+        } else if (ENCOUNTER_CERBERUS_ID.equals(encounterId)) {
+            applyCerberusEncounterDeclineOutcome(findPlayerEntity(), false);
+        }
+    }
+
+    private void applyCerberusEncounterDeclineOutcome(Entity playerEntity, boolean playCurrentMapMusic) {
+        playerProgress.incrementDeclined(EVENT_BOSS_2);
+        if (playCurrentMapMusic) {
+            audioService.playCurrentMapMusic();
+        }
+        if (playerEntity == null) {
             return;
         }
-        applyBertJrEncounterDeclineOutcome(findPlayerEntity(), false);
+        startForcedMove(
+                playerEntity,
+                -1f,
+                0f,
+                PlayerAnimation.Direction.WEST,
+                BOSS_DECLINE_FORCE_MOVE_DURATION_SECONDS
+        );
     }
 
     private void applyBertJrEncounterDeclineOutcome(Entity playerEntity, boolean playCurrentMapMusic) {
@@ -2328,6 +2469,26 @@ public class GameScreen extends ScreenAdapter {
             }
             clawkin.setLevel(sharedLevel);
         }
+    }
+
+    /**
+     * Awards battle victory XP when the post-battle reward dialogue opens.
+     * Boss encounters may use a larger amount via {@link #BOSS_XP_REWARDS_BY_ENCOUNTER_ID}.
+     *
+     * @param encounterId encounter id from battle context, or {@code null} for wild / generic fights
+     * @return XP actually added
+     */
+    public int applyVictoryExperienceReward(String encounterId) {
+        int xp = DEFAULT_BATTLE_XP_REWARD;
+        if (encounterId != null) {
+            Integer bossXp = BOSS_XP_REWARDS_BY_ENCOUNTER_ID.get(encounterId);
+            if (bossXp != null) {
+                xp = bossXp;
+            }
+        }
+        playerProgress.addExperiencePoints(xp);
+        refreshProgressSnapshots();
+        return xp;
     }
 
     private void applySavedPlayerPosition(Entity playerEntity, TiledMap map, float x, float y) {

@@ -35,6 +35,7 @@ import github.dluckycompany.clawkins.audio.SoundEffect;
 import github.dluckycompany.clawkins.asset.AssetService;
 import github.dluckycompany.clawkins.character.Clawkin;
 import github.dluckycompany.clawkins.character.LevelSystem;
+import github.dluckycompany.clawkins.character.SkillUnlockSystem;
 import github.dluckycompany.clawkins.component.Interactible;
 import github.dluckycompany.clawkins.input.InputConventions;
 import github.dluckycompany.clawkins.progress.PlayerProgress;
@@ -71,6 +72,7 @@ public class BattleOverlay implements Disposable {
         ENEMY_RESULT,
         VICTORY_REWARD,
         VICTORY_LEVEL_UP,
+        VICTORY_MILESTONE,
         RUN_CONFIRMATION,
         SWITCH_CONFIRMATION,
         SKILL_CONFIRMATION,
@@ -118,11 +120,29 @@ public class BattleOverlay implements Disposable {
     private int pendingLevelUps = 0;
     private int pendingLevelUpTargetLevel = LevelSystem.MIN_LEVEL;
     private int pendingVictoryCoinReward = 0;
-    private static final int VICTORY_XP_REWARD = 25;
-    private static final Map<String, Integer> BOSS_COIN_REWARDS_BY_ENCOUNTER_ID = Map.of(
-            "boss_0_encounter", 500
+    private boolean pendingVictoryMilestone = false;
+    private String pendingVictoryMilestoneText = "";
+    /** Prevents double-applying {@link GameScreen#DEFAULT_BATTLE_XP_REWARD} if victory dialogue is reopened. */
+    private boolean victoryXpGrantedThisSession = false;
+    private static final int[] LEVEL_MILESTONE_THRESHOLDS = {10, 15, 20};
+    /**
+     * Per-boss coin overrides applied on victory.
+     *
+     * <p>How to add a new boss reward:<br>
+     * 1. Uncomment (or add) the entry below using the encounter ID string.<br>
+     * 2. Set the coin value to match the intended boss difficulty/prestige.<br>
+     * 3. Add the matching XP entry in {@link github.dluckycompany.clawkins.GameScreen#BOSS_XP_REWARDS_BY_ENCOUNTER_ID}.
+     *
+     * <p>Current values:<br>
+     * - boss_0 (Bert Jr.)  : 500 coins<br>
+     * - boss_1 (Spartacus) : TBD<br>
+     * - boss_2 (Cerberus)  : TBD
+     */
+    private static final Map<String, Integer> BOSS_COIN_REWARDS_BY_ENCOUNTER_ID = Map.ofEntries(
+            Map.entry("boss_0_encounter", 500),
+            // Map.entry("boss_1_encounter", ???),  // TODO: set when boss_1 (Spartacus) is implemented
+            Map.entry("boss_2_encounter", 750) // Placeholder; tune with boss difficulty
     );
-
     /** True when inventory is open from battle. */
     private boolean inventoryOpen = false;
     /** Small input guard after returning from inventory to avoid key bleed-through. */
@@ -649,12 +669,24 @@ public class BattleOverlay implements Disposable {
                 pendingLevelUps = 0;
                 return;
             }
+            if (tryOpenVictoryMilestoneDialogue()) {
+                return;
+            }
             resetDialogueFlow();
             battleService.closeBattleSession();
             return;
         }
 
         if (dialogueFlowPhase == DialogueFlowPhase.VICTORY_LEVEL_UP) {
+            if (tryOpenVictoryMilestoneDialogue()) {
+                return;
+            }
+            resetDialogueFlow();
+            battleService.closeBattleSession();
+            return;
+        }
+
+        if (dialogueFlowPhase == DialogueFlowPhase.VICTORY_MILESTONE) {
             resetDialogueFlow();
             battleService.closeBattleSession();
             return;
@@ -783,6 +815,9 @@ public class BattleOverlay implements Disposable {
         pendingLevelUps = 0;
         pendingLevelUpTargetLevel = LevelSystem.MIN_LEVEL;
         pendingVictoryCoinReward = 0;
+        pendingVictoryMilestone = false;
+        pendingVictoryMilestoneText = "";
+        victoryXpGrantedThisSession = false;
     }
 
     private boolean tryOpenVictoryDialogue(BattleService battleService, BattleStateMachine machine) {
@@ -794,23 +829,28 @@ public class BattleOverlay implements Disposable {
         }
 
         PlayerProgress progress = resolvePlayerProgress();
-        int currentXp = progress != null ? progress.getExperiencePoints() : 0;
-        int beforeLevel = LevelSystem.calculateLevelFromExp(currentXp);
-        int afterLevel = LevelSystem.calculateLevelFromExp(currentXp + VICTORY_XP_REWARD);
-        if (afterLevel <= beforeLevel) {
-            // Handle timing where victory XP was already applied before this dialogue is opened.
-            int xpBeforeReward = Math.max(0, currentXp - VICTORY_XP_REWARD);
-            int beforeIfRewardAlreadyApplied = LevelSystem.calculateLevelFromExp(xpBeforeReward);
-            int afterIfRewardAlreadyApplied = LevelSystem.calculateLevelFromExp(currentXp);
-            if (afterIfRewardAlreadyApplied > beforeIfRewardAlreadyApplied) {
-                beforeLevel = beforeIfRewardAlreadyApplied;
-                afterLevel = afterIfRewardAlreadyApplied;
-            }
+        GameScreen gameScreen = resolveGameScreen();
+        int xpBeforeReward = progress != null ? progress.getExperiencePoints() : 0;
+        BattleContext context = machine.getContext();
+        String encounterId = context != null ? context.getEncounterId() : null;
+        int xpAwarded = GameScreen.DEFAULT_BATTLE_XP_REWARD;
+        if (gameScreen != null && progress != null && !victoryXpGrantedThisSession) {
+            xpAwarded = gameScreen.applyVictoryExperienceReward(encounterId);
+            victoryXpGrantedThisSession = true;
         }
+        int currentXp = progress != null ? progress.getExperiencePoints() : xpBeforeReward;
+        int beforeLevel = LevelSystem.calculateLevelFromExp(xpBeforeReward);
+        int afterLevel = LevelSystem.calculateLevelFromExp(currentXp);
         pendingLevelUps = Math.max(0, afterLevel - beforeLevel);
         pendingLevelUpTargetLevel = afterLevel;
+        int milestoneThreshold = highestCrossedLevelMilestoneThreshold(beforeLevel, afterLevel);
+        boolean gainedSkill = partyGainedSkillsFromLevelUps(beforeLevel, afterLevel);
+        pendingVictoryMilestone = milestoneThreshold >= 0 || gainedSkill;
+        pendingVictoryMilestoneText =
+                pendingVictoryMilestone
+                        ? buildVictoryMilestoneDialogueText(milestoneThreshold, gainedSkill)
+                        : "";
         int enemyLevel = LevelSystem.MIN_LEVEL;
-        BattleContext context = machine.getContext();
         if (context != null) {
             enemyLevel = context.getEnemyLevel();
         }
@@ -818,13 +858,12 @@ public class BattleOverlay implements Disposable {
         if (playerBattleState != null && playerBattleState.getWallet() != null) {
             playerBattleState.getWallet().addMoney(pendingVictoryCoinReward);
         }
-        GameScreen gameScreen = resolveGameScreen();
         if (gameScreen != null) {
             gameScreen.refreshHudWallet();
         }
 
         String rewardText = "Victory Rewards\n"
-                + "XP Gained: +" + VICTORY_XP_REWARD + "\n"
+                + "XP Gained: +" + xpAwarded + "\n"
                 + "Coins Gained: +" + pendingVictoryCoinReward + "\n"
                 + "Items Earned: None";
         openDialogue(null, rewardText, List.of(), DialogueFlowPhase.VICTORY_REWARD);
@@ -909,6 +948,74 @@ public class BattleOverlay implements Disposable {
         if (game != null && game.getAudioService() != null) {
             game.getAudioService().playSound(SoundEffect.LEVEL_UP);
         }
+    }
+
+    /**
+     * Opens the post-victory milestone dialogue if one was queued. Returns true when the flow was continued.
+     */
+    private boolean tryOpenVictoryMilestoneDialogue() {
+        if (!pendingVictoryMilestone || pendingVictoryMilestoneText == null || pendingVictoryMilestoneText.isEmpty()) {
+            return false;
+        }
+        openDialogue(null, pendingVictoryMilestoneText, List.of(), DialogueFlowPhase.VICTORY_MILESTONE);
+        playMilestoneSound();
+        pendingVictoryMilestone = false;
+        pendingVictoryMilestoneText = "";
+        return true;
+    }
+
+    private void playMilestoneSound() {
+        if (game != null && game.getAudioService() != null) {
+            game.getAudioService().playSound(SoundEffect.MILESTONE);
+        }
+    }
+
+    private static int highestCrossedLevelMilestoneThreshold(int beforeLevel, int afterLevel) {
+        int highest = -1;
+        if (afterLevel <= beforeLevel) {
+            return -1;
+        }
+        for (int threshold : LEVEL_MILESTONE_THRESHOLDS) {
+            if (beforeLevel < threshold && afterLevel >= threshold) {
+                highest = threshold;
+            }
+        }
+        return highest;
+    }
+
+    private boolean partyGainedSkillsFromLevelUps(int beforeLevel, int afterLevel) {
+        if (playerBattleState == null || afterLevel <= beforeLevel) {
+            return false;
+        }
+        List<Clawkin> party = playerBattleState.getParty();
+        if (party == null || party.isEmpty()) {
+            return false;
+        }
+        for (Clawkin clawkin : party) {
+            if (clawkin == null || clawkin.getId() == null || clawkin.getId().isBlank()) {
+                continue;
+            }
+            for (int lv = beforeLevel + 1; lv <= afterLevel; lv++) {
+                if (!SkillUnlockSystem.getSkillsUnlockedAtLevel(clawkin.getId(), lv).isEmpty()) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static String buildVictoryMilestoneDialogueText(int milestoneThreshold, boolean gainedSkill) {
+        boolean levelMilestone = milestoneThreshold >= 0;
+        if (levelMilestone && gainedSkill) {
+            return "Milestone!\nYou reached Level " + milestoneThreshold + " and learned a new skill!";
+        }
+        if (levelMilestone) {
+            return "Milestone!\nYou reached Level " + milestoneThreshold + "!";
+        }
+        if (gainedSkill) {
+            return "Milestone!\nYou learned a new skill!";
+        }
+        return "";
     }
     
     /**

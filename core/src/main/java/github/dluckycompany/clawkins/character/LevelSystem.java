@@ -3,6 +3,10 @@ package github.dluckycompany.clawkins.character;
 /**
  * Core leveling system that manages EXP progression and level-ups.
  * Handles EXP thresholds, level calculations, and stat growth.
+ *
+ * XP Curve:
+ *   Levels 1-8  : flat 50 XP each
+ *   Level 9+    : 50 + (level - 8) * 45 XP  (grows by 45 per step)
  */
 public class LevelSystem {
     
@@ -12,10 +16,12 @@ public class LevelSystem {
     /** Minimum level a Clawkin can have */
     public static final int MIN_LEVEL = 1;
 
-    private static final int MID_CURVE_START_LEVEL = 5;
-    private static final int MID_CURVE_END_LEVEL = 8;
-    private static final int EARLY_CURVE_BASE_EXP = 10;
-    private static final int EARLY_CURVE_STEP_EXP = 5;
+    /** Levels 1-8 cost a flat amount of XP each */
+    private static final int FLAT_XP_PER_LEVEL = 50;
+    /** The level at which flat XP ends and scaling begins */
+    private static final int SCALING_START_LEVEL = 8;
+    /** Additional XP added per level step beyond the scaling start */
+    private static final int SCALING_STEP_EXP = 45;
     
     /**
      * Calculates the total EXP required to reach a specific level.
@@ -146,17 +152,13 @@ public class LevelSystem {
     private static int expNeededFromLevel(int currentLevel) {
         int level = Math.max(MIN_LEVEL, Math.min(currentLevel, MAX_LEVEL));
 
-        // Example-aligned mid curve:
-        // Lv5->6: 100, Lv6->7: 200, Lv7->8: 300
-        if (level >= MID_CURVE_START_LEVEL && level <= MID_CURVE_END_LEVEL) {
-            return (level - 4) * 100;
+        // Levels 1-8: flat 50 XP each.
+        if (level <= SCALING_START_LEVEL) {
+            return FLAT_XP_PER_LEVEL;
         }
 
-        if (level < MID_CURVE_START_LEVEL) {
-            return EARLY_CURVE_BASE_EXP + (level - 1) * EARLY_CURVE_STEP_EXP;
-        }
-
-        // After Lv8, continue upward with gentler growth.
-        return 400 + (level - MID_CURVE_END_LEVEL) * 45;
+        // Level 9+: scale upward by SCALING_STEP_EXP per level step.
+        // Lv8->9 = 50+45 = 95, Lv9->10 = 140, Lv10->11 = 185, ...
+        return FLAT_XP_PER_LEVEL + (level - SCALING_START_LEVEL) * SCALING_STEP_EXP;
     }
 }
