@@ -60,6 +60,7 @@ import github.dluckycompany.clawkins.encounter.EncounterEventType;
 import github.dluckycompany.clawkins.input.InputConventions;
 import github.dluckycompany.clawkins.item.Item;
 import github.dluckycompany.clawkins.item.ItemFactory;
+import github.dluckycompany.clawkins.item.MerchantInventory;
 import github.dluckycompany.clawkins.model.Gender;
 import github.dluckycompany.clawkins.model.PlayerProfile;
 import github.dluckycompany.clawkins.progress.PlayerProgress;
@@ -267,8 +268,8 @@ public class GameScreen extends ScreenAdapter {
     private final Map<String, BossMusicHooks> bossMusicHooksByEncounterId = new HashMap<>();
     private ActiveBossMusicState activeBossMusicState;
     
-    // Player profile from character setup
-    private github.dluckycompany.clawkins.model.PlayerProfile playerProfile;
+    // Player profile from character setup (name and gender)
+    private PlayerProfile playerProfile;
     
     // Cheat console system for developer debugging
     private github.dluckycompany.clawkins.debug.CheatCodeManager cheatCodeManager;
@@ -279,8 +280,9 @@ public class GameScreen extends ScreenAdapter {
     private static final float VIRTUAL_UI_WIDTH = 800f;
     private static final float VIRTUAL_UI_HEIGHT = 600f;
 
-    public GameScreen(Main game) {
+    public GameScreen(Main game, PlayerProfile playerProfile) {
         this.game = game;
+        this.playerProfile = playerProfile;
         AssetService assetService = game.getAssetService();
         Viewport viewport = game.getViewport();
         OrthographicCamera camera = game.getCamera();
@@ -369,6 +371,11 @@ public class GameScreen extends ScreenAdapter {
                 this.encounterEventBus,
                 this.randomEncounterGenerator,
                 this.battleService));
+        
+        // Set player name from character setup if available
+        if (playerProfile != null) {
+            tiledObjectConfigurator.setPlayerNameOverride(playerProfile.getName());
+        }
 
         // Wire up callbacks:
         // - When a map object is found → TiledObjectConfigurator creates an entity
@@ -475,25 +482,35 @@ public class GameScreen extends ScreenAdapter {
         }
         refreshProgressSnapshots();
         
-        // Create the merchant shop UI (fixed virtual resolution)
+        // Create the merchant shop UI (matches InventoryUI structure)
+        MerchantInventory defaultMerchantInventory = MerchantInventory.createDefaultInventory();
         this.merchantShopUI = new MerchantShopUI(
+            inventoryStage,
+            new BitmapFont(),
             playerBattleState.getInventory(),
-            playerBattleState.getWallet(),
-            "Merchant",
+            defaultMerchantInventory,
+            playerBattleState.getParty(),
             battleOverlay.getSkin(),
-            new BitmapFont()
+            playerBattleState.getWallet(),
+            audioService,
+            "Merchant",  // Default merchant name
+            false  // Not in battle context
         );
-        merchantShopUI.setOnCloseCallback(() -> {
+        merchantShopUI.setOnBackPressed(() -> {
             closeMerchantShop();
             hudWallet.updateDisplay();
         });
         
-        // Wire up merchant interaction callback
-        interactionSystem.setOnMerchantInteraction(() -> {
-            openMerchantShop();
-        });
         registerBossMusicHooks();
         registerSpecialInteractions();
+        
+        // Log player profile information
+        if (playerProfile != null) {
+            Gdx.app.log("GameScreen", "Initialized with player: " + 
+                playerProfile.getName() + " (" + playerProfile.getGender().getDisplayName() + ")");
+        } else {
+            Gdx.app.log("GameScreen", "Initialized without player profile (loading from save or initial screen)");
+        }
         
         // Create the full-screen inventory screen and cache it
         this.inventoryScreen = new InventoryScreen(game, playerBattleState.getInventory(), this);
@@ -550,6 +567,17 @@ public class GameScreen extends ScreenAdapter {
             startMansionPathBlockForcedMove(context.playerEntity());
         });
         registerSavePointInteractions();
+        
+        // Register merchant shop interactions (shop_01 and shop_02)
+        // Both shops use the same dialogue from merchants.json
+        // After dialogue completes, the merchant shop UI opens
+        interactionSystem.registerSpecialInteraction("shop_01", context -> {
+            openMerchantShop();
+        });
+        interactionSystem.registerSpecialInteraction("shop_02", context -> {
+            openMerchantShop();
+        });
+        
         interactionSystem.registerSpecialInteraction(TRIGGER_BOSS_BERT_JR_ID, context -> {
             if (battleService.hasBattleSession() || playerProgress.isEventAccomplished(EVENT_BOSS_0_DEFEATED)) {
                 return;
@@ -856,7 +884,7 @@ public class GameScreen extends ScreenAdapter {
             renderDimmingOverlay();
             renderUIWithViewport(inventoryStage, uiDelta);
         } else if (!isBattleActive && merchantShopVisible && merchantShopUI != null) {
-            renderDimmingOverlay();
+            renderFullBlackoutOverlay();  // Use full blackout instead of dimming
             renderUIWithViewport(inventoryStage, uiDelta);
         }
 
@@ -885,6 +913,27 @@ public class GameScreen extends ScreenAdapter {
         shapeRenderer.setProjectionMatrix(inventoryStage.getCamera().combined);
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
         shapeRenderer.setColor(0f, 0f, 0f, 0.45f);
+        
+        // Draw black rectangle covering entire virtual UI space (800x600)
+        shapeRenderer.rect(0, 0, VIRTUAL_UI_WIDTH, VIRTUAL_UI_HEIGHT);
+        
+        // End rendering
+        shapeRenderer.end();
+        Gdx.gl.glDisable(GL20.GL_BLEND);
+    }
+    
+    /**
+     * Render a fully opaque black overlay to completely hide the game background.
+     * Used for merchant shop and inventory screens where the game should not be visible.
+     */
+    private void renderFullBlackoutOverlay() {
+        Gdx.gl.glEnable(GL20.GL_BLEND);
+        Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
+
+        // Configure ShapeRenderer to use filled rectangle mode
+        shapeRenderer.setProjectionMatrix(inventoryStage.getCamera().combined);
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+        shapeRenderer.setColor(0f, 0f, 0f, 1.0f);  // Fully opaque black
         
         // Draw black rectangle covering entire virtual UI space (800x600)
         shapeRenderer.rect(0, 0, VIRTUAL_UI_WIDTH, VIRTUAL_UI_HEIGHT);
@@ -2405,7 +2454,7 @@ public class GameScreen extends ScreenAdapter {
         merchantShopVisible = true;
         if (merchantShopUI != null) {
             inventoryStage.clear();
-            inventoryStage.addActor(merchantShopUI);
+            merchantShopUI.buildLayout();  // Build the UI layout like InventoryUI
             // Set input processor for consistent coordinate unprojection with virtual viewport
             Gdx.input.setInputProcessor(inventoryStage);
         }

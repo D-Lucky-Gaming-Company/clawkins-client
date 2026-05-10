@@ -20,6 +20,7 @@ import github.dluckycompany.clawkins.asset.AssetService;
 import github.dluckycompany.clawkins.audio.AudioService;
 import github.dluckycompany.clawkins.audio.MusicTrack;
 import github.dluckycompany.clawkins.audio.SoundEffect;
+import github.dluckycompany.clawkins.model.PlayerProfile;
 import github.dluckycompany.clawkins.save.SaveStateManager;
 import github.dluckycompany.clawkins.ui.CharacterSetupScreen;
 import github.dluckycompany.clawkins.ui.EndingCreditsScreen;
@@ -43,6 +44,7 @@ public class Main extends Game {
     private GLProfiler glProfiler;
     private SaveStateManager saveStateManager;
     private SaveStateScreen saveStateScreen;
+    private PlayerProfile playerProfile;  // Stores player name and gender from character setup
 
     private final Map<Class<? extends Screen>, Screen> screenCache = new HashMap<>();
 
@@ -105,7 +107,7 @@ public class Main extends Game {
             audioService
         ));
         addScreen(new CharacterSetupScreen(this, batch));
-        addScreen(new GameScreen(this));
+        addScreen(new GameScreen(this, null));  // Initial GameScreen with no profile
         addScreen(new EndingCreditsScreen(this));
         this.saveStateScreen = new SaveStateScreen(batch, saveStateManager, audioService);
         addScreen(saveStateScreen);
@@ -123,12 +125,13 @@ public class Main extends Game {
         setScreen(CharacterSetupScreen.class);
     }
 
-    private void rebuildGameScreenForFreshSession() {
+    public void rebuildGameScreenForFreshSession() {
         Screen existingGameScreen = screenCache.remove(GameScreen.class);
         if (existingGameScreen != null) {
             existingGameScreen.dispose();
         }
-        addScreen(new GameScreen(this));
+        // Create new GameScreen with current player profile (will be set after character setup)
+        addScreen(new GameScreen(this, playerProfile));
     }
 
     /**
@@ -200,7 +203,7 @@ public class Main extends Game {
 
         super.render();
 
-        Gdx.graphics.setTitle("Test Game - Draw Calls " + glProfiler.getDrawCalls());
+        Gdx.graphics.setTitle("Clawkins: Dawn of the Primal - Draw Calls " + glProfiler.getDrawCalls());
         // fpsLogger.log();
     }
 
@@ -237,5 +240,25 @@ public class Main extends Game {
 
     public SaveStateManager getSaveStateManager() {
         return saveStateManager;
+    }
+
+    /**
+     * Gets the current player profile (name and gender from character setup).
+     *
+     * @return the player profile, or null if not yet created
+     */
+    public PlayerProfile getPlayerProfile() {
+        return playerProfile;
+    }
+
+    /**
+     * Sets the player profile (called by CharacterSetupScreen after character creation).
+     *
+     * @param profile the player profile to store
+     */
+    public void setPlayerProfile(PlayerProfile profile) {
+        this.playerProfile = profile;
+        Gdx.app.log("Main", "Player profile set: " + 
+            (profile != null ? profile.getName() + " (" + profile.getGender() + ")" : "null"));
     }
 }
