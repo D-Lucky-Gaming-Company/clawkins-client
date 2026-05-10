@@ -24,10 +24,16 @@ public class BattleStateMachine {
     private BattleContext context;
     private String lastLog = "";
     private List<BattleTextSpan> lastLogSpans = List.of();
+    
+    // Round tracking for EXP rewards
+    private int currentRound = 0;
+    private int roundExpAccumulated = 0;
 
     public void begin(BattleContext context) {
         this.context = context;
         this.phase = BattlePhase.PLAYER_COMMAND;
+        this.currentRound = 0;
+        this.roundExpAccumulated = 0;
         setLastLogPlain("Encounter started.");
     }
 
@@ -69,6 +75,7 @@ public class BattleStateMachine {
         }
         if (action.getType() == BattleActionType.ITEM) {
             handleItemAction(action);
+            // Item usage consumes the turn - proceed to enemy command
             phase = BattlePhase.ENEMY_COMMAND;
             return;
         }
@@ -90,9 +97,33 @@ public class BattleStateMachine {
         String enemyName = enemyLogName(enemy);
         Gdx.app.log(TAG, "Player action -> slot=" + action.getSkillSlot() + ", resolvedSkill=" + describeSkill(skill));
 
+        // Validate skill unlock state using SkillManager
+        SkillManager skillManager = context != null ? context.getSkillManager() : null;
+        if (skillManager != null) {
+            int slotIndex = action.getSkillSlot() - 1; // Convert 1-based to 0-based
+            if (!skillManager.canUseSkill(slotIndex, player)) {
+                String validationMsg = skillManager.getSkillValidationMessage(slotIndex, player);
+                setLastLogPlain(validationMsg);
+                return; // Don't consume turn if skill cannot be used
+            }
+        }
+
+        // Check cooldown (fallback if SkillManager not available)
+        if (skill != null && player.isSkillOnCooldown(skillName)) {
+            int cooldownRemaining = player.getSkillCooldown(skillName);
+            setLastLogPlain(skillName + " is on cooldown (" + cooldownRemaining + " turns remaining).");
+            return; // Don't consume turn if skill is on cooldown
+        }
+
         if (skill != null && skill.getEffectType() == BattleSkill.EffectType.HEAL) {
-            int heal = resolveMagnitude(player, enemy, skill, "defense[self]");
+            int heal = resolveMagnitude(player, enemy, skill, "maxhp[self] * 0.15");
             player.setHp(Math.min(player.getMaxHp(), player.getHp() + heal));
+            
+            // Stretch & Nap also grants +1 DEF for 2 turns
+            if ("Stretch & Nap".equals(skillName)) {
+                player.addTemporaryBoost(BattleUnit.StatType.DEFENSE, 1, 2);
+            }
+            
             LogBuilder lb = new LogBuilder()
                     .appendName(playerName)
                     .appendPlain(" uses ")
@@ -100,8 +131,45 @@ public class BattleStateMachine {
                     .appendPlain(" and recovered ")
                     .appendHeal(heal)
                     .appendPlain(".");
+            
+            if ("Stretch & Nap".equals(skillName)) {
+                lb.appendPlain(" Defense UP for 2 turns!");
+            }
+            
             setLastLog(lb.text(), lb.spans());
             Gdx.app.log(TAG, "Player heal applied -> amount=" + heal + ", hpNow=" + player.getHp() + "/" + player.getMaxHp());
+            
+            // Set cooldown
+            if (skill.getTurnCooldown() > 0) {
+                player.setSkillCooldown(skillName, skill.getTurnCooldown());
+            }
+        } else if (skill != null && skill.getEffectType() == BattleSkill.EffectType.BLEED) {
+            // Claw & Chomp: deals damage and inflicts Bleed
+            int damage = skill.getEffectBaseStat(); // Flat 25 damage
+            enemy.setHp(Math.max(0, enemy.getHp() - damage));
+            
+            // Apply Bleed: 5% of enemy's Max HP per turn for 2 turns
+            int bleedDamage = Math.max(1, (int) Math.round(enemy.getMaxHp() * 0.05));
+            enemy.applyBleed(bleedDamage, skill.getEffectDurationTurns());
+            
+            LogBuilder lb = new LogBuilder()
+                    .appendName(playerName)
+                    .appendPlain(" uses ")
+                    .appendName(skillName)
+                    .appendPlain(" and deals ")
+                    .appendDamage(damage)
+                    .appendPlain(" to ")
+                    .appendName(enemyName)
+                    .appendPlain(". ")
+                    .appendName(enemyName)
+                    .appendPlain(" is bleeding!");
+            setLastLog(lb.text(), lb.spans());
+            Gdx.app.log(TAG, "Player Bleed applied -> damage=" + damage + ", bleedDamage=" + bleedDamage + "/turn for " + skill.getEffectDurationTurns() + " turns");
+            
+            // Set cooldown
+            if (skill.getTurnCooldown() > 0) {
+                player.setSkillCooldown(skillName, skill.getTurnCooldown());
+            }
         } else if (skill != null && skill.getEffectType() == BattleSkill.EffectType.ATTACK) {
             if (skill.getEffectDurationTurns() > 0) {
                 int boost = Math.max(1, resolveMagnitude(player, enemy, skill, "attack[self]") / 4);
@@ -144,8 +212,8 @@ public class BattleStateMachine {
             setLastLog(lb.text(), lb.spans());
             Gdx.app.log(TAG, "Player defense buff applied -> boost=" + boost + ", turns=" + turns + ", defenseNow=" + player.getDefense());
         } else {
-            int offense = resolveMagnitude(player, enemy, skill, "attack[self]");
-            int damage = Math.max(1, offense - enemy.getDefense());
+            // Heavy Paw: flat 15 damage
+            int damage = skill != null ? skill.getEffectBaseStat() : 10;
             enemy.setHp(Math.max(0, enemy.getHp() - damage));
             LogBuilder lb = new LogBuilder()
                     .appendName(playerName)
@@ -157,10 +225,30 @@ public class BattleStateMachine {
                     .appendName(enemyName)
                     .appendPlain(".");
             setLastLog(lb.text(), lb.spans());
-            Gdx.app.log(TAG, "Player damage applied -> offense=" + offense + ", enemyDefense=" + enemy.getDefense() + ", damage=" + damage);
+            Gdx.app.log(TAG, "Player damage applied -> damage=" + damage);
         }
 
+        // Tick enemy cooldowns and boosts
         enemy.tickTemporaryBoosts();
+        enemy.tickCooldowns();
+        
+        // Apply Bleed damage to enemy
+        int bleedDamage = enemy.tickBleed();
+        if (bleedDamage > 0) {
+            enemy.setHp(Math.max(0, enemy.getHp() - bleedDamage));
+            String bleedMsg = "\n" + enemyName + " takes " + bleedDamage + " bleed damage.";
+            int off = lastLog.length();
+            lastLog = lastLog + bleedMsg;
+            ArrayList<BattleTextSpan> ext = new ArrayList<>(lastLogSpans);
+            int nameStart = off + 1;
+            ext.add(new BattleTextSpan(nameStart, nameStart + enemyName.length(), BattleTextRole.NAME));
+            int dmgStart = lastLog.indexOf(String.valueOf(bleedDamage), off);
+            if (dmgStart >= 0) {
+                ext.add(new BattleTextSpan(dmgStart, dmgStart + String.valueOf(bleedDamage).length(), BattleTextRole.DAMAGE));
+            }
+            lastLogSpans = List.copyOf(ext);
+            Gdx.app.log(TAG, "Enemy bleed damage -> amount=" + bleedDamage + ", hpNow=" + enemy.getHp());
+        }
 
         if (enemy.getHp() <= 0) {
             finishAsVictory();
@@ -264,6 +352,24 @@ public class BattleStateMachine {
             }
 
             player.tickTemporaryBoosts();
+            player.tickCooldowns();
+            
+            // Apply Bleed damage to player
+            int bleedDamage = player.tickBleed();
+            if (bleedDamage > 0) {
+                player.setHp(Math.max(0, player.getHp() - bleedDamage));
+                String bleedMsg = "\nYou take " + bleedDamage + " bleed damage.";
+                int off = lastLog.length();
+                lastLog = lastLog + bleedMsg;
+                ArrayList<BattleTextSpan> ext = new ArrayList<>(lastLogSpans);
+                int dmgStart = lastLog.indexOf(String.valueOf(bleedDamage), off);
+                if (dmgStart >= 0) {
+                    ext.add(new BattleTextSpan(dmgStart, dmgStart + String.valueOf(bleedDamage).length(), BattleTextRole.DAMAGE));
+                }
+                lastLogSpans = List.copyOf(ext);
+                Gdx.app.log(TAG, "Player bleed damage -> amount=" + bleedDamage + ", hpNow=" + player.getHp());
+            }
+            
             int playerDefenseAfterTick = player.getDefense();
             if (playerDefenseAfterTick < playerDefenseBeforeAction) {
                 String extra = "\n" + playerName + "'s defense is now back to normal.";
@@ -280,6 +386,13 @@ public class BattleStateMachine {
                 setLastLog(fl.text(), fl.spans());
                 return;
             }
+            
+            // Grant round EXP at the end of each complete round
+            currentRound++;
+            int roundExp = github.dluckycompany.clawkins.character.LevelSystem.calculateRoundExpReward();
+            roundExpAccumulated += roundExp;
+            Gdx.app.log(TAG, "Round " + currentRound + " complete -> granted " + roundExp + " EXP (total accumulated: " + roundExpAccumulated + ")");
+            
             phase = BattlePhase.PLAYER_COMMAND;
     }
 
@@ -334,6 +447,27 @@ public class BattleStateMachine {
         context = null;
         lastLog = "";
         lastLogSpans = List.of();
+        currentRound = 0;
+        roundExpAccumulated = 0;
+    }
+    
+    /**
+     * Gets the total EXP accumulated from completed rounds.
+     * This EXP should be awarded even if the battle is lost.
+     * 
+     * @return Total round EXP accumulated
+     */
+    public int getRoundExpAccumulated() {
+        return roundExpAccumulated;
+    }
+    
+    /**
+     * Gets the current round number.
+     * 
+     * @return Current round (0 before first round completes)
+     */
+    public int getCurrentRound() {
+        return currentRound;
     }
 
     public String getLastLog() {
@@ -917,6 +1051,7 @@ public class BattleStateMachine {
                 case "attack", "atk" -> actor.getAttack();
                 case "defense", "def" -> actor.getDefense();
                 case "speed", "spd" -> actor.getSpeed();
+                case "maxhp", "max_hp", "hp" -> actor.getMaxHp();
                 default -> 0d;
             };
         }
@@ -952,6 +1087,7 @@ public class BattleStateMachine {
 
     /**
      * Handle an ITEM action by applying the item effect to a target clawkin.
+     * Shows item usage message and consumes the player's turn.
      * Assumes the PlayerBattleState contains the item references and target clawkin.
      *
      * @param action the item action with itemId and targetClawkinIndex
@@ -962,9 +1098,60 @@ public class BattleStateMachine {
             return;
         }
 
-        // This method is called from BattleHud when an item is used.
-        // The actual item removal from inventory should be done by the caller (BattleHud/UI).
-        // Here we just log success.
-        setLastLogPlain("Used item on party member " + action.getTargetClawkinIndex() + ".");
+        BattleUnit player = firstAlly();
+        if (player == null) {
+            setLastLogPlain("No active Clawkin to use item.");
+            return;
+        }
+
+        String playerName = allyLogName(player);
+        String itemId = action.getItemId();
+        
+        // Format item name for display (capitalize and remove underscores)
+        String itemName = formatItemName(itemId);
+        
+        // Build item usage message
+        LogBuilder lb = new LogBuilder()
+                .appendName(playerName)
+                .appendPlain(" used ")
+                .appendName(itemName)
+                .appendPlain("!");
+        
+        setLastLog(lb.text(), lb.spans());
+        Gdx.app.log(TAG, "Item used -> player=" + playerName + ", item=" + itemName);
+        
+        // Note: Actual item effects (healing, stat boosts, etc.) are applied by the caller
+        // (BattleOverlay/BattleHud) before this method is called.
+        // This method only handles the battle message display.
+    }
+    
+    /**
+     * Formats an item ID into a display name.
+     * Example: "potion_small" -> "Potion Small"
+     * 
+     * @param itemId The item ID
+     * @return Formatted display name
+     */
+    private String formatItemName(String itemId) {
+        if (itemId == null || itemId.isBlank()) {
+            return "Item";
+        }
+        
+        // Replace underscores with spaces and capitalize each word
+        String[] words = itemId.split("_");
+        StringBuilder formatted = new StringBuilder();
+        for (int i = 0; i < words.length; i++) {
+            if (i > 0) {
+                formatted.append(" ");
+            }
+            String word = words[i];
+            if (!word.isEmpty()) {
+                formatted.append(Character.toUpperCase(word.charAt(0)));
+                if (word.length() > 1) {
+                    formatted.append(word.substring(1).toLowerCase());
+                }
+            }
+        }
+        return formatted.toString();
     }
 }

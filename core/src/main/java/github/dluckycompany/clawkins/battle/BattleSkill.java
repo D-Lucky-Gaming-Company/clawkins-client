@@ -5,7 +5,8 @@ public class BattleSkill {
         DAMAGE,
         HEAL,
         ATTACK,
-        DEFENSE
+        DEFENSE,
+        BLEED  // Damage over time effect
     }
 
     private final String name;

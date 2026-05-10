@@ -14,6 +14,27 @@ import java.util.Map;
 public class SkillUnlockSystem {
     
     /**
+     * Represents a skill unlock entry with level requirement.
+     */
+    public static class SkillUnlockEntry {
+        private final BattleSkill skill;
+        private final int unlockLevel;
+        
+        public SkillUnlockEntry(BattleSkill skill, int unlockLevel) {
+            this.skill = skill;
+            this.unlockLevel = unlockLevel;
+        }
+        
+        public BattleSkill getSkill() {
+            return skill;
+        }
+        
+        public int getUnlockLevel() {
+            return unlockLevel;
+        }
+    }
+    
+    /**
      * Defines when skills unlock for Swee'pea.
      * 
      * Swee'pea's Skills:
@@ -103,6 +124,55 @@ public class SkillUnlockSystem {
     }
     
     /**
+     * Gets all skill unlock entries for a Clawkin (with level requirements).
+     * 
+     * @param clawkinId The Clawkin's ID
+     * @return List of all skill unlock entries
+     */
+    public static List<SkillUnlockEntry> getAllSkillUnlockEntries(String clawkinId) {
+        List<SkillUnlockEntry> entries = new ArrayList<>();
+        
+        String normalizedId = normalizeClawkinId(clawkinId);
+        List<SkillUnlock> skillProgression = SKILL_UNLOCKS.get(normalizedId);
+        
+        if (skillProgression == null) {
+            return entries;
+        }
+        
+        for (SkillUnlock unlock : skillProgression) {
+            entries.add(new SkillUnlockEntry(unlock.skill, unlock.unlockLevel));
+        }
+        
+        return entries;
+    }
+    
+    /**
+     * Gets skill unlock entries that are unlocked at a specific level.
+     * 
+     * @param clawkinId The Clawkin's ID
+     * @param level The level to check
+     * @return List of skill unlock entries for that level
+     */
+    public static List<SkillUnlockEntry> getSkillUnlockEntriesAtLevel(String clawkinId, int level) {
+        List<SkillUnlockEntry> entries = new ArrayList<>();
+        
+        String normalizedId = normalizeClawkinId(clawkinId);
+        List<SkillUnlock> skillProgression = SKILL_UNLOCKS.get(normalizedId);
+        
+        if (skillProgression == null) {
+            return entries;
+        }
+        
+        for (SkillUnlock unlock : skillProgression) {
+            if (unlock.unlockLevel == level) {
+                entries.add(new SkillUnlockEntry(unlock.skill, unlock.unlockLevel));
+            }
+        }
+        
+        return entries;
+    }
+    
+    /**
      * Checks if a skill should be unlocked at a specific level.
      * 
      * @param clawkinId The Clawkin's ID
@@ -137,13 +207,13 @@ public class SkillUnlockSystem {
         return new BattleSkill(
             "Heavy Paw",
             BattleSkill.EffectType.DAMAGE,
-            15,                    // Base damage
-            "attack[self]",        // Scales with attack
+            15,                    // Base damage (15 physical damage)
+            "",                    // No scaling - flat damage
             0,                     // No duration (instant)
             0,                     // No cooldown
             "A powerful swipe with heavy paws.",
-            "Deals moderate physical damage",
-            "Scales with ATK"
+            "Deals 15 Physical Damage",
+            "No cooldown"
         );
     }
     
@@ -151,27 +221,27 @@ public class SkillUnlockSystem {
         return new BattleSkill(
             "Stretch & Nap",
             BattleSkill.EffectType.HEAL,
-            20,                    // Base heal amount
-            "maxhp[self]",         // Scales with max HP
-            0,                     // No duration (instant)
-            3,                     // 3 turn cooldown
+            0,                     // Base heal (calculated as 15% of Max HP)
+            "maxhp[self] * 0.15",  // Heals 15% of Max HP
+            2,                     // Grants +1 DEF for 2 turns
+            2,                     // 2 turn cooldown
             "Takes a quick rest to recover health.",
-            "Restores HP",
-            "Scales with Max HP"
+            "Restores 15% Max HP, +1 DEF for 2 turns",
+            "2 turn cooldown"
         );
     }
     
     private static BattleSkill createClawAndChomp() {
         return new BattleSkill(
             "Claw & Chomp",
-            BattleSkill.EffectType.DAMAGE,
-            25,                    // Base damage
-            "attack[self]",        // Scales with attack
-            0,                     // No duration (instant)
-            2,                     // 2 turn cooldown
+            BattleSkill.EffectType.BLEED,
+            25,                    // Base damage (25 physical damage)
+            "",                    // No scaling - flat damage
+            2,                     // Bleed lasts 2 turns
+            4,                     // 4 turn cooldown
             "A fierce combination of claws and bite.",
-            "Deals heavy physical damage",
-            "Scales with ATK"
+            "Deals 25 Physical Damage, inflicts Bleed (5% Max HP/turn for 2 turns)",
+            "4 turn cooldown"
         );
     }
     

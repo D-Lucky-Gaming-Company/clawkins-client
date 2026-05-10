@@ -15,6 +15,8 @@ public class BattleContext {
     private final String enemyPortraitPath;
     /** Same label as the player HP bar (clawkin name, id fallback). Updated on clawkin switch. */
     private String allyDisplayName;
+    /** Manages skill unlock state and validation */
+    private SkillManager skillManager;
 
     public BattleContext(
             String encounterId,
@@ -35,6 +37,7 @@ public class BattleContext {
         this.enemyDisplayName = enemyDisplayName == null ? "" : enemyDisplayName;
         this.enemyPortraitPath = enemyPortraitPath == null ? "" : enemyPortraitPath.trim();
         this.allyDisplayName = allyDisplayName == null ? "" : allyDisplayName;
+        this.skillManager = null; // Set externally
     }
 
     public String getEncounterId() {
@@ -91,5 +94,23 @@ public class BattleContext {
     /** Optional HUD portrait path (from map {@code enemyImagePath} / {@code image_clawkin}). */
     public String getEnemyPortraitPath() {
         return enemyPortraitPath;
+    }
+    
+    /**
+     * Gets the skill manager for this battle context.
+     * 
+     * @return SkillManager or null if not set
+     */
+    public SkillManager getSkillManager() {
+        return skillManager;
+    }
+    
+    /**
+     * Sets the skill manager for this battle context.
+     * 
+     * @param skillManager The skill manager to use
+     */
+    public void setSkillManager(SkillManager skillManager) {
+        this.skillManager = skillManager;
     }
 }

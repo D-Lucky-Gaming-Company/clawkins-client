@@ -1863,6 +1863,7 @@ public class GameScreen extends ScreenAdapter {
             case "heal" -> BattleSkill.EffectType.HEAL;
             case "attack" -> BattleSkill.EffectType.ATTACK;
             case "defense" -> BattleSkill.EffectType.DEFENSE;
+            case "bleed" -> BattleSkill.EffectType.BLEED;
             default -> BattleSkill.EffectType.DAMAGE;
         };
     }
