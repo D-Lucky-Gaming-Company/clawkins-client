@@ -91,9 +91,9 @@ public class ExpManager {
      * @return Estimated level
      */
     private static int estimateLevelFromHp(int maxHp) {
-        // Rough estimation: HP ~= 40 + (level * 8)
-        // So level ~= (HP - 40) / 8
-        int estimatedLevel = Math.max(1, (maxHp - 40) / 8);
+        // Random encounters now scale from a lower HP floor and a wider level range,
+        // so use a softer estimate to avoid always collapsing to level 1.
+        int estimatedLevel = 1 + Math.max(0, (maxHp - 24) / 7);
         return Math.min(estimatedLevel, LevelSystem.MAX_LEVEL);
     }
     

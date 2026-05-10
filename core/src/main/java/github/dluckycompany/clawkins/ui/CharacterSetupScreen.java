@@ -1,5 +1,8 @@
 package github.dluckycompany.clawkins.ui;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input.Keys;
 import com.badlogic.gdx.Screen;
@@ -24,8 +27,6 @@ import com.badlogic.gdx.scenes.scene2d.utils.ClickListener;
 import com.badlogic.gdx.scenes.scene2d.utils.NinePatchDrawable;
 import com.badlogic.gdx.utils.Align;
 import com.badlogic.gdx.utils.viewport.FitViewport;
-import java.util.ArrayList;
-import java.util.List;
 
 import github.dluckycompany.clawkins.GameScreen;
 import github.dluckycompany.clawkins.Main;
@@ -820,6 +821,10 @@ public class CharacterSetupScreen implements Screen {
         
         // Create new PlayerProfile with playerName and selectedGender
         profile = new PlayerProfile(playerName, selectedGender);
+        
+        // Store profile in Main for access throughout the game
+        game.setPlayerProfile(profile);
+        
         handleIntroSequenceEvent(profile);
         
         // Log for debugging
@@ -913,6 +918,15 @@ public class CharacterSetupScreen implements Screen {
             // Step 5: Start game
             Actions.run(() -> {
                 Gdx.app.log("CharacterSetup", "Transition complete, starting game");
+                
+                // Rebuild GameScreen with the new player profile
+                game.rebuildGameScreenForFreshSession();
+                
+                // Get the newly created GameScreen and set the profile
+                GameScreen gameScreen = game.getScreen(GameScreen.class);
+                gameScreen.setPlayerProfile(profile);
+                
+                // Transition to game
                 game.setScreen(GameScreen.class);
             })
         );
