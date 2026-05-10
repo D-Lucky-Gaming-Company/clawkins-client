@@ -1,6 +1,7 @@
 package github.dluckycompany.clawkins.battle;
 
 import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.Map;
 
 public class BattleUnit {
@@ -17,6 +18,8 @@ public class BattleUnit {
     private final int baseDefense;
     private final int baseSpeed;
     private final Map<StatType, TimedBoost> temporaryBoosts = new EnumMap<>(StatType.class);
+    private final Map<String, Integer> skillCooldowns = new HashMap<>();
+    private BleedEffect bleedEffect = null;
 
     public BattleUnit(String id, int hp, int attack, int defense, int speed) {
         this.id = id;
@@ -77,6 +80,61 @@ public class BattleUnit {
         });
     }
 
+    public void applyBleed(int damagePerTurn, int durationTurns) {
+        if (damagePerTurn <= 0 || durationTurns <= 0) {
+            return;
+        }
+        // Replace existing bleed if new one is stronger or has longer duration
+        if (bleedEffect == null || damagePerTurn >= bleedEffect.damagePerTurn) {
+            bleedEffect = new BleedEffect(damagePerTurn, durationTurns);
+        }
+    }
+
+    public int tickBleed() {
+        if (bleedEffect == null) {
+            return 0;
+        }
+        
+        int damage = bleedEffect.damagePerTurn;
+        bleedEffect.turnsRemaining--;
+        
+        if (bleedEffect.turnsRemaining <= 0) {
+            bleedEffect = null;
+        }
+        
+        return damage;
+    }
+
+    public boolean hasBleed() {
+        return bleedEffect != null;
+    }
+
+    public int getBleedTurnsRemaining() {
+        return bleedEffect != null ? bleedEffect.turnsRemaining : 0;
+    }
+
+    public void setSkillCooldown(String skillName, int turns) {
+        if (skillName == null || turns <= 0) {
+            return;
+        }
+        skillCooldowns.put(skillName, turns);
+    }
+
+    public int getSkillCooldown(String skillName) {
+        return skillCooldowns.getOrDefault(skillName, 0);
+    }
+
+    public boolean isSkillOnCooldown(String skillName) {
+        return getSkillCooldown(skillName) > 0;
+    }
+
+    public void tickCooldowns() {
+        skillCooldowns.entrySet().removeIf(entry -> {
+            entry.setValue(entry.getValue() - 1);
+            return entry.getValue() <= 0;
+        });
+    }
+
     private int getBoostAmount(StatType stat) {
         TimedBoost boost = temporaryBoosts.get(stat);
         return boost == null ? 0 : boost.amount;
@@ -88,6 +146,16 @@ public class BattleUnit {
 
         TimedBoost(int amount, int turnsRemaining) {
             this.amount = amount;
+            this.turnsRemaining = turnsRemaining;
+        }
+    }
+
+    private static final class BleedEffect {
+        int damagePerTurn;
+        int turnsRemaining;
+
+        BleedEffect(int damagePerTurn, int turnsRemaining) {
+            this.damagePerTurn = damagePerTurn;
             this.turnsRemaining = turnsRemaining;
         }
     }
