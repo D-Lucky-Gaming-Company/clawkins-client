@@ -22,6 +22,9 @@ public class CheatCodeManager {
     private float playerX = 0f;
     private float playerY = 0f;
     private Runnable onMoneyChanged;
+    private Runnable onTeleportRequested;
+    private float gameSpeedMultiplier = 1f;
+    private String pendingTeleportMapKey = null;
     
     public interface CheatCommand {
         CheatResult execute();
@@ -72,6 +75,12 @@ public class CheatCodeManager {
             return CheatResult.failure("Empty cheat code");
         }
         
+        // Handle teleport command with map parameter: "tp <map>"
+        if (normalizedCode.startsWith("tp ")) {
+            String mapKey = normalizedCode.substring(3).trim();
+            return handleTeleport(mapKey);
+        }
+        
         CheatCommand command = cheatCommands.get(normalizedCode);
         if (command == null) {
             return CheatResult.failure("Unknown cheat: " + normalizedCode);
@@ -83,6 +92,41 @@ public class CheatCodeManager {
             Gdx.app.error("CheatCodeManager", "Error executing cheat '" + normalizedCode + "'", e);
             return CheatResult.failure("Cheat execution failed: " + e.getMessage());
         }
+    }
+    
+    /**
+     * Handle teleport cheat command.
+     * Validates the map key and queues the teleport for GameScreen to process.
+     */
+    private CheatResult handleTeleport(String mapKey) {
+        if (mapKey == null || mapKey.isEmpty()) {
+            return CheatResult.failure("Usage: tp <map> (e.g., tp cottage)");
+        }
+        
+        // Try to resolve the map key using MapAsset
+        github.dluckycompany.clawkins.asset.MapAsset targetMap = 
+            github.dluckycompany.clawkins.asset.MapAsset.fromKey(mapKey);
+        
+        if (targetMap == null) {
+            Gdx.app.log("Cheat", "Unknown map: " + mapKey);
+            return CheatResult.failure("Unknown map: " + mapKey + " (type 'maps' for list)");
+        }
+        
+        // Store the pending teleport
+        pendingTeleportMapKey = targetMap.name();
+        
+        // Notify GameScreen to process the teleport
+        if (onTeleportRequested != null) {
+            onTeleportRequested.run();
+        }
+        
+        String displayName = github.dluckycompany.clawkins.asset.MapAssetName.fromAsset(targetMap);
+        if (displayName == null) {
+            displayName = targetMap.name();
+        }
+        
+        Gdx.app.log("Cheat", "Teleporting to map: " + targetMap.name() + " (" + displayName + ")");
+        return CheatResult.success("Teleporting to: " + displayName);
     }
     
     /**
@@ -111,6 +155,36 @@ public class CheatCodeManager {
      */
     public void setOnMoneyChanged(Runnable callback) {
         this.onMoneyChanged = callback;
+    }
+    
+    /**
+     * Set callback to be called when teleport is requested.
+     * The callback should handle the actual map transition.
+     */
+    public void setOnTeleportRequested(Runnable callback) {
+        this.onTeleportRequested = callback;
+    }
+    
+    /**
+     * Get the current game speed multiplier.
+     */
+    public float getGameSpeedMultiplier() {
+        return gameSpeedMultiplier;
+    }
+    
+    /**
+     * Get the pending teleport map key (if any).
+     * Returns null if no teleport is pending.
+     */
+    public String getPendingTeleportMapKey() {
+        return pendingTeleportMapKey;
+    }
+    
+    /**
+     * Clear the pending teleport map key after it has been processed.
+     */
+    public void clearPendingTeleport() {
+        this.pendingTeleportMapKey = null;
     }
     
     /**
@@ -248,11 +322,67 @@ public class CheatCodeManager {
             sb.append("heal - Heal all party members\n");
             sb.append("items - Add test items\n");
             sb.append("whereami - Show current location\n");
+            sb.append("speed - Toggle 2x game speed\n");
+            sb.append("tp <map> - Teleport to map (e.g., tp cottage)\n");
+            sb.append("maps - List all available maps\n");
             sb.append("end - Trigger ending credits\n");
             sb.append("help - Show this help");
             
             Gdx.app.log("CheatConsole", sb.toString());
             return CheatResult.success("Check console for cheat list");
         });
+        
+        // Speed cheat - toggles 2x game speed
+        registerCheat("speed", () -> {
+            if (gameSpeedMultiplier == 1f) {
+                gameSpeedMultiplier = 2f;
+                Gdx.app.log("Cheat", "2x speed enabled");
+                return CheatResult.success("Game Speed: 2x");
+            } else {
+                gameSpeedMultiplier = 1f;
+                Gdx.app.log("Cheat", "Speed returned to normal");
+                return CheatResult.success("Game Speed: Normal");
+            }
+        });
+        
+        // Maps cheat - lists all available maps
+        registerCheat("maps", () -> {
+            StringBuilder sb = new StringBuilder("Available maps for teleport:\n");
+            sb.append("Aliases (use with 'tp <name>'):\n");
+            sb.append("  nursery, cottage, shop, mountain, cave\n");
+            sb.append("  field, mansion, backalley, test\n");
+            sb.append("\nSpecific maps:\n");
+            sb.append("  nurse_interior, nurse_interior_2, nurse_interior_3, nurse_interior_4\n");
+            sb.append("  cottage_sample\n");
+            sb.append("  shop_interior, shop_interior_2, shop_interior_3\n");
+            sb.append("  mountain_1, mountain_2, mountain_3, mountain_4, mountain_5\n");
+            sb.append("  cave_entrance, cave_1, cave_2, cave_3\n");
+            sb.append("  field, field_2, field_3, field_4, field_5, field_secret\n");
+            sb.append("  mansion_maze, mansion_garden, mansion_exit\n");
+            sb.append("  backalley_1, backalley_2, backalley_3, backalley_4\n");
+            sb.append("  backalley_exit, backalley_secret\n");
+            sb.append("  test_world\n");
+            sb.append("\nExample: tp cottage");
+            
+            Gdx.app.log("CheatConsole", sb.toString());
+            return CheatResult.success("Check console for map list");
+        });
+        
+        registerTeleportCheats();
+    }
+    
+    /**
+     * Register teleport cheat commands.
+     * Supports both "tp <map>" format and direct map name shortcuts.
+     */
+    private void registerTeleportCheats() {
+        // Register the main "tp" command that takes a map parameter
+        // This will be handled specially in executeCheat
+        
+        // We'll handle "tp <map>" in executeCheat by parsing the command
+        // For now, register common shortcuts
+        
+        // Note: The actual teleport logic will be in executeCheat
+        // to handle the "tp <map>" syntax properly
     }
 }

@@ -34,6 +34,9 @@ A developer cheat console has been implemented for debugging and testing purpose
 | `poor`     | Removes all money from your wallet                                       |
 | `heal`     | Fully heals all party members to max HP                                  |
 | `items`    | Adds test items: 5x Potion, 2x Elixir, 3x Attack Boost, 3x Defense Boost |
+| `speed`    | Toggles 2x game speed (press again to return to normal)                  |
+| `tp <map>` | Teleports to specified map (e.g., `tp cottage`, `tp field`)              |
+| `maps`     | Lists all available maps for teleportation                               |
 | `whereami` | Displays current map name and player position (check console log)        |
 | `help`     | Lists all available cheats (check console log)                           |
 
@@ -97,20 +100,42 @@ registerCheat("yourcheat", () -> {
 });
 ```
 
-Example - Add a speed boost cheat:
+### Example - Teleport Cheat
+
+The teleport cheat demonstrates advanced integration with the game's map system:
+
+```java
+// In CheatCodeManager.executeCheat():
+if (normalizedCode.startsWith("tp ")) {
+    String mapKey = normalizedCode.substring(3).trim();
+    return handleTeleport(mapKey);
+}
+
+// In handleTeleport():
+MapAsset targetMap = MapAsset.fromKey(mapKey);
+if (targetMap == null) {
+    return CheatResult.failure("Unknown map: " + mapKey);
+}
+pendingTeleportMapKey = targetMap.name();
+if (onTeleportRequested != null) {
+    onTeleportRequested.run();
+}
+return CheatResult.success("Teleporting to: " + displayName);
+```
+
+### Example - Game Speed Toggle
+
+The speed cheat demonstrates state management:
 
 ```java
 registerCheat("speed", () -> {
-    // Boost player speed
-    Entity player = findPlayerEntity();
-    if (player != null) {
-        Move move = Move.MAPPER.get(player);
-        if (move != null) {
-            move.setMaxSpeed(move.getMaxSpeed() * 2f);
-            return CheatResult.success("Speed doubled!");
-        }
+    if (gameSpeedMultiplier == 1f) {
+        gameSpeedMultiplier = 2f;
+        return CheatResult.success("Game Speed: 2x");
+    } else {
+        gameSpeedMultiplier = 1f;
+        return CheatResult.success("Game Speed: Normal");
     }
-    return CheatResult.failure("Player not found");
 });
 ```
 
