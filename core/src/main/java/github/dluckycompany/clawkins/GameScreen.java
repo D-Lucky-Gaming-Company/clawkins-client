@@ -388,6 +388,12 @@ public class GameScreen extends ScreenAdapter {
             Gdx.app.log("GameScreen", "HUD wallet updated after cheat: " + playerBattleState.getWallet().getMoney());
         });
         
+        // Set up callback to handle teleport requests from cheats
+        this.cheatCodeManager.setOnTeleportRequested(() -> {
+            Gdx.app.log("GameScreen", "Teleport requested via cheat");
+            // The actual teleport will be processed in the render loop
+        });
+        
         // Register the "end" cheat to trigger the ending credits screen
         this.cheatCodeManager.registerCheat("end", () -> {
             Gdx.app.log("CheatCodeManager", "Triggering ending credits via cheat 'end'");
@@ -716,6 +722,13 @@ public class GameScreen extends ScreenAdapter {
                 cheatCodeManager.updatePlayerPosition(resolveCurrentMapKey(), pos.x, pos.y);
             }
         }
+        
+        // Handle pending teleport from cheat console
+        String pendingTeleportMapKey = cheatCodeManager.getPendingTeleportMapKey();
+        if (pendingTeleportMapKey != null && !mapTransitionFade.isTransitioning()) {
+            processTeleportCheat(pendingTeleportMapKey);
+            cheatCodeManager.clearPendingTeleport();
+        }
 
         // Don't update game state when paused (inventory or other overlays using isPaused flag)
         if (isPaused || cheatConsoleOverlay.isVisible()) {
@@ -801,6 +814,11 @@ public class GameScreen extends ScreenAdapter {
         // This single call updates ALL systems in order:
         // MoveSystem → CameraSystem → RenderSystem
         float worldDelta = mapTransitionFade.isTransitioning() ? 0f : delta;
+        
+        // Apply game speed multiplier from cheat (if enabled)
+        float gameSpeedMultiplier = cheatCodeManager.getGameSpeedMultiplier();
+        worldDelta *= gameSpeedMultiplier;
+        
         engine.update(worldDelta);
         battleOverlay.render(batch, battleService);
         dialogueOverlay.render(batch, inventoryStage.getViewport(), interactionSystem);
@@ -2191,6 +2209,95 @@ public class GameScreen extends ScreenAdapter {
             return mapAsset.name();
         }
         return MapAsset.COTTAGE_SAMPLE.name();
+    }
+    
+    /**
+     * Process a teleport cheat request.
+     * This performs a full map transition using the existing map loading pipeline.
+     * 
+     * @param mapKey The MapAsset enum name to teleport to
+     */
+    private void processTeleportCheat(String mapKey) {
+        if (mapKey == null || mapKey.isEmpty()) {
+            Gdx.app.error("GameScreen", "Teleport cheat: Invalid map key");
+            return;
+        }
+        
+        // Resolve the MapAsset from the key
+        MapAsset targetAsset = MapAsset.fromKey(mapKey);
+        if (targetAsset == null) {
+            Gdx.app.error("GameScreen", "Teleport cheat: Unknown map key: " + mapKey);
+            return;
+        }
+        
+        Gdx.app.log("Cheat", "Processing teleport to: " + targetAsset.name());
+        
+        // Find the player entity
+        Entity playerEntity = findPlayerEntity();
+        if (playerEntity == null) {
+            Gdx.app.error("GameScreen", "Teleport cheat: No player entity found");
+            return;
+        }
+        
+        // Remove all map-scoped entities except the player
+        removeMapScopedEntities(playerEntity);
+        
+        // Load and set the new map (this spawns all entities including NPCs, enemies, etc.)
+        TiledMap loadedMap = tiledService.loadMap(targetAsset);
+        tiledService.setMap(loadedMap);
+        
+        // Refresh Bert Jr. prop state for the new map
+        refreshBertJrPropStateForCurrentMap();
+        
+        // Reset map transition cooldown to prevent immediate re-triggering
+        mapTransitionSystem.setCooldown(0.4f);
+        
+        // Try to find a default spawn point (look for "spawn" transition zone)
+        Rectangle spawnBounds = findTransitionZoneBounds("spawn");
+        
+        if (spawnBounds != null) {
+            // Use the spawn zone if it exists
+            repositionPlayer(playerEntity, spawnBounds, loadedMap);
+            Gdx.app.log("Cheat", "Teleported to spawn zone in " + targetAsset.name());
+        } else {
+            // No spawn zone found - place player at map center
+            int mapW = loadedMap.getProperties().get("width", 0, Integer.class);
+            int tileW = loadedMap.getProperties().get("tilewidth", 0, Integer.class);
+            int mapH = loadedMap.getProperties().get("height", 0, Integer.class);
+            int tileH = loadedMap.getProperties().get("tileheight", 0, Integer.class);
+            float worldW = mapW * tileW * Main.UNIT_SCALE;
+            float worldH = mapH * tileH * Main.UNIT_SCALE;
+            
+            Transform transform = Transform.MAPPER.get(playerEntity);
+            Vector2 pos = transform.getPosition();
+            Vector2 size = transform.getSize();
+            
+            // Place player at center of map
+            float centerX = (worldW - size.x) * 0.5f;
+            float centerY = (worldH - size.y) * 0.5f;
+            
+            // Ensure player is within map bounds
+            centerX = Math.max(0f, Math.min(centerX, worldW - size.x));
+            centerY = Math.max(0f, Math.min(centerY, worldH - size.y));
+            
+            pos.set(centerX, centerY);
+            
+            Gdx.app.log("Cheat", "Teleported to map center in " + targetAsset.name() + " at (" + centerX + ", " + centerY + ")");
+        }
+        
+        // Center camera on player
+        centerCameraOnPlayer(playerEntity);
+        
+        // Update audio and UI
+        audioService.setMap(loadedMap);
+        audioService.onEvent(AudioEventType.MAP_CHANGED);
+        hudWallet.updateDisplay();
+        
+        // Show area title
+        this.lastAreaNameForSfx = resolveAreaName(targetAsset);
+        showAreaTitle(targetAsset);
+        
+        Gdx.app.log("Cheat", "Teleport complete");
     }
 
     private static BattleSkill.EffectType parseEffectType(String raw) {
