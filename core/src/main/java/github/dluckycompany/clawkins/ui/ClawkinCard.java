@@ -19,6 +19,7 @@ import com.badlogic.gdx.utils.Align;
 import com.badlogic.gdx.utils.Scaling;
 
 import github.dluckycompany.clawkins.character.Clawkin;
+import github.dluckycompany.clawkins.character.LevelSystem;
 
 /**
  * ClawkinCard - Reusable party member slot widget
@@ -54,9 +55,12 @@ public class ClawkinCard extends Table {
     private Image hpBarForeground;      // Foreground bar that grows left-to-right
     private Cell<Image> hpBarForegroundCell; // Layout cell used to control dynamic width
     private Label hpLabel;
+    private Label levelLabel;
+    private Label expLabel;
     private Table portraitContainer;
     private boolean isSelected = false;
     private boolean isActiveFighter = false;
+    private int sharedTotalExperience = -1;
     
     // HP bar constants
     private static final float HP_BAR_WIDTH = 130f;    // Total width of the bar track
@@ -69,8 +73,13 @@ public class ClawkinCard extends Table {
      * @param font The BitmapFont for text rendering
      */
     public ClawkinCard(Clawkin clawkin, BitmapFont font) {
+        this(clawkin, font, -1);
+    }
+
+    public ClawkinCard(Clawkin clawkin, BitmapFont font, int sharedTotalExperience) {
         this.clawkin = clawkin;
         this.font = font;
+        this.sharedTotalExperience = sharedTotalExperience;
         
         // Configure table properties
         this.pad(8);
@@ -146,10 +155,13 @@ public class ClawkinCard extends Table {
         metadataCell.add().expand().row();
         
         // Level label (bottom-left positioning)
-        String levelText = "Lv. " + clawkin.getLevel();
-        Label levelLabel = new Label(levelText, new Label.LabelStyle(font, TEXT_COLOR));
+        levelLabel = new Label("", new Label.LabelStyle(font, TEXT_COLOR));
         levelLabel.setFontScale(0.9f);
-        metadataCell.add(levelLabel).left().bottom();
+        metadataCell.add(levelLabel).left().row();
+
+        expLabel = new Label("", new Label.LabelStyle(font, TEXT_COLOR));
+        expLabel.setFontScale(0.75f);
+        metadataCell.add(expLabel).left().bottom();
         
         this.add(metadataCell).expandX().fillX();
         
@@ -207,6 +219,7 @@ public class ClawkinCard extends Table {
         
         // Set initial HP bar display
         refreshStats();
+        refreshProgressText();
     }
     
     /**
@@ -260,6 +273,36 @@ public class ClawkinCard extends Table {
         // Update foreground bar color
         Drawable barDrawable = RoundedPanelDrawable.createRoundedPanel(barColor, 6);
         hpBarForeground.setDrawable(barDrawable);
+        refreshProgressText();
+    }
+
+    private void refreshProgressText() {
+        if (clawkin == null || levelLabel == null || expLabel == null) {
+            return;
+        }
+        if (sharedTotalExperience < 0) {
+            levelLabel.setText("Lv. " + clawkin.getLevel());
+            expLabel.setText("");
+            return;
+        }
+
+        int level = LevelSystem.calculateLevelFromExp(sharedTotalExperience);
+        levelLabel.setText("Lv. " + level);
+        if (level >= LevelSystem.MAX_LEVEL) {
+            expLabel.setText("XP: MAX");
+            return;
+        }
+
+        int levelFloor = LevelSystem.getExpRequiredForLevel(level);
+        int nextLevelExp = LevelSystem.getExpForNextLevel(level);
+        int expIntoLevel = Math.max(0, sharedTotalExperience - levelFloor);
+        int clampedExp = Math.min(expIntoLevel, Math.max(0, nextLevelExp));
+        expLabel.setText("XP: " + clampedExp + " / " + nextLevelExp);
+    }
+
+    public void setSharedExperience(int totalExp) {
+        sharedTotalExperience = Math.max(0, totalExp);
+        refreshProgressText();
     }
     
     /**

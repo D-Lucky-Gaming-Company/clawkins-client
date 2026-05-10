@@ -25,6 +25,8 @@ import com.badlogic.gdx.utils.Disposable;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ThreadLocalRandom;
 
 import github.dluckycompany.clawkins.GameScreen;
 import github.dluckycompany.clawkins.Main;
@@ -33,6 +35,7 @@ import github.dluckycompany.clawkins.audio.SoundEffect;
 import github.dluckycompany.clawkins.asset.AssetService;
 import github.dluckycompany.clawkins.character.Clawkin;
 import github.dluckycompany.clawkins.character.LevelSystem;
+import github.dluckycompany.clawkins.character.SkillUnlockSystem;
 import github.dluckycompany.clawkins.component.Interactible;
 import github.dluckycompany.clawkins.input.InputConventions;
 import github.dluckycompany.clawkins.progress.PlayerProgress;
@@ -69,6 +72,7 @@ public class BattleOverlay implements Disposable {
         ENEMY_RESULT,
         VICTORY_REWARD,
         VICTORY_LEVEL_UP,
+        VICTORY_MILESTONE,
         RUN_CONFIRMATION,
         SWITCH_CONFIRMATION,
         SKILL_CONFIRMATION,
@@ -115,8 +119,30 @@ public class BattleOverlay implements Disposable {
     private int skillConfirmationOptionIndex = 0; // 0=Yes, 1=No, 2=Stats
     private int pendingLevelUps = 0;
     private int pendingLevelUpTargetLevel = LevelSystem.MIN_LEVEL;
-    private static final int VICTORY_XP_REWARD = 25;
-
+    private int pendingVictoryCoinReward = 0;
+    private boolean pendingVictoryMilestone = false;
+    private String pendingVictoryMilestoneText = "";
+    /** Prevents double-applying {@link GameScreen#DEFAULT_BATTLE_XP_REWARD} if victory dialogue is reopened. */
+    private boolean victoryXpGrantedThisSession = false;
+    private static final int[] LEVEL_MILESTONE_THRESHOLDS = {10, 15, 20};
+    /**
+     * Per-boss coin overrides applied on victory.
+     *
+     * <p>How to add a new boss reward:<br>
+     * 1. Uncomment (or add) the entry below using the encounter ID string.<br>
+     * 2. Set the coin value to match the intended boss difficulty/prestige.<br>
+     * 3. Add the matching XP entry in {@link github.dluckycompany.clawkins.GameScreen#BOSS_XP_REWARDS_BY_ENCOUNTER_ID}.
+     *
+     * <p>Current values:<br>
+     * - boss_0 (Bert Jr.)  : 500 coins<br>
+     * - boss_1 (Spartacus) : 650 coins<br>
+     * - boss_2 (Cerberus)  : 750 coins
+     */
+    private static final Map<String, Integer> BOSS_COIN_REWARDS_BY_ENCOUNTER_ID = Map.ofEntries(
+            Map.entry("boss_0_encounter", 500),
+            Map.entry("boss_1_encounter", 650),
+            Map.entry("boss_2_encounter", 750)
+    );
     /** True when inventory is open from battle. */
     private boolean inventoryOpen = false;
     /** Small input guard after returning from inventory to avoid key bleed-through. */
@@ -465,7 +491,12 @@ public class BattleOverlay implements Disposable {
                 
                 // Update EXP/Level display
                 int level = activeClawkin.getLevel();
-                battleHud.updateExpFromLevel(level);
+                PlayerProgress progress = resolvePlayerProgress();
+                if (progress != null) {
+                    battleHud.updateExpFromTotalExp(progress.getExperiencePoints());
+                } else {
+                    battleHud.updateExpFromLevel(level);
+                }
 
                 // Update skill button labels with actual skill names
                 if (ctx != null && ctx.getSkillManager() != null) {
@@ -492,6 +523,7 @@ public class BattleOverlay implements Disposable {
             if (ctx != null) {
                 battleHud.updateEnemyCombatant(
                         ctx.getEncounterId(),
+                        ctx.getEncounterTableId(),
                         ctx.getEnemyDisplayName(),
                         ctx.getEnemyPortraitPath());
             }
@@ -597,10 +629,16 @@ public class BattleOverlay implements Disposable {
         }
 
         battleService.submitPlayerSkill(skillSlot);
-        if (battleActionSfxHandler != null) {
+        String lastLog = machine.getLastLog();
+        boolean cooldownRejected = lastLog != null && lastLog.toLowerCase().contains("cooldown");
+        if (cooldownRejected) {
+            if (game != null && game.getAudioService() != null) {
+                game.getAudioService().playSound(SoundEffect.FAILURE_1);
+            }
+        } else if (battleActionSfxHandler != null) {
             battleActionSfxHandler.playForPlayerAction(skillSlot, machine.getLastLogSpans());
         }
-        openDialogue(null, machine.getLastLog(), machine.getLastLogSpans(), DialogueFlowPhase.PLAYER_RESULT);
+        openDialogue(null, lastLog, machine.getLastLogSpans(), DialogueFlowPhase.PLAYER_RESULT);
     }
 
     private void handleDialogueAdvance(BattleService battleService) {
@@ -632,12 +670,24 @@ public class BattleOverlay implements Disposable {
                 pendingLevelUps = 0;
                 return;
             }
+            if (tryOpenVictoryMilestoneDialogue()) {
+                return;
+            }
             resetDialogueFlow();
             battleService.closeBattleSession();
             return;
         }
 
         if (dialogueFlowPhase == DialogueFlowPhase.VICTORY_LEVEL_UP) {
+            if (tryOpenVictoryMilestoneDialogue()) {
+                return;
+            }
+            resetDialogueFlow();
+            battleService.closeBattleSession();
+            return;
+        }
+
+        if (dialogueFlowPhase == DialogueFlowPhase.VICTORY_MILESTONE) {
             resetDialogueFlow();
             battleService.closeBattleSession();
             return;
@@ -681,7 +731,7 @@ public class BattleOverlay implements Disposable {
             if (machine.canExecuteEnemyAction()) {
                 battleService.resolveEnemyTurn();
                 if (battleActionSfxHandler != null) {
-                    battleActionSfxHandler.playForEnemyActionResult(machine.getLastLogSpans());
+                    battleActionSfxHandler.playForEnemyActionResult(machine.getLastLogSpans(), machine.getLastLog());
                 }
                 openDialogue(null, machine.getLastLog(), machine.getLastLogSpans(), DialogueFlowPhase.ENEMY_RESULT);
                 return;
@@ -765,6 +815,10 @@ public class BattleOverlay implements Disposable {
     private void resetVictoryDialogueState() {
         pendingLevelUps = 0;
         pendingLevelUpTargetLevel = LevelSystem.MIN_LEVEL;
+        pendingVictoryCoinReward = 0;
+        pendingVictoryMilestone = false;
+        pendingVictoryMilestoneText = "";
+        victoryXpGrantedThisSession = false;
     }
 
     private boolean tryOpenVictoryDialogue(BattleService battleService, BattleStateMachine machine) {
@@ -776,29 +830,83 @@ public class BattleOverlay implements Disposable {
         }
 
         PlayerProgress progress = resolvePlayerProgress();
-        int currentXp = progress != null ? progress.getExperiencePoints() : 0;
-        int beforeLevel = LevelSystem.calculateLevelFromExp(currentXp);
-        int afterLevel = LevelSystem.calculateLevelFromExp(currentXp + VICTORY_XP_REWARD);
+        GameScreen gameScreen = resolveGameScreen();
+        int xpBeforeReward = progress != null ? progress.getExperiencePoints() : 0;
+        BattleContext context = machine.getContext();
+        String encounterId = context != null ? context.getEncounterId() : null;
+        int xpAwarded = GameScreen.DEFAULT_BATTLE_XP_REWARD;
+        if (gameScreen != null && progress != null && !victoryXpGrantedThisSession) {
+            xpAwarded = gameScreen.applyVictoryExperienceReward(encounterId);
+            victoryXpGrantedThisSession = true;
+        }
+        int currentXp = progress != null ? progress.getExperiencePoints() : xpBeforeReward;
+        int beforeLevel = LevelSystem.calculateLevelFromExp(xpBeforeReward);
+        int afterLevel = LevelSystem.calculateLevelFromExp(currentXp);
         pendingLevelUps = Math.max(0, afterLevel - beforeLevel);
         pendingLevelUpTargetLevel = afterLevel;
+        int milestoneThreshold = highestCrossedLevelMilestoneThreshold(beforeLevel, afterLevel);
+        boolean gainedSkill = partyGainedSkillsFromLevelUps(beforeLevel, afterLevel);
+        pendingVictoryMilestone = milestoneThreshold >= 0 || gainedSkill;
+        pendingVictoryMilestoneText =
+                pendingVictoryMilestone
+                        ? buildVictoryMilestoneDialogueText(milestoneThreshold, gainedSkill)
+                        : "";
+        int enemyLevel = LevelSystem.MIN_LEVEL;
+        if (context != null) {
+            enemyLevel = context.getEnemyLevel();
+        }
+        pendingVictoryCoinReward = resolveVictoryCoinReward(context, enemyLevel);
+        if (playerBattleState != null && playerBattleState.getWallet() != null) {
+            playerBattleState.getWallet().addMoney(pendingVictoryCoinReward);
+        }
+        if (gameScreen != null) {
+            gameScreen.refreshHudWallet();
+        }
 
         String rewardText = "Victory Rewards\n"
-                + "XP Gained: +" + VICTORY_XP_REWARD + "\n"
+                + "XP Gained: +" + xpAwarded + "\n"
+                + "Coins Gained: +" + pendingVictoryCoinReward + "\n"
                 + "Items Earned: None";
         openDialogue(null, rewardText, List.of(), DialogueFlowPhase.VICTORY_REWARD);
         return true;
     }
 
-    private PlayerProgress resolvePlayerProgress() {
+    private GameScreen resolveGameScreen() {
         if (game == null) {
             return null;
         }
         try {
-            GameScreen screen = game.getScreen(GameScreen.class);
-            return screen != null ? screen.getPlayerProgress() : null;
+            return game.getScreen(GameScreen.class);
         } catch (RuntimeException ex) {
             return null;
         }
+    }
+
+    private PlayerProgress resolvePlayerProgress() {
+        GameScreen screen = resolveGameScreen();
+        return screen != null ? screen.getPlayerProgress() : null;
+    }
+
+    private int resolveVictoryCoinReward(BattleContext context, int enemyLevel) {
+        if (context != null) {
+            Integer bossReward = BOSS_COIN_REWARDS_BY_ENCOUNTER_ID.get(context.getEncounterId());
+            if (bossReward != null) {
+                return Math.max(0, bossReward);
+            }
+        }
+        int baseReward = LevelSystem.calculateMoneyReward(enemyLevel);
+        if (enemyLevel >= LevelSystem.MAX_LEVEL) {
+            return rollMaxLevelReward(baseReward);
+        }
+        return baseReward;
+    }
+
+    private int rollMaxLevelReward(int baseReward) {
+        if (baseReward <= 0) {
+            return 0;
+        }
+        double factor = ThreadLocalRandom.current().nextDouble(0.25d, 1.0000001d);
+        return Math.max(1, (int) Math.round(baseReward * factor));
     }
 
     private String buildLevelUpDialogueText(int levelsGained, int targetLevel) {
@@ -841,6 +949,74 @@ public class BattleOverlay implements Disposable {
         if (game != null && game.getAudioService() != null) {
             game.getAudioService().playSound(SoundEffect.LEVEL_UP);
         }
+    }
+
+    /**
+     * Opens the post-victory milestone dialogue if one was queued. Returns true when the flow was continued.
+     */
+    private boolean tryOpenVictoryMilestoneDialogue() {
+        if (!pendingVictoryMilestone || pendingVictoryMilestoneText == null || pendingVictoryMilestoneText.isEmpty()) {
+            return false;
+        }
+        openDialogue(null, pendingVictoryMilestoneText, List.of(), DialogueFlowPhase.VICTORY_MILESTONE);
+        playMilestoneSound();
+        pendingVictoryMilestone = false;
+        pendingVictoryMilestoneText = "";
+        return true;
+    }
+
+    private void playMilestoneSound() {
+        if (game != null && game.getAudioService() != null) {
+            game.getAudioService().playSound(SoundEffect.MILESTONE);
+        }
+    }
+
+    private static int highestCrossedLevelMilestoneThreshold(int beforeLevel, int afterLevel) {
+        int highest = -1;
+        if (afterLevel <= beforeLevel) {
+            return -1;
+        }
+        for (int threshold : LEVEL_MILESTONE_THRESHOLDS) {
+            if (beforeLevel < threshold && afterLevel >= threshold) {
+                highest = threshold;
+            }
+        }
+        return highest;
+    }
+
+    private boolean partyGainedSkillsFromLevelUps(int beforeLevel, int afterLevel) {
+        if (playerBattleState == null || afterLevel <= beforeLevel) {
+            return false;
+        }
+        List<Clawkin> party = playerBattleState.getParty();
+        if (party == null || party.isEmpty()) {
+            return false;
+        }
+        for (Clawkin clawkin : party) {
+            if (clawkin == null || clawkin.getId() == null || clawkin.getId().isBlank()) {
+                continue;
+            }
+            for (int lv = beforeLevel + 1; lv <= afterLevel; lv++) {
+                if (!SkillUnlockSystem.getSkillsUnlockedAtLevel(clawkin.getId(), lv).isEmpty()) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static String buildVictoryMilestoneDialogueText(int milestoneThreshold, boolean gainedSkill) {
+        boolean levelMilestone = milestoneThreshold >= 0;
+        if (levelMilestone && gainedSkill) {
+            return "Milestone!\nYou reached Level " + milestoneThreshold + " and learned a new skill!";
+        }
+        if (levelMilestone) {
+            return "Milestone!\nYou reached Level " + milestoneThreshold + "!";
+        }
+        if (gainedSkill) {
+            return "Milestone!\nYou learned a new skill!";
+        }
+        return "";
     }
     
     /**
@@ -1112,6 +1288,8 @@ public class BattleOverlay implements Disposable {
             scaleLineColor = "#82B1FF";
         } else if (skill.getEffectType() == BattleSkill.EffectType.DEFENSE) {
             scaleLineColor = "#82B1FF";
+        } else if (skill.getEffectType() == BattleSkill.EffectType.PARRY) {
+            scaleLineColor = "#82B1FF";
         } else if (skill.getEffectType() == BattleSkill.EffectType.HEAL) {
             scaleLineColor = "#7CE7A1";
         }
@@ -1183,7 +1361,7 @@ public class BattleOverlay implements Disposable {
         }
         return switch (skill.getEffectType()) {
             case DAMAGE, ATTACK -> darker ? "#8B1E1E" : "#FF4D4D";
-            case DEFENSE -> darker ? "#1E3A8A" : "#4DA3FF";
+            case DEFENSE, PARRY -> darker ? "#1E3A8A" : "#4DA3FF";
             case HEAL -> darker ? "#1E7A39" : "#57F28E";
             case BLEED -> darker ? "#8B1E1E" : "#FF4D4D"; // Same as DAMAGE (red tone)
         };
@@ -1232,7 +1410,7 @@ public class BattleOverlay implements Disposable {
         if (machine != null && machine.canExecuteEnemyAction()) {
             battleService.resolveEnemyTurn();
             if (battleActionSfxHandler != null) {
-                battleActionSfxHandler.playForEnemyActionResult(machine.getLastLogSpans());
+                battleActionSfxHandler.playForEnemyActionResult(machine.getLastLogSpans(), machine.getLastLog());
             }
             openDialogue(null, machine.getLastLog(), machine.getLastLogSpans(), DialogueFlowPhase.ENEMY_RESULT);
         }

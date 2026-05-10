@@ -15,6 +15,7 @@ import com.badlogic.gdx.maps.objects.CircleMapObject;
 import com.badlogic.gdx.maps.objects.EllipseMapObject;
 import com.badlogic.gdx.maps.objects.PolygonMapObject;
 import com.badlogic.gdx.maps.objects.RectangleMapObject;
+import com.badlogic.gdx.maps.tiled.TiledMap;
 import com.badlogic.gdx.maps.tiled.TiledMapTile;
 import com.badlogic.gdx.maps.tiled.objects.TiledMapTileMapObject;
 import com.badlogic.gdx.math.Rectangle;
@@ -25,6 +26,7 @@ import github.dluckycompany.clawkins.asset.AssetService;
 import github.dluckycompany.clawkins.battle.BattleSkill;
 import github.dluckycompany.clawkins.battle.PlayerBattleState;
 import github.dluckycompany.clawkins.character.Clawkin;
+import github.dluckycompany.clawkins.character.LevelSystem;
 import github.dluckycompany.clawkins.component.CameraFollow;
 import github.dluckycompany.clawkins.component.Enemy;
 import github.dluckycompany.clawkins.component.Graphic;
@@ -81,6 +83,68 @@ public class TiledObjectConfigurator {
     public void setPlayerNameOverride(String playerName) {
         this.playerNameOverride = playerName;
         Gdx.app.log(TAG, "Player name override set to: " + playerName);
+    }
+
+    /**
+     * Creates a player entity when the map has no PLAYER tile object in its {@code objects}
+     * layer (common on small interior maps). Save/load clears all entities, so a map without
+     * a authored player would otherwise leave nobody to render.
+     *
+     * @param mapForBounds map used to place the player at the world center until the caller
+     *                     sets the real position; may be {@code null} for (0,0)
+     * @return the new entity, or {@code null} if a {@link Player} entity already exists
+     */
+    public Entity spawnPlayerWithoutMapObject(TiledMap mapForBounds) {
+        if (engine.getEntitiesFor(Family.all(Player.class).get()).size() > 0) {
+            Gdx.app.log(TAG, "spawnPlayerWithoutMapObject skipped: player already exists");
+            return null;
+        }
+
+        TextureRegion initialFrame = PlayerAnimationFactory.getSprite(assetService, 0);
+        float w = initialFrame.getRegionWidth() * Main.UNIT_SCALE;
+        float h = initialFrame.getRegionHeight() * Main.UNIT_SCALE;
+
+        float spawnX = 0f;
+        float spawnY = 0f;
+        if (mapForBounds != null) {
+            int mapW = mapForBounds.getProperties().get("width", 0, Integer.class);
+            int tileW = mapForBounds.getProperties().get("tilewidth", 0, Integer.class);
+            int mapH = mapForBounds.getProperties().get("height", 0, Integer.class);
+            int tileH = mapForBounds.getProperties().get("tileheight", 0, Integer.class);
+            float worldW = mapW * tileW * Main.UNIT_SCALE;
+            float worldH = mapH * tileH * Main.UNIT_SCALE;
+            spawnX = Math.max(0f, Math.min((worldW - w) * 0.5f, worldW - w));
+            spawnY = Math.max(0f, Math.min((worldH - h) * 0.5f, worldH - h));
+        }
+
+        Entity entity = engine.createEntity();
+        entity.add(new Transform(new Vector2(spawnX, spawnY), 1, new Vector2(w, h), new Vector2(1f, 1f), 0f));
+        entity.add(new Graphic(initialFrame, Color.WHITE.cpy()));
+
+        String playerName = (playerNameOverride != null && !playerNameOverride.isEmpty())
+                ? playerNameOverride
+                : "Player";
+
+        playerBattleState.initializeIfUnset(
+                100,
+                12,
+                8,
+                10,
+                List.of(
+                        new BattleSkill("Slash", 12),
+                        new BattleSkill("Heavy Strike", 16),
+                        new BattleSkill("Quick Jab", 9)
+                ));
+
+        entity.add(new Player());
+        entity.add(new PlayerProfile(playerName));
+        entity.add(new CameraFollow());
+        entity.add(new Move(3f));
+        entity.add(PlayerAnimationFactory.create(assetService));
+
+        engine.addEntity(entity);
+        Gdx.app.log(TAG, "Spawned PLAYER without map object at (" + spawnX + "," + spawnY + ")");
+        return entity;
     }
 
     /**
@@ -236,6 +300,11 @@ public class TiledObjectConfigurator {
                 int enemyAttack = getIntProperty(tileMapObject, "enemyAttack", 8);
                 int enemyDefense = getIntProperty(tileMapObject, "enemyDefense", 3);
                 int enemySpeed = getIntProperty(tileMapObject, "enemySpeed", 6);
+                int enemyLevel = getIntProperty(
+                        tileMapObject,
+                        "enemyLevel",
+                        inferLevelFromStats(enemyHp, enemyAttack, enemyDefense, enemySpeed)
+                );
                 List<BattleSkill> enemySkills = parseEnemySkills(tileMapObject, enemyName);
                 String enemyImagePath = getStringProperty(
                     tileMapObject,
@@ -274,6 +343,7 @@ public class TiledObjectConfigurator {
                         enemyName,
                         encounterTableId,
                         oneShot,
+                        enemyLevel,
                         enemyHp,
                         enemyAttack,
                         enemyDefense,
@@ -538,6 +608,12 @@ public class TiledObjectConfigurator {
             }
         }
         return defaultValue;
+    }
+
+    private static int inferLevelFromStats(int hp, int attack, int defense, int speed) {
+        int powerScore = Math.max(1, (hp / 10) + (attack * 2) + (defense * 2) + speed);
+        int inferred = (int) Math.round(powerScore / 8.0);
+        return Math.max(LevelSystem.MIN_LEVEL, Math.min(LevelSystem.MAX_LEVEL, inferred));
     }
 
     private static float getFloatProperty(MapObject object, String key, float defaultValue) {
@@ -892,6 +968,7 @@ public class TiledObjectConfigurator {
             case "heal" -> BattleSkill.EffectType.HEAL;
             case "attack" -> BattleSkill.EffectType.ATTACK;
             case "defense" -> BattleSkill.EffectType.DEFENSE;
+            case "parry" -> BattleSkill.EffectType.PARRY;
             default -> BattleSkill.EffectType.DAMAGE;
         };
     }

@@ -133,6 +133,7 @@ public class SaveStateScreen implements Screen {
         buildUI();
         refreshSaveList();
         soundHelper.resetHoverTracking();
+        stage.getViewport().update(Gdx.graphics.getWidth(), Gdx.graphics.getHeight(), true);
 
         inputGuardTimer = SCREEN_ENTRY_INPUT_GUARD_SECONDS;
         waitForConfirmRelease = true;
@@ -147,6 +148,7 @@ public class SaveStateScreen implements Screen {
         Gdx.gl.glClearColor(0.08f, 0.08f, 0.1f, 1f);
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
 
+        stage.getViewport().apply(true);
         batch.setProjectionMatrix(stage.getCamera().combined);
         stage.act(delta);
         stage.draw();
@@ -235,6 +237,7 @@ public class SaveStateScreen implements Screen {
         actions.defaults().width(ACTION_BUTTON_WIDTH).height(ACTION_BUTTON_HEIGHT).padRight(12f);
 
         primaryButton = soundHelper.createButton(mode == Mode.LOAD ? "LOAD" : "OVERWRITE", skin, this::handlePrimaryAction);
+        saveNewButton = null;
 
         if (mode == Mode.SAVE) {
             saveNewButton = soundHelper.createButton("SAVE NEW", skin, this::handleSaveNew);
@@ -242,14 +245,18 @@ public class SaveStateScreen implements Screen {
 
         deleteButton = soundHelper.createButton("DELETE", skin, this::handleDelete);
 
-        backButton = soundHelper.createButton("BACK", skin, this::handleBack, SoundEffect.UI_BACK);
+        backButton = onBack != null
+                ? soundHelper.createButton("BACK", skin, this::handleBack, SoundEffect.UI_BACK)
+                : null;
 
         actions.add(primaryButton);
         if (saveNewButton != null) {
             actions.add(saveNewButton);
         }
         actions.add(deleteButton);
-        actions.add(backButton);
+        if (backButton != null) {
+            actions.add(backButton);
+        }
 
         panel.add(actions).padTop(12f).row();
 
@@ -778,10 +785,14 @@ public class SaveStateScreen implements Screen {
             return;
         }
         if (saveStates.size() <= 1) {
-            controlsHintLabel.setText("Left/Right: Select Button    Enter/Z: Confirm    Esc/X: Back    Del: Delete");
+            controlsHintLabel.setText(onBack != null
+                    ? "Left/Right: Select Button    Enter/Z: Confirm    Esc/X: Back    Del: Delete"
+                    : "Left/Right: Select Button    Enter/Z: Confirm    Del: Delete");
             return;
         }
-        controlsHintLabel.setText("Up/Down: Save Slot    Left/Right: Select Button    Enter/Z: Confirm    Esc/X: Back");
+        controlsHintLabel.setText(onBack != null
+                ? "Up/Down: Save Slot    Left/Right: Select Button    Enter/Z: Confirm    Esc/X: Back"
+                : "Up/Down: Save Slot    Left/Right: Select Button    Enter/Z: Confirm");
     }
 
     private static String formatShortCreatedAt(String createdAt) {

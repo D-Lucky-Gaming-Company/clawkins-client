@@ -3,6 +3,10 @@ package github.dluckycompany.clawkins.character;
 /**
  * Core leveling system that manages EXP progression and level-ups.
  * Handles EXP thresholds, level calculations, and stat growth.
+ *
+ * XP Curve:
+ *   Levels 1-8  : flat 50 XP each
+ *   Level 9+    : 50 + (level - 8) * 45 XP  (grows by 45 per step)
  */
 public class LevelSystem {
     
@@ -12,8 +16,12 @@ public class LevelSystem {
     /** Minimum level a Clawkin can have */
     public static final int MIN_LEVEL = 1;
 
-    private static final int MID_CURVE_START_LEVEL = 5;
-    private static final int MID_CURVE_END_LEVEL = 8;
+    /** Levels 1-8 cost a flat amount of XP each */
+    private static final int FLAT_XP_PER_LEVEL = 50;
+    /** The level at which flat XP ends and scaling begins */
+    private static final int SCALING_START_LEVEL = 8;
+    /** Additional XP added per level step beyond the scaling start */
+    private static final int SCALING_STEP_EXP = 45;
     
     /**
      * Calculates the total EXP required to reach a specific level.
@@ -96,6 +104,29 @@ public class LevelSystem {
         int reward = Math.round(expToNextForEnemy * rewardShare);
         return Math.max(12, reward);
     }
+
+    /**
+     * Calculates coin reward for defeating an enemy.
+     *
+     * Reward curve:
+     * - Level 1 to 10 scales from 1 to 100 coins
+     * - Level 11 to 20 scales from 100 to 500 coins
+     * - Max level is capped at 500 coins
+     *
+     * @param enemyLevel The level of the defeated enemy
+     * @return Coin reward amount
+     */
+    public static int calculateMoneyReward(int enemyLevel) {
+        int clampedLevel = Math.max(MIN_LEVEL, Math.min(enemyLevel, MAX_LEVEL));
+        if (clampedLevel <= 10) {
+            float t = (clampedLevel - MIN_LEVEL) / 9f;
+            return Math.round(1f + (99f * t));
+        }
+
+        float t = (clampedLevel - 10) / 10f;
+        int reward = Math.round(100f + (400f * t));
+        return Math.max(1, Math.min(500, reward));
+    }
     
     /**
      * Calculates EXP reward for completing a battle round.
@@ -121,17 +152,13 @@ public class LevelSystem {
     private static int expNeededFromLevel(int currentLevel) {
         int level = Math.max(MIN_LEVEL, Math.min(currentLevel, MAX_LEVEL));
 
-        // Example-aligned mid curve:
-        // Lv5->6: 100, Lv6->7: 200, Lv7->8: 300
-        if (level >= MID_CURVE_START_LEVEL && level <= MID_CURVE_END_LEVEL) {
-            return (level - 4) * 100;
+        // Levels 1-8: flat 50 XP each.
+        if (level <= SCALING_START_LEVEL) {
+            return FLAT_XP_PER_LEVEL;
         }
 
-        if (level < MID_CURVE_START_LEVEL) {
-            return 40 + (level - 1) * 15;
-        }
-
-        // After Lv8, continue upward with gentler growth.
-        return 400 + (level - MID_CURVE_END_LEVEL) * 45;
+        // Level 9+: scale upward by SCALING_STEP_EXP per level step.
+        // Lv8->9 = 50+45 = 95, Lv9->10 = 140, Lv10->11 = 185, ...
+        return FLAT_XP_PER_LEVEL + (level - SCALING_START_LEVEL) * SCALING_STEP_EXP;
     }
 }

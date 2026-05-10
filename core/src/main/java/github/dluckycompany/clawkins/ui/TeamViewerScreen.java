@@ -22,6 +22,7 @@ import com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable;
 import github.dluckycompany.clawkins.audio.AudioService;
 import github.dluckycompany.clawkins.audio.SoundEffect;
 import github.dluckycompany.clawkins.character.Clawkin;
+import github.dluckycompany.clawkins.character.LevelSystem;
 import github.dluckycompany.clawkins.input.InputConventions;
 
 /**
@@ -88,6 +89,7 @@ public class TeamViewerScreen implements InputProcessor {
     private int selectedActionIndex = 1; // default to SWITCH
     private int lastActionIndex = -1;  // For debouncing action menu navigation SFX
     private boolean cancelKeyLatched;
+    private int sharedTotalExperience = -1;
     
     // Previous input processor (for restoration)
     private final InputProcessor previousInputProcessor;
@@ -210,7 +212,7 @@ public class TeamViewerScreen implements InputProcessor {
         // Create 3 card slots
         for (int slotIndex = 0; slotIndex < MAX_PARTY_SIZE; slotIndex++) {
             Clawkin clawkin = (slotIndex < partyMembers.size()) ? partyMembers.get(slotIndex) : null;
-            ClawkinCard card = new ClawkinCard(clawkin, font);
+            ClawkinCard card = new ClawkinCard(clawkin, font, sharedTotalExperience);
             cards.add(card);
             
             // Create wrapper for margin/padding and event handling
@@ -402,13 +404,43 @@ public class TeamViewerScreen implements InputProcessor {
                 } else if (isActiveFighter) {
                     footerMessageLabel.setText(clawkin.getName() + " [Active Fighter] - Press Enter to select action");
                 } else {
-                    footerMessageLabel.setText(clawkin.getName() + " (Lv." + clawkin.getLevel() + ") - Press Enter to select action");
+                    footerMessageLabel.setText(clawkin.getName() + " (" + buildLevelExpText(clawkin) + ") - Press Enter to select action");
                 }
             } else {
                 footerMessageLabel.setText("Empty Slot");
             }
         }
         updateActionOptionVisuals();
+    }
+
+    private String buildLevelExpText(Clawkin clawkin) {
+        if (clawkin == null) {
+            return "Lv.1";
+        }
+        if (sharedTotalExperience < 0) {
+            return "Lv." + clawkin.getLevel();
+        }
+
+        int level = LevelSystem.calculateLevelFromExp(sharedTotalExperience);
+        if (level >= LevelSystem.MAX_LEVEL) {
+            return "Lv." + level + ", XP MAX";
+        }
+
+        int levelExpFloor = LevelSystem.getExpRequiredForLevel(level);
+        int expForNextLevel = LevelSystem.getExpForNextLevel(level);
+        int expIntoLevel = Math.max(0, sharedTotalExperience - levelExpFloor);
+        int clampedExpIntoLevel = Math.min(expIntoLevel, Math.max(0, expForNextLevel));
+        return "Lv." + level + ", XP " + clampedExpIntoLevel + "/" + expForNextLevel;
+    }
+
+    public void setSharedExperience(int totalExp) {
+        sharedTotalExperience = Math.max(0, totalExp);
+        for (ClawkinCard card : cards) {
+            if (card != null) {
+                card.setSharedExperience(sharedTotalExperience);
+            }
+        }
+        updateFooterMessage();
     }
 
     private void updateActionOptionVisuals() {

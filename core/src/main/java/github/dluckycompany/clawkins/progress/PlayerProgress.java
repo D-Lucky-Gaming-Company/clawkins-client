@@ -11,6 +11,7 @@ import java.util.Set;
 import java.util.TreeMap;
 
 import github.dluckycompany.clawkins.character.Clawkin;
+import github.dluckycompany.clawkins.character.LevelSystem;
 import github.dluckycompany.clawkins.item.Inventory;
 import github.dluckycompany.clawkins.item.Item;
 
@@ -22,13 +23,15 @@ import github.dluckycompany.clawkins.item.Item;
 public class PlayerProgress {
     private static final String FLAG_PREFIX = "progress.";
     public static final String PROTOCOL_FLAG_KEY = "progress.protocol.v1";
+    private static final int STARTING_PLAYER_LEVEL = 4;
 
     private final Set<String> accomplishedEvents = new LinkedHashSet<>();
     private final Map<String, EventStats> eventStatsById = new HashMap<>();
+    private final Map<String, Integer> objectInteractionCountsById = new HashMap<>();
     private final Map<String, Integer> inventoryQuantitiesByItemId = new HashMap<>();
     private final Map<String, ClawkinStats> clawkinStatsById = new HashMap<>();
     private int enemiesDefeated;
-    private int experiencePoints;
+    private int experiencePoints = defaultStartingExperiencePoints();
 
     public boolean isEventAccomplished(String eventId) {
         String key = normalize(eventId);
@@ -173,6 +176,27 @@ public class PlayerProgress {
         return Map.copyOf(copy);
     }
 
+    public void captureObjectInteractionCounts(Map<String, Integer> countsByObjectId) {
+        objectInteractionCountsById.clear();
+        if (countsByObjectId == null || countsByObjectId.isEmpty()) {
+            return;
+        }
+        for (Map.Entry<String, Integer> entry : countsByObjectId.entrySet()) {
+            String id = normalize(entry.getKey());
+            if (id.isEmpty()) {
+                continue;
+            }
+            int count = entry.getValue() == null ? 0 : Math.max(0, entry.getValue());
+            if (count > 0) {
+                objectInteractionCountsById.put(id, count);
+            }
+        }
+    }
+
+    public Map<String, Integer> snapshotObjectInteractionCounts() {
+        return Map.copyOf(objectInteractionCountsById);
+    }
+
     public void writeToFlags(Map<String, String> flags) {
         if (flags == null) {
             return;
@@ -201,6 +225,15 @@ public class PlayerProgress {
             flags.put(key + ".losses", Integer.toString(stats.lossCount));
             flags.put(key + ".completed", Integer.toString(stats.completedCount));
             eventStatsIndex++;
+        }
+
+        flags.put(FLAG_PREFIX + "objects.interactions.count", Integer.toString(objectInteractionCountsById.size()));
+        int objectInteractionIndex = 0;
+        for (Map.Entry<String, Integer> entry : objectInteractionCountsById.entrySet()) {
+            String key = FLAG_PREFIX + "objects.interactions." + objectInteractionIndex;
+            flags.put(key + ".id", entry.getKey());
+            flags.put(key + ".count", Integer.toString(entry.getValue()));
+            objectInteractionIndex++;
         }
 
         flags.put(FLAG_PREFIX + "inventory.count", Integer.toString(inventoryQuantitiesByItemId.size()));
@@ -283,16 +316,17 @@ public class PlayerProgress {
     public void loadFromFlags(Map<String, String> flags) {
         accomplishedEvents.clear();
         eventStatsById.clear();
+        objectInteractionCountsById.clear();
         inventoryQuantitiesByItemId.clear();
         clawkinStatsById.clear();
         enemiesDefeated = 0;
-        experiencePoints = 0;
+        experiencePoints = defaultStartingExperiencePoints();
 
         if (flags == null || flags.isEmpty()) {
             return;
         }
 
-        experiencePoints = parseInt(flags.get(FLAG_PREFIX + "xp"), 0);
+        experiencePoints = parseInt(flags.get(FLAG_PREFIX + "xp"), defaultStartingExperiencePoints());
         enemiesDefeated = parseInt(flags.get(FLAG_PREFIX + "enemiesDefeated"), 0);
 
         int accomplishedCount = parseInt(flags.get(FLAG_PREFIX + "events.accomplished.count"), 0);
@@ -318,6 +352,18 @@ public class PlayerProgress {
             stats.lossCount = parseInt(flags.get(baseKey + ".losses"), 0);
             stats.completedCount = parseInt(flags.get(baseKey + ".completed"), 0);
             eventStatsById.put(id, stats);
+        }
+
+        int objectInteractionCount = parseInt(flags.get(FLAG_PREFIX + "objects.interactions.count"), 0);
+        for (int i = 0; i < objectInteractionCount; i++) {
+            String id = normalize(flags.get(FLAG_PREFIX + "objects.interactions." + i + ".id"));
+            if (id.isEmpty()) {
+                continue;
+            }
+            int count = parseInt(flags.get(FLAG_PREFIX + "objects.interactions." + i + ".count"), 0);
+            if (count > 0) {
+                objectInteractionCountsById.put(id, count);
+            }
         }
 
         int inventoryCount = parseInt(flags.get(FLAG_PREFIX + "inventory.count"), 0);
@@ -352,6 +398,10 @@ public class PlayerProgress {
 
     private EventStats eventStats(String eventId) {
         return eventStatsById.computeIfAbsent(eventId, key -> new EventStats());
+    }
+
+    private static int defaultStartingExperiencePoints() {
+        return LevelSystem.getExpRequiredForLevel(STARTING_PLAYER_LEVEL);
     }
 
     private static String normalize(String value) {

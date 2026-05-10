@@ -211,6 +211,19 @@ public class BattleStateMachine {
                     .appendPlain(".");
             setLastLog(lb.text(), lb.spans());
             Gdx.app.log(TAG, "Player defense buff applied -> boost=" + boost + ", turns=" + turns + ", defenseNow=" + player.getDefense());
+        } else if (skill != null && skill.getEffectType() == BattleSkill.EffectType.PARRY) {
+            int turns = Math.max(1, skill.getEffectDurationTurns());
+            player.activateParry(skillName, turns);
+            if (skill.getTurnCooldown() > 0) {
+                player.setSkillCooldown(skillName, skill.getTurnCooldown());
+            }
+            LogBuilder lb = new LogBuilder()
+                    .appendName(playerName)
+                    .appendPlain(" uses ")
+                    .appendName(skillName)
+                    .appendPlain(" and enters Parry Stance.");
+            setLastLog(lb.text(), lb.spans());
+            Gdx.app.log(TAG, "Player parry stance applied -> turns=" + turns + ", skill=" + skillName);
         } else {
             // Heavy Paw: flat 15 damage
             int damage = skill != null ? skill.getEffectBaseStat() : 10;
@@ -312,16 +325,18 @@ public class BattleStateMachine {
                 } else {
                     int offense = resolveMagnitude(enemy, player, enemySkill, "attack[self]");
                     int damage = Math.max(1, offense - player.getDefense());
-                    player.setHp(Math.max(0, player.getHp() - damage));
-                    LogBuilder lb = new LogBuilder()
-                            .appendName(enemyName)
-                            .appendPlain(" uses ")
-                            .appendName(enemySkillName)
-                            .appendPlain(" and deals ")
-                            .appendDamage(damage)
-                            .appendPlain(" to you.");
-                    setLastLog(lb.text(), lb.spans());
-                    Gdx.app.log(TAG, "Enemy attack-as-damage applied -> offense=" + offense + ", playerDefense=" + player.getDefense() + ", damage=" + damage);
+                    if (!tryResolveDartParry(player, enemy, enemyName, enemySkillName, offense, damage)) {
+                        player.setHp(Math.max(0, player.getHp() - damage));
+                        LogBuilder lb = new LogBuilder()
+                                .appendName(enemyName)
+                                .appendPlain(" uses ")
+                                .appendName(enemySkillName)
+                                .appendPlain(" and deals ")
+                                .appendDamage(damage)
+                                .appendPlain(" to you.");
+                        setLastLog(lb.text(), lb.spans());
+                        Gdx.app.log(TAG, "Enemy attack-as-damage applied -> offense=" + offense + ", playerDefense=" + player.getDefense() + ", damage=" + damage);
+                    }
                 }
             } else if (enemySkill != null && enemySkill.getEffectType() == BattleSkill.EffectType.DEFENSE) {
                 int boost = Math.max(1, resolveMagnitude(enemy, player, enemySkill, "defense[self]") / 4);
@@ -339,16 +354,28 @@ public class BattleStateMachine {
             } else {
                 int offense = resolveMagnitude(enemy, player, enemySkill, "attack[self]");
                 int damage = Math.max(1, offense - player.getDefense());
-                player.setHp(Math.max(0, player.getHp() - damage));
-                LogBuilder lb = new LogBuilder()
-                        .appendName(enemyName)
-                        .appendPlain(" uses ")
-                        .appendName(enemySkillName)
-                        .appendPlain(" and deals ")
-                        .appendDamage(damage)
-                        .appendPlain(" to you.");
-                setLastLog(lb.text(), lb.spans());
-                Gdx.app.log(TAG, "Enemy damage applied -> offense=" + offense + ", playerDefense=" + player.getDefense() + ", damage=" + damage);
+                if (!tryResolveDartParry(player, enemy, enemyName, enemySkillName, offense, damage)) {
+                    player.setHp(Math.max(0, player.getHp() - damage));
+                    LogBuilder lb = new LogBuilder()
+                            .appendName(enemyName)
+                            .appendPlain(" uses ")
+                            .appendName(enemySkillName)
+                            .appendPlain(" and deals ")
+                            .appendDamage(damage)
+                            .appendPlain(" to you.");
+                    setLastLog(lb.text(), lb.spans());
+                    Gdx.app.log(TAG, "Enemy damage applied -> offense=" + offense + ", playerDefense=" + player.getDefense() + ", damage=" + damage);
+                }
+            }
+
+            if (enemy.getHp() <= 0) {
+                finishAsVictory();
+                lastLog = lastLog + "\nVictory! " + enemyName + " was defeated.";
+                return;
+            }
+
+            if (player.hasActiveParry()) {
+                player.consumeParryTurn();
             }
 
             player.tickTemporaryBoosts();
@@ -893,6 +920,74 @@ public class BattleStateMachine {
         double scaled = evaluateScaleExpression(scaleExpr, self, enemy);
         double total = skill.getEffectBaseStat() + scaled;
         return Math.max(1, (int) Math.round(total));
+    }
+
+    private boolean tryResolveDartParry(
+            BattleUnit player,
+            BattleUnit enemy,
+            String enemyName,
+            String enemySkillName,
+            int incomingOffense,
+            int incomingDamage
+    ) {
+        if (!isDartWithParryActive(player) || enemy == null) {
+            return false;
+        }
+
+        double successChance = dartParrySuccessChance(player);
+        boolean parrySucceeded = ThreadLocalRandom.current().nextDouble() < successChance;
+
+        if (!parrySucceeded) {
+            int chipDamage = Math.max(1, Math.round(incomingOffense * 0.25f) - player.getDefense());
+            player.setHp(Math.max(0, player.getHp() - chipDamage));
+            String parrySkillName = player.getActiveParrySkillName();
+            if (parrySkillName != null && !parrySkillName.isBlank()) {
+                player.setSkillCooldown(parrySkillName, 1);
+            }
+            LogBuilder lb = new LogBuilder()
+                    .appendName("Dart")
+                    .appendPlain("'s parry slips against ")
+                    .appendName(enemyName)
+                    .appendPlain("'s ")
+                    .appendName(enemySkillName)
+                    .appendPlain(" and he takes ")
+                    .appendDamage(chipDamage)
+                    .appendPlain(" chip damage.");
+            setLastLog(lb.text(), lb.spans());
+            Gdx.app.log(TAG, "Parry failed -> chipDamage=" + chipDamage + ", successChance=" + successChance);
+        } else {
+            int reflectedDamage = Math.max(1, incomingDamage + player.getDefense());
+            enemy.setHp(Math.max(0, enemy.getHp() - reflectedDamage));
+            LogBuilder lb = new LogBuilder()
+                    .appendName("Dart")
+                    .appendPlain("'s parry deflects ")
+                    .appendName(enemyName)
+                    .appendPlain("'s ")
+                    .appendName(enemySkillName)
+                    .appendPlain(" for ")
+                    .appendDamage(reflectedDamage)
+                    .appendPlain(" damage!");
+            setLastLog(lb.text(), lb.spans());
+            Gdx.app.log(TAG, "Parry succeeded -> reflectedDamage=" + reflectedDamage + ", successChance=" + successChance);
+        }
+
+        player.consumeParryTurn();
+        return true;
+    }
+
+    private static boolean isDartWithParryActive(BattleUnit player) {
+        if (player == null || !player.hasActiveParry()) {
+            return false;
+        }
+        String id = player.getId();
+        return id != null && id.toLowerCase().contains("dart");
+    }
+
+    private static double dartParrySuccessChance(BattleUnit player) {
+        int speed = player == null ? 0 : player.getSpeed();
+        // Requested rule: 50% base + (speed / 10)% bonus.
+        double successChance = 0.50d + (speed / 1000.0d);
+        return Math.max(0.05d, Math.min(0.95d, successChance));
     }
 
     private static String describeSkill(BattleSkill skill) {

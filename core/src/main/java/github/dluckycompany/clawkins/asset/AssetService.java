@@ -4,15 +4,16 @@ import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.assets.AssetManager;
 import com.badlogic.gdx.assets.loaders.FileHandleResolver;
 import com.badlogic.gdx.maps.tiled.TiledMap;
-import com.badlogic.gdx.maps.tiled.TmxMapLoader;
 import com.badlogic.gdx.utils.Disposable;
+
+import github.dluckycompany.clawkins.tiled.ResilientTmxMapLoader;
 
 public class AssetService implements Disposable {
     private final AssetManager assetManager;
 
     public AssetService(FileHandleResolver fileHandleResolver) {
         this.assetManager = new AssetManager(fileHandleResolver);
-        this.assetManager.setLoader(TiledMap.class, new TmxMapLoader());
+        this.assetManager.setLoader(TiledMap.class, new ResilientTmxMapLoader(fileHandleResolver));
     }
 
     public <T> T load(Asset<T> asset){

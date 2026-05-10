@@ -10,6 +10,7 @@ public class EncounterEvent {
     private final EncounterEventType type;
     private final String encounterId;
     private final String encounterTableId;
+    private final int enemyLevel;
     private final int enemyHp;
     private final int enemyAttack;
     private final int enemyDefense;
@@ -24,6 +25,7 @@ public class EncounterEvent {
             EncounterEventType type,
             String encounterId,
             String encounterTableId,
+            int enemyLevel,
             int enemyHp,
             int enemyAttack,
             int enemyDefense,
@@ -34,6 +36,7 @@ public class EncounterEvent {
         this.type = type;
         this.encounterId = encounterId;
         this.encounterTableId = encounterTableId;
+        this.enemyLevel = enemyLevel;
         this.enemyHp = enemyHp;
         this.enemyAttack = enemyAttack;
         this.enemyDefense = enemyDefense;
@@ -41,6 +44,20 @@ public class EncounterEvent {
         this.enemySkills = new ArrayList<>(enemySkills == null ? List.of() : enemySkills);
         this.enemyName = enemyName == null ? "" : enemyName;
         this.enemyImagePath = enemyImagePath == null ? "" : enemyImagePath.trim();
+    }
+
+    public EncounterEvent(
+            EncounterEventType type,
+            String encounterId,
+            String encounterTableId,
+            int enemyHp,
+            int enemyAttack,
+            int enemyDefense,
+            int enemySpeed,
+            List<BattleSkill> enemySkills,
+            String enemyName,
+            String enemyImagePath) {
+        this(type, encounterId, encounterTableId, 1, enemyHp, enemyAttack, enemyDefense, enemySpeed, enemySkills, enemyName, enemyImagePath);
     }
 
     public EncounterEventType getType() {
@@ -53,6 +70,10 @@ public class EncounterEvent {
 
     public String getEncounterTableId() {
         return encounterTableId;
+    }
+
+    public int getEnemyLevel() {
+        return enemyLevel;
     }
 
     public int getEnemyHp() {
