@@ -1,5 +1,6 @@
 package github.dluckycompany.clawkins.character;
 
+import com.badlogic.gdx.Gdx;
 import github.dluckycompany.clawkins.battle.BattleSkill;
 
 import java.util.ArrayList;
@@ -185,19 +186,25 @@ public class SkillUnlockSystem {
     
     private static String normalizeClawkinId(String clawkinId) {
         if (clawkinId == null) {
+            Gdx.app.log("SkillUnlockSystem", "normalizeClawkinId: null ID, defaulting to clawkin_ginger");
             return "clawkin_ginger"; // Default
         }
         
         String normalized = clawkinId.toLowerCase().trim();
+        Gdx.app.log("SkillUnlockSystem", "normalizeClawkinId: input='" + clawkinId + "', normalized='" + normalized + "'");
         
         if (normalized.contains("sweepea") || normalized.contains("swee")) {
+            Gdx.app.log("SkillUnlockSystem", "  -> Matched clawkin_sweepea");
             return "clawkin_sweepea";
         } else if (normalized.contains("dart")) {
+            Gdx.app.log("SkillUnlockSystem", "  -> Matched clawkin_dart");
             return "clawkin_dart";
         } else if (normalized.contains("ginger")) {
+            Gdx.app.log("SkillUnlockSystem", "  -> Matched clawkin_ginger");
             return "clawkin_ginger";
         }
         
+        Gdx.app.log("SkillUnlockSystem", "  -> No match, defaulting to clawkin_ginger");
         return "clawkin_ginger"; // Default
     }
     
