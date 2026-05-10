@@ -1994,24 +1994,44 @@ public class GameScreen extends ScreenAdapter {
                 continue;
             }
 
-            List<BattleSkill> skills = new java.util.ArrayList<>();
-            for (SaveState.SkillEntry skillEntry : entry.getSkills()) {
-                if (skillEntry == null) {
-                    continue;
+            // SKILL MIGRATION: Always refresh skills from SkillUnlockSystem instead of using saved skills
+            // This ensures old/incorrect skill names are replaced with correct ones
+            List<BattleSkill> skills = github.dluckycompany.clawkins.character.SkillUnlockSystem.getAllSkillsUpToLevel(
+                entry.getId(), 
+                entry.getLevel()
+            );
+            
+            Gdx.app.log("GameScreen", "SKILL MIGRATION: " + entry.getId() + " level " + entry.getLevel() 
+                + " -> loaded " + skills.size() + " skills from SkillUnlockSystem");
+            if (!skills.isEmpty()) {
+                for (BattleSkill skill : skills) {
+                    Gdx.app.log("GameScreen", "  - " + skill.getName());
                 }
-                BattleSkill.EffectType effectType = parseEffectType(skillEntry.getEffectType());
-                BattleSkill skill = new BattleSkill(
-                    safeText(skillEntry.getName(), "Skill"),
-                    effectType,
-                    skillEntry.getEffectBaseStat(),
-                    safeText(skillEntry.getEffectStatScale(), "attack[self]"),
-                    skillEntry.getEffectDurationTurns(),
-                    skillEntry.getTurnCooldown(),
-                    safeText(skillEntry.getSummaryDescription(), ""),
-                    safeText(skillEntry.getSummaryEffectText(), ""),
-                    safeText(skillEntry.getSummaryScalingText(), "")
-                );
-                skills.add(skill);
+            }
+            
+            // Fallback: If SkillUnlockSystem returns no skills, load from save file
+            if (skills.isEmpty()) {
+                Gdx.app.log("GameScreen", "SKILL MIGRATION FALLBACK: Loading skills from save file");
+
+                skills = new java.util.ArrayList<>();
+                for (SaveState.SkillEntry skillEntry : entry.getSkills()) {
+                    if (skillEntry == null) {
+                        continue;
+                    }
+                    BattleSkill.EffectType effectType = parseEffectType(skillEntry.getEffectType());
+                    BattleSkill skill = new BattleSkill(
+                        safeText(skillEntry.getName(), "Skill"),
+                        effectType,
+                        skillEntry.getEffectBaseStat(),
+                        safeText(skillEntry.getEffectStatScale(), "attack[self]"),
+                        skillEntry.getEffectDurationTurns(),
+                        skillEntry.getTurnCooldown(),
+                        safeText(skillEntry.getSummaryDescription(), ""),
+                        safeText(skillEntry.getSummaryEffectText(), ""),
+                        safeText(skillEntry.getSummaryScalingText(), "")
+                    );
+                    skills.add(skill);
+                }
             }
 
             SaveState.SummaryEntry summaryEntry = entry.getSummary();
@@ -2158,6 +2178,7 @@ public class GameScreen extends ScreenAdapter {
             case "heal" -> BattleSkill.EffectType.HEAL;
             case "attack" -> BattleSkill.EffectType.ATTACK;
             case "defense" -> BattleSkill.EffectType.DEFENSE;
+            case "bleed" -> BattleSkill.EffectType.BLEED;
             default -> BattleSkill.EffectType.DAMAGE;
         };
     }

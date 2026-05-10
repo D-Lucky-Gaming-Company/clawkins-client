@@ -98,6 +98,11 @@ public class BattleService {
                                 + ", duration=" + skill.getEffectDurationTurns()
                 );
             }
+            
+            // Create SkillManager for the active Clawkin
+            SkillManager skillManager = new SkillManager(activeClawkin.getId(), activeClawkin.getLevel());
+            context.setSkillManager(skillManager);
+            Gdx.app.log(TAG, "SkillManager created -> unlocked=" + skillManager.getUnlockedSkillCount() + ", locked=" + skillManager.getLockedSkillCount());
         } else {
             Gdx.app.log(TAG, "Battle start active clawkin -> none (fallback skills may apply)");
         }
@@ -163,6 +168,15 @@ public class BattleService {
                 clawkinHudName(next, null)
         );
         battleStateMachine.replacePlayerSkills(resolveSkillsForClawkin(next));
+        
+        // Update SkillManager for the replacement Clawkin
+        BattleContext context = battleStateMachine.getContext();
+        if (context != null) {
+            SkillManager skillManager = new SkillManager(next.getId(), next.getLevel());
+            context.setSkillManager(skillManager);
+            Gdx.app.log(TAG, "SkillManager updated for replacement -> clawkin=" + next.getName() + ", level=" + next.getLevel());
+        }
+        
         battleStateMachine.advanceFromFainted();
     }
 
@@ -255,6 +269,15 @@ public class BattleService {
         String switchedName = clawkinHudName(next, switchedUnit);
         battleStateMachine.replaceAlly(switchedUnit, switchedName);
         battleStateMachine.replacePlayerSkills(resolveSkillsForClawkin(next));
+        
+        // Update SkillManager for the new Clawkin
+        BattleContext context = battleStateMachine.getContext();
+        if (context != null) {
+            SkillManager skillManager = new SkillManager(next.getId(), next.getLevel());
+            context.setSkillManager(skillManager);
+            Gdx.app.log(TAG, "SkillManager updated for switch -> clawkin=" + next.getName() + ", level=" + next.getLevel());
+        }
+        
         battleStateMachine.consumeTurnAfterSwitch(switchedName);
         return true;
     }
