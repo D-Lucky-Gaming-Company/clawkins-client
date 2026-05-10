@@ -1476,6 +1476,7 @@ public class GameScreen extends ScreenAdapter {
 
         if (hasSession && !wasBattleSessionPresent) {
             defeatSessionEffectsApplied = false;
+            triggerRandomEncounterPlayerAlert(encounterId);
             audioService.onEvent(AudioEventType.ENCOUNTER_STARTED);
             audioService.onEvent(AudioEventType.BATTLE_STARTED);
             runBossBattleStartMusicHook(encounterId);
@@ -1518,7 +1519,9 @@ public class GameScreen extends ScreenAdapter {
         }
 
         if (!hasSession && wasBattleSessionPresent) {
-            audioService.onEvent(AudioEventType.BATTLE_ENDED);
+            if (!queuedFallenScreenAfterBattle) {
+                audioService.onEvent(AudioEventType.BATTLE_ENDED);
+            }
             
             // CRITICAL: Clean up inventory state after battle ends
             // This ensures no UI lockup or lingering inventory state
@@ -1529,13 +1532,23 @@ public class GameScreen extends ScreenAdapter {
 
             if (queuedFallenScreenAfterBattle) {
                 queuedFallenScreenAfterBattle = false;
-                activeFallenPrompt = new FallenPromptState();
+                activeFallenPrompt = new FallenPromptState(hasPreviousCheckpoint());
                 audioService.playSound(SoundEffect.FALLEN);
             }
         }
 
         wasBattleSessionPresent = hasSession;
         wasBattlePlaying = isPlaying;
+    }
+
+    private void triggerRandomEncounterPlayerAlert(String encounterId) {
+        if (encounterId == null || !encounterId.startsWith("random_")) {
+            return;
+        }
+        RenderSystem renderSystem = engine.getSystem(RenderSystem.class);
+        if (renderSystem != null) {
+            renderSystem.triggerRandomEncounterPlayerAlert();
+        }
     }
 
     private String resolveActiveEncounterId() {
@@ -1930,6 +1943,10 @@ public class GameScreen extends ScreenAdapter {
     }
 
     private void openLoadStateScreen() {
+        openLoadStateScreen(true);
+    }
+
+    private void openLoadStateScreen(boolean allowBack) {
         SaveStateScreen screen = game.getScreen(SaveStateScreen.class);
         screen.configure(
             SaveStateScreen.Mode.LOAD,
@@ -1941,7 +1958,7 @@ public class GameScreen extends ScreenAdapter {
                 queueSaveStateLoad(saveState);
                 game.setScreen(GameScreen.class);
             },
-            () -> game.setScreen(GameScreen.class)
+            allowBack ? () -> game.setScreen(GameScreen.class) : null
         );
         closeAllMenuUi();
         game.setScreen(SaveStateScreen.class);
@@ -2697,10 +2714,10 @@ public class GameScreen extends ScreenAdapter {
         }
 
         boolean changed = false;
-        if (InputConventions.isMenuUpJustPressed() && !prompt.checkpointSelected) {
+        if (prompt.checkpointAvailable && InputConventions.isMenuUpJustPressed() && !prompt.checkpointSelected) {
             prompt.checkpointSelected = true;
             changed = true;
-        } else if (InputConventions.isMenuDownJustPressed() && prompt.checkpointSelected) {
+        } else if (prompt.checkpointAvailable && InputConventions.isMenuDownJustPressed() && prompt.checkpointSelected) {
             prompt.checkpointSelected = false;
             changed = true;
         }
@@ -2710,12 +2727,12 @@ public class GameScreen extends ScreenAdapter {
 
         if (InputConventions.isInteractJustPressed()) {
             audioService.playSound(SoundEffect.UI_SELECT);
-            if (prompt.checkpointSelected) {
+            if (prompt.checkpointAvailable && prompt.checkpointSelected) {
                 handleFallenReturnToLastCheckpointChoice();
                 return;
             }
             activeFallenPrompt = null;
-            openLoadStateScreen();
+            openLoadStateScreen(false);
         }
     }
 
@@ -2726,10 +2743,17 @@ public class GameScreen extends ScreenAdapter {
         }
         renderFullBlackoutOverlay();
 
-        String line1 = promptOptionText("Return to Last Checkpoint", prompt.checkpointSelected);
+        String line1 = prompt.checkpointAvailable
+                ? promptOptionText("Return to Last Checkpoint", prompt.checkpointSelected)
+                : "[#8A8A8A]Return to Last Checkpoint";
         String line2 = promptOptionText("Load Save", !prompt.checkpointSelected);
         String text = "You Have Fallen\n\n" + line1 + "\n" + line2;
         dialogueOverlay.renderPrompt(batch, inventoryStage.getViewport(), text, Interactible.DialoguePosition.BOTTOM);
+    }
+
+    private boolean hasPreviousCheckpoint() {
+        SaveStateManager saveStateManager = game.getSaveStateManager();
+        return saveStateManager != null && saveStateManager.hasSaveStates();
     }
 
     /**
@@ -2783,8 +2807,14 @@ public class GameScreen extends ScreenAdapter {
     }
 
     private static final class FallenPromptState {
+        private final boolean checkpointAvailable;
         /** true = Return to Last Checkpoint, false = Load Save */
-        private boolean checkpointSelected = true;
+        private boolean checkpointSelected;
+
+        private FallenPromptState(boolean checkpointAvailable) {
+            this.checkpointAvailable = checkpointAvailable;
+            this.checkpointSelected = checkpointAvailable;
+        }
     }
 
     private static final class BossMusicHooks {

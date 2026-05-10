@@ -95,6 +95,7 @@ public class Main extends Game {
         audioService.registerSound(SoundEffect.UI_SELECT, "audio/soundEffects/SFX_MayGenko/square channel SFX/menu select beep 1.ogg");
         audioService.registerSound(SoundEffect.UI_BACK, "audio/soundEffects/SFX_MayGenko/square channel SFX/menu back 1.ogg");
         audioService.registerSound(SoundEffect.UI_ERROR, "audio/soundEffects/SFX_MayGenko/square channel SFX/menu error 1.ogg");
+        audioService.registerSound(SoundEffect.FAILURE_1, "audio/soundEffects/SFX_Others/Failure1.mp3");
         audioService.registerSound(SoundEffect.LEVEL_UP, "audio/soundEffects/SFX_Others/levelUp.mp3");
         audioService.registerSound(SoundEffect.PARRY_WIN, "audio/soundEffects/SFX_Others/parryWin.mp3");
         audioService.registerSound(SoundEffect.PARRY_FAIL, "audio/soundEffects/SFX_Others/parryFail.mp3");

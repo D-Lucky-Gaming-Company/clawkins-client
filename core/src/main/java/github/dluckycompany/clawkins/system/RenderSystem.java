@@ -6,6 +6,7 @@ import com.badlogic.ashley.systems.SortedIteratingSystem;
 import com.badlogic.ashley.utils.ImmutableArray;
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.OrthographicCamera;
+import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.Batch;
 import com.badlogic.gdx.graphics.g2d.TextureRegion;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
@@ -71,6 +72,9 @@ public class RenderSystem extends SortedIteratingSystem implements Disposable {
     private static final float TILE_HITBOX_HEIGHT_FACTOR = 1f;
     private static final float SOLID_HITBOX_WIDTH_FACTOR = 1f;
     private static final float SOLID_HITBOX_HEIGHT_FACTOR = 1f;
+    private static final float ALERT_ICON_WORLD_SIZE = 16f * Main.UNIT_SCALE;
+    private static final float ALERT_ICON_OFFSET_Y = 2f * Main.UNIT_SCALE;
+    private static final float RANDOM_ENCOUNTER_PLAYER_ALERT_DURATION = 0.45f;
 
     private final Batch batch;
     private final OrthographicCamera camera;
@@ -91,6 +95,9 @@ public class RenderSystem extends SortedIteratingSystem implements Disposable {
     private final Rectangle tmpBlockingRect;
     private final Circle tmpBlockingCircle;
     private boolean debugRenderingEnabled;
+    private Texture alertTexture;
+    private TextureRegion alertRegion;
+    private float playerAlertTimer;
 
     private static class ElementTile implements Comparable<ElementTile> {
         float x, y;
@@ -162,10 +169,13 @@ public class RenderSystem extends SortedIteratingSystem implements Disposable {
         this.tmpBlockingRect = new Rectangle();
         this.tmpBlockingCircle = new Circle();
         this.debugRenderingEnabled = false;
+        this.playerAlertTimer = 0f;
+        loadAlertIconTexture();
     }
 
     @Override
     public void update(float deltaTime) {
+        playerAlertTimer = Math.max(0f, playerAlertTimer - deltaTime);
         AnimatedTiledMapTile.updateAnimationBaseTime();
         viewport.apply();
 
@@ -189,6 +199,7 @@ public class RenderSystem extends SortedIteratingSystem implements Disposable {
         // Draw foreground map layers (unchanged)
         batch.setColor(Color.WHITE);
         fgdLayers.forEach(tiledRenderer::renderMapLayer);
+        renderAlertIcons();
         batch.end();
         if (debugRenderingEnabled) {
             renderDebugOverlay();
@@ -394,6 +405,19 @@ public class RenderSystem extends SortedIteratingSystem implements Disposable {
     public void dispose() {
         tiledRenderer.dispose();
         debugShapeRenderer.dispose();
+        if (alertTexture != null) {
+            alertTexture.dispose();
+            alertTexture = null;
+            alertRegion = null;
+        }
+    }
+
+    public void triggerRandomEncounterPlayerAlert() {
+        triggerPlayerAlert(RANDOM_ENCOUNTER_PLAYER_ALERT_DURATION);
+    }
+
+    public void triggerPlayerAlert(float durationSeconds) {
+        playerAlertTimer = Math.max(playerAlertTimer, Math.max(0f, durationSeconds));
     }
 
     public void setDebugRenderingEnabled(boolean debugRenderingEnabled) {
@@ -661,6 +685,51 @@ public class RenderSystem extends SortedIteratingSystem implements Disposable {
             }
             collectTileCollisionObjects(tileLayer);
         }
+    }
+
+    private void loadAlertIconTexture() {
+        try {
+            alertTexture = new Texture("ui/alert.png");
+            alertRegion = new TextureRegion(alertTexture);
+        } catch (Exception ignored) {
+            alertTexture = null;
+            alertRegion = null;
+        }
+    }
+
+    private void renderAlertIcons() {
+        if (alertRegion == null || getEngine() == null) {
+            return;
+        }
+
+        batch.setColor(Color.WHITE);
+        ImmutableArray<Entity> enemies = getEngine().getEntitiesFor(Family.all(Enemy.class, Transform.class).get());
+        for (Entity enemyEntity : enemies) {
+            Enemy enemy = Enemy.MAPPER.get(enemyEntity);
+            Transform transform = Transform.MAPPER.get(enemyEntity);
+            if (enemy == null || transform == null || enemy.getState() != Enemy.State.ALERTED) {
+                continue;
+            }
+            drawAlertIconAbove(transform);
+        }
+
+        if (playerAlertTimer > 0f) {
+            ImmutableArray<Entity> players = getEngine().getEntitiesFor(Family.all(Player.class, Transform.class).get());
+            if (players != null && players.size() > 0) {
+                Transform playerTransform = Transform.MAPPER.get(players.first());
+                if (playerTransform != null) {
+                    drawAlertIconAbove(playerTransform);
+                }
+            }
+        }
+    }
+
+    private void drawAlertIconAbove(Transform transform) {
+        Vector2 pos = transform.getPosition();
+        Vector2 size = transform.getSize();
+        float drawX = pos.x + (size.x - ALERT_ICON_WORLD_SIZE) * 0.5f;
+        float drawY = pos.y + size.y + ALERT_ICON_OFFSET_Y;
+        batch.draw(alertRegion, drawX, drawY, ALERT_ICON_WORLD_SIZE, ALERT_ICON_WORLD_SIZE);
     }
 
     private void collectTileCollisionObjects(TiledMapTileLayer layer) {

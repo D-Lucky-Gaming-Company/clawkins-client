@@ -19,6 +19,7 @@ public enum SoundEffect {
     UI_SELECT,
     UI_BACK,
     UI_ERROR,
+    FAILURE_1,
     LEVEL_UP,
     PARRY_WIN,
     PARRY_FAIL,

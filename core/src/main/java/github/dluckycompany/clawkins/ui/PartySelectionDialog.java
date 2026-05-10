@@ -244,6 +244,9 @@ public class PartySelectionDialog extends Dialog {
         }
 
         if (!isUseAllowedInCurrentContext()) {
+            if (audioService != null) {
+                audioService.playSound(SoundEffect.FAILURE_1);
+            }
             showStatusDialog(
                 "Use Not Allowed",
                 battleContext
@@ -261,6 +264,9 @@ public class PartySelectionDialog extends Dialog {
             
             if (!canUseOnTarget) {
                 Gdx.app.log("PartySelectionDialog", target.getName() + " doesn't need " + item.getName());
+                if (audioService != null) {
+                    audioService.playSound(SoundEffect.FAILURE_1);
+                }
                 showStatusDialog(
                     "Use Not Allowed",
                     target.getName() + " is already at full HP."

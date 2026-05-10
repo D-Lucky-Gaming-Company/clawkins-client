@@ -30,7 +30,7 @@ public class DialogueBoxRenderer implements Disposable {
     public static final String DIALOGUE_FONT_PATH = "font/earthbound-dialogue-gold.otf";
 
     private static final int BODY_FONT_SIZE = 24;
-    private static final int TITLE_FONT_SIZE = 31;
+    private static final int TITLE_FONT_SIZE = 29;
     private static final float MARGIN = 24f;
     private static final float MIN_BOX_HEIGHT = 140f;
     private static final float BOX_HEIGHT_FRACTION = 0.2f;
