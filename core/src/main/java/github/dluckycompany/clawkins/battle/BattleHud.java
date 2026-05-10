@@ -29,6 +29,7 @@ import java.util.List;
 import github.dluckycompany.clawkins.asset.AssetService;
 import github.dluckycompany.clawkins.asset.TextureAsset;
 import github.dluckycompany.clawkins.character.Clawkin;
+import github.dluckycompany.clawkins.character.LevelSystem;
 
 /**
  * Scene2D {@link Stage}-based battle HUD.
@@ -984,6 +985,38 @@ public class BattleHud implements Disposable {
         this.playerCurrentExp = 0;
         this.playerExpToNextLevel = github.dluckycompany.clawkins.character.LevelSystem.getExpForNextLevel(level);
         
+        updateExpBar();
+    }
+
+    /**
+     * Updates EXP/Level display from total accumulated EXP.
+     *
+     * @param totalExp total accumulated EXP
+     */
+    public void updateExpFromTotalExp(int totalExp) {
+        int safeTotalExp = Math.max(0, totalExp);
+        int calculatedLevel = LevelSystem.calculateLevelFromExp(safeTotalExp);
+        this.playerLevel = calculatedLevel;
+
+        if (calculatedLevel >= LevelSystem.MAX_LEVEL) {
+            this.playerExpProgress = 1f;
+            this.playerCurrentExp = 0;
+            this.playerExpToNextLevel = 0;
+            updateExpBar();
+            return;
+        }
+
+        int currentLevelExpFloor = LevelSystem.getExpRequiredForLevel(calculatedLevel);
+        int expNeededForNextLevel = LevelSystem.getExpForNextLevel(calculatedLevel);
+        int expIntoCurrentLevel = Math.max(0, safeTotalExp - currentLevelExpFloor);
+        int clampedExpIntoCurrentLevel = Math.min(expIntoCurrentLevel, Math.max(0, expNeededForNextLevel));
+
+        this.playerCurrentExp = clampedExpIntoCurrentLevel;
+        this.playerExpToNextLevel = Math.max(0, expNeededForNextLevel);
+        this.playerExpProgress = this.playerExpToNextLevel > 0
+                ? (float) this.playerCurrentExp / (float) this.playerExpToNextLevel
+                : 1f;
+
         updateExpBar();
     }
     

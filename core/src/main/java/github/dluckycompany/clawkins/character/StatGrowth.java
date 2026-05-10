@@ -150,7 +150,7 @@ public class StatGrowth {
             20,   // Base SPEED at level 5
             GrowthRate.EXTREME,      // HP: +7 per level (very tanky)
             GrowthRate.MODERATE,     // ATK: +3 per level (moderate damage)
-            GrowthRate.VERY_FAST,    // DEF: +5 per level (high defense)
+            GrowthRate.MODERATE,     // DEF: +3 per level (durable but not unbreakable)
             GrowthRate.VERY_SLOW     // SPEED: +1.5 per level (slow)
         );
     }
@@ -194,9 +194,9 @@ public class StatGrowth {
             45,   // Base ATK at level 5
             25,   // Base DEF at level 5
             40,   // Base SPEED at level 5
-            GrowthRate.MODERATE,     // HP: +3 per level
+            GrowthRate.SLOW,         // HP: +2 per level (slight survivability growth)
             GrowthRate.VERY_FAST,    // ATK: +5 per level
-            GrowthRate.SLOW,         // DEF: +2 per level
+            GrowthRate.VERY_SLOW,    // DEF: +1.5 per level (still fragile)
             GrowthRate.FAST          // SPEED: +4 per level
         );
     }

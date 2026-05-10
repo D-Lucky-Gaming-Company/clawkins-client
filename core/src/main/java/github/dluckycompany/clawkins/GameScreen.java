@@ -46,6 +46,7 @@ import github.dluckycompany.clawkins.battle.BattleTransition;
 import github.dluckycompany.clawkins.battle.BattleUnit;
 import github.dluckycompany.clawkins.battle.PlayerBattleState;
 import github.dluckycompany.clawkins.character.Clawkin;
+import github.dluckycompany.clawkins.character.LevelSystem;
 import github.dluckycompany.clawkins.component.Interactible;
 import github.dluckycompany.clawkins.component.MapTransitionZone;
 import github.dluckycompany.clawkins.component.Move;
@@ -479,10 +480,7 @@ public class GameScreen extends ScreenAdapter {
             playerBattleState.getInventory().addItem(ItemFactory.DEFENSE_BOOST, 1);
         }
         
-        // Initialize wallet with starting money
-        if (!loadedFromSave && playerBattleState.getWallet().getMoney() == 0) {
-            playerBattleState.getWallet().addMoney(500);
-        }
+        // New games start with zero money by default.
         refreshProgressSnapshots();
         
         // Create the merchant shop UI (matches InventoryUI structure)
@@ -596,6 +594,7 @@ public class GameScreen extends ScreenAdapter {
                                 EncounterEventType.START_ENCOUNTER,
                                 ENCOUNTER_BERT_JR_ID,
                                 "tutorial_boss_bert_jr",
+                                5,
                                 150,
                                 25,
                                 35,
@@ -606,16 +605,9 @@ public class GameScreen extends ScreenAdapter {
                         ));
                     },
                     () -> {
-                        playerProgress.incrementDeclined(EVENT_BOSS_0);
-                        if (context.interactionCount() == 1) {
-                            audioService.playCurrentMapMusic();
-                        }
-                        startForcedMove(
+                        applyBertJrEncounterDeclineOutcome(
                                 context.playerEntity(),
-                                -1f,
-                                0f,
-                                PlayerAnimation.Direction.WEST,
-                                BOSS_DECLINE_FORCE_MOVE_DURATION_SECONDS
+                                context.interactionCount() == 1
                         );
                     }
             );
@@ -1500,12 +1492,15 @@ public class GameScreen extends ScreenAdapter {
                 runBossPostBattleMusicHook(encounterId, true);
                 playerProgress.incrementEnemiesDefeated();
                 playerProgress.addExperiencePoints(DEFAULT_BATTLE_XP_REWARD);
+                synchronizePartyLevelsWithSharedXp();
                 refreshProgressSnapshots();
                 if (ENCOUNTER_BERT_JR_ID.equals(encounterId)) {
                     playerProgress.incrementWins(EVENT_BOSS_0);
                     playerProgress.markEventAccomplished(EVENT_BOSS_0_DEFEATED);
                     hideBertJrProp();
                 }
+            } else if (endPhase == BattlePhase.ESCAPE) {
+                applyEncounterEscapeOutcome(encounterId);
             }
         }
 
@@ -1549,6 +1544,30 @@ public class GameScreen extends ScreenAdapter {
             return "";
         }
         return battleService.getBattleStateMachine().getContext().getEncounterId();
+    }
+
+    private void applyEncounterEscapeOutcome(String encounterId) {
+        if (!ENCOUNTER_BERT_JR_ID.equals(encounterId)) {
+            return;
+        }
+        applyBertJrEncounterDeclineOutcome(findPlayerEntity(), false);
+    }
+
+    private void applyBertJrEncounterDeclineOutcome(Entity playerEntity, boolean playCurrentMapMusic) {
+        playerProgress.incrementDeclined(EVENT_BOSS_0);
+        if (playCurrentMapMusic) {
+            audioService.playCurrentMapMusic();
+        }
+        if (playerEntity == null) {
+            return;
+        }
+        startForcedMove(
+                playerEntity,
+                -1f,
+                0f,
+                PlayerAnimation.Direction.WEST,
+                BOSS_DECLINE_FORCE_MOVE_DURATION_SECONDS
+        );
     }
 
     private void runBossPreBattleMusicHook(String encounterId) {
@@ -1840,9 +1859,11 @@ public class GameScreen extends ScreenAdapter {
     private void openTeamViewerSubmenu() {
         summaryVisible = false;
         inventoryStage.clear();
+        synchronizePartyLevelsWithSharedXp();
 
         List<Clawkin> party = playerBattleState.getParty();
         teamViewerScreen = new TeamViewerScreen(inventoryStage, party, uiFont, audioService);
+        teamViewerScreen.setSharedExperience(playerProgress.getExperiencePoints());
         teamViewerScreen.setOnBackPressed(this::returnToSidebarFromSubmenu);
         teamViewerScreen.setActiveFighterIndex(playerBattleState.getActiveClawkinIndex());
         teamViewerScreen.setOnActiveFighterSet(idx -> playerBattleState.setActiveClawkinIndex(idx));
@@ -2225,6 +2246,8 @@ public class GameScreen extends ScreenAdapter {
         } else {
             playerProgress.loadFromFlags(saveState.getFlags());
         }
+        synchronizePartyLevelsWithSharedXp();
+        interactionSystem.loadPersistedInteractionCountsByObjectId(playerProgress.snapshotObjectInteractionCounts());
         refreshProgressSnapshots();
     }
 
@@ -2269,8 +2292,25 @@ public class GameScreen extends ScreenAdapter {
     }
 
     private void refreshProgressSnapshots() {
+        synchronizePartyLevelsWithSharedXp();
         playerProgress.captureInventory(playerBattleState.getInventory());
         playerProgress.capturePartyStats(playerBattleState.getParty());
+        playerProgress.captureObjectInteractionCounts(
+                interactionSystem.snapshotPersistedInteractionCountsByObjectId());
+    }
+
+    private void synchronizePartyLevelsWithSharedXp() {
+        int sharedLevel = LevelSystem.calculateLevelFromExp(playerProgress.getExperiencePoints());
+        List<Clawkin> party = playerBattleState.getParty();
+        if (party == null || party.isEmpty()) {
+            return;
+        }
+        for (Clawkin clawkin : party) {
+            if (clawkin == null) {
+                continue;
+            }
+            clawkin.setLevel(sharedLevel);
+        }
     }
 
     private void applySavedPlayerPosition(Entity playerEntity, TiledMap map, float x, float y) {
@@ -2403,6 +2443,7 @@ public class GameScreen extends ScreenAdapter {
             case "attack" -> BattleSkill.EffectType.ATTACK;
             case "defense" -> BattleSkill.EffectType.DEFENSE;
             case "bleed" -> BattleSkill.EffectType.BLEED;
+            case "parry" -> BattleSkill.EffectType.PARRY;
             default -> BattleSkill.EffectType.DAMAGE;
         };
     }
@@ -2907,6 +2948,10 @@ public class GameScreen extends ScreenAdapter {
 
     public PlayerProgress getPlayerProgress() {
         return playerProgress;
+    }
+
+    public void refreshHudWallet() {
+        hudWallet.updateDisplay();
     }
 
     private void refreshBertJrPropStateForCurrentMap() {

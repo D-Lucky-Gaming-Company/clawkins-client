@@ -14,6 +14,8 @@ public class LevelSystem {
 
     private static final int MID_CURVE_START_LEVEL = 5;
     private static final int MID_CURVE_END_LEVEL = 8;
+    private static final int EARLY_CURVE_BASE_EXP = 10;
+    private static final int EARLY_CURVE_STEP_EXP = 5;
     
     /**
      * Calculates the total EXP required to reach a specific level.
@@ -96,6 +98,29 @@ public class LevelSystem {
         int reward = Math.round(expToNextForEnemy * rewardShare);
         return Math.max(12, reward);
     }
+
+    /**
+     * Calculates coin reward for defeating an enemy.
+     *
+     * Reward curve:
+     * - Level 1 to 10 scales from 1 to 100 coins
+     * - Level 11 to 20 scales from 100 to 500 coins
+     * - Max level is capped at 500 coins
+     *
+     * @param enemyLevel The level of the defeated enemy
+     * @return Coin reward amount
+     */
+    public static int calculateMoneyReward(int enemyLevel) {
+        int clampedLevel = Math.max(MIN_LEVEL, Math.min(enemyLevel, MAX_LEVEL));
+        if (clampedLevel <= 10) {
+            float t = (clampedLevel - MIN_LEVEL) / 9f;
+            return Math.round(1f + (99f * t));
+        }
+
+        float t = (clampedLevel - 10) / 10f;
+        int reward = Math.round(100f + (400f * t));
+        return Math.max(1, Math.min(500, reward));
+    }
     
     /**
      * Calculates EXP reward for completing a battle round.
@@ -128,7 +153,7 @@ public class LevelSystem {
         }
 
         if (level < MID_CURVE_START_LEVEL) {
-            return 40 + (level - 1) * 15;
+            return EARLY_CURVE_BASE_EXP + (level - 1) * EARLY_CURVE_STEP_EXP;
         }
 
         // After Lv8, continue upward with gentler growth.

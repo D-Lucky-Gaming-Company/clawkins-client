@@ -76,6 +76,7 @@ public class InteractionSystem extends EntitySystem {
     private final Map<String, Predicate<SpecialInteractionContext>> preDialogueCheckByGroupId = new HashMap<>();
     private final Map<String, Consumer<SpecialInteractionContext>> specialInteractionByObjectId = new HashMap<>();
     private final Map<String, Consumer<SpecialInteractionContext>> specialInteractionByGroupId = new HashMap<>();
+    private final Map<String, Integer> persistedInteractionCountsByObjectId = new HashMap<>();
     private Consumer<SpecialInteractionContext> pendingSpecialInteraction;
     private SpecialInteractionContext pendingSpecialInteractionContext;
     private final Set<Entity> activeTrippableTargets = Collections.newSetFromMap(new IdentityHashMap<>());
@@ -165,6 +166,27 @@ public class InteractionSystem extends EntitySystem {
 
     public void closeMerchant() {
         isMerchantMode = false;
+    }
+
+    public Map<String, Integer> snapshotPersistedInteractionCountsByObjectId() {
+        return Map.copyOf(persistedInteractionCountsByObjectId);
+    }
+
+    public void loadPersistedInteractionCountsByObjectId(Map<String, Integer> countsByObjectId) {
+        persistedInteractionCountsByObjectId.clear();
+        if (countsByObjectId == null || countsByObjectId.isEmpty()) {
+            return;
+        }
+        for (Map.Entry<String, Integer> entry : countsByObjectId.entrySet()) {
+            String normalizedObjectId = normalizeObjectId(entry.getKey());
+            if (normalizedObjectId.isEmpty()) {
+                continue;
+            }
+            int count = entry.getValue() == null ? 0 : Math.max(0, entry.getValue());
+            if (count > 0) {
+                persistedInteractionCountsByObjectId.put(normalizedObjectId, count);
+            }
+        }
     }
 
     public void registerSpecialInteraction(String objectId, Consumer<SpecialInteractionContext> specialInteraction) {
@@ -540,6 +562,7 @@ public class InteractionSystem extends EntitySystem {
         if (interactible == null) {
             return;
         }
+        restorePersistedInteractionCount(interactible);
 
         String playerName = resolvePlayerName(playerEntity);
         int nextInteractionCount = Math.max(1, interactible.getInteractionCount() + 1);
@@ -557,6 +580,7 @@ public class InteractionSystem extends EntitySystem {
             return;
         }
         interactible.incrementInteractionCount();
+        persistInteractionCount(interactible);
 
         String dialogueSource = resolveDialogueSource(interactible);
         List<DialogueEntry> resolvedFlow = resolveDialogueFlow(interactible, playerName, dialogueSource);
@@ -926,6 +950,28 @@ public class InteractionSystem extends EntitySystem {
             return "";
         }
         return groupId.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private void restorePersistedInteractionCount(Interactible interactible) {
+        String normalizedObjectId = normalizeObjectId(interactible.getObjectId());
+        if (normalizedObjectId.isEmpty()) {
+            return;
+        }
+        Integer persistedCount = persistedInteractionCountsByObjectId.get(normalizedObjectId);
+        if (persistedCount == null) {
+            return;
+        }
+        if (persistedCount > interactible.getInteractionCount()) {
+            interactible.setInteractionCount(persistedCount);
+        }
+    }
+
+    private void persistInteractionCount(Interactible interactible) {
+        String normalizedObjectId = normalizeObjectId(interactible.getObjectId());
+        if (normalizedObjectId.isEmpty()) {
+            return;
+        }
+        persistedInteractionCountsByObjectId.put(normalizedObjectId, interactible.getInteractionCount());
     }
 
     private void queueSpecialInteractionAfterDialogue(
