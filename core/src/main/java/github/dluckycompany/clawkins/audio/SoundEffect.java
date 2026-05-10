@@ -18,5 +18,8 @@ public enum SoundEffect {
     UI_HOVER,
     UI_SELECT,
     UI_BACK,
-    UI_ERROR
+    UI_ERROR,
+    LEVEL_UP,
+    /** Screen sting when party is wiped / battle lost */
+    FALLEN
 }

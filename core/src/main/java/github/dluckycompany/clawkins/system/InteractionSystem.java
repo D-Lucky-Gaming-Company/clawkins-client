@@ -21,7 +21,6 @@ import com.badlogic.ashley.core.EntitySystem;
 import com.badlogic.ashley.core.Family;
 import com.badlogic.ashley.utils.ImmutableArray;
 import com.badlogic.gdx.Gdx;
-import com.badlogic.gdx.Input;
 import com.badlogic.gdx.files.FileHandle;
 import com.badlogic.gdx.maps.MapObject;
 import com.badlogic.gdx.maps.objects.CircleMapObject;
@@ -35,13 +34,13 @@ import com.badlogic.gdx.utils.JsonValue;
 
 import github.dluckycompany.clawkins.Main;
 import github.dluckycompany.clawkins.audio.DialogueSoundManager;
+import github.dluckycompany.clawkins.character.Clawkin;
 import github.dluckycompany.clawkins.component.Interactible;
 import github.dluckycompany.clawkins.component.Player;
 import github.dluckycompany.clawkins.component.PlayerAnimation;
 import github.dluckycompany.clawkins.component.PlayerProfile;
 import github.dluckycompany.clawkins.component.Tiled;
 import github.dluckycompany.clawkins.component.Transform;
-import github.dluckycompany.clawkins.character.Clawkin;
 import github.dluckycompany.clawkins.encounter.EncounterZone;
 import github.dluckycompany.clawkins.input.InputConventions;
 
@@ -74,7 +73,9 @@ public class InteractionSystem extends EntitySystem {
     private boolean isMerchantMode = false;
     private Supplier<List<Clawkin>> clawkinPartySupplier = List::of;
     private final Map<String, Predicate<SpecialInteractionContext>> preDialogueCheckByObjectId = new HashMap<>();
+    private final Map<String, Predicate<SpecialInteractionContext>> preDialogueCheckByGroupId = new HashMap<>();
     private final Map<String, Consumer<SpecialInteractionContext>> specialInteractionByObjectId = new HashMap<>();
+    private final Map<String, Consumer<SpecialInteractionContext>> specialInteractionByGroupId = new HashMap<>();
     private Consumer<SpecialInteractionContext> pendingSpecialInteraction;
     private SpecialInteractionContext pendingSpecialInteractionContext;
     private final Set<Entity> activeTrippableTargets = Collections.newSetFromMap(new IdentityHashMap<>());
@@ -182,12 +183,36 @@ public class InteractionSystem extends EntitySystem {
         preDialogueCheckByObjectId.put(normalizedObjectId, preDialogueCheck);
     }
 
+    public void registerSpecialInteractionByGroupId(String groupId, Consumer<SpecialInteractionContext> specialInteraction) {
+        String normalizedGroupId = normalizeGroupId(groupId);
+        if (normalizedGroupId.isEmpty() || specialInteraction == null) {
+            return;
+        }
+        specialInteractionByGroupId.put(normalizedGroupId, specialInteraction);
+    }
+
+    public void registerPreDialogueCheckByGroupId(String groupId, Predicate<SpecialInteractionContext> preDialogueCheck) {
+        String normalizedGroupId = normalizeGroupId(groupId);
+        if (normalizedGroupId.isEmpty() || preDialogueCheck == null) {
+            return;
+        }
+        preDialogueCheckByGroupId.put(normalizedGroupId, preDialogueCheck);
+    }
+
     public void unregisterPreDialogueCheck(String objectId) {
         String normalizedObjectId = normalizeObjectId(objectId);
         if (normalizedObjectId.isEmpty()) {
             return;
         }
         preDialogueCheckByObjectId.remove(normalizedObjectId);
+    }
+
+    public void unregisterPreDialogueCheckByGroupId(String groupId) {
+        String normalizedGroupId = normalizeGroupId(groupId);
+        if (normalizedGroupId.isEmpty()) {
+            return;
+        }
+        preDialogueCheckByGroupId.remove(normalizedGroupId);
     }
 
     public void unregisterSpecialInteraction(String objectId) {
@@ -198,12 +223,22 @@ public class InteractionSystem extends EntitySystem {
         specialInteractionByObjectId.remove(normalizedObjectId);
     }
 
+    public void unregisterSpecialInteractionByGroupId(String groupId) {
+        String normalizedGroupId = normalizeGroupId(groupId);
+        if (normalizedGroupId.isEmpty()) {
+            return;
+        }
+        specialInteractionByGroupId.remove(normalizedGroupId);
+    }
+
     public void clearSpecialInteractions() {
         specialInteractionByObjectId.clear();
+        specialInteractionByGroupId.clear();
     }
 
     public void clearPreDialogueChecks() {
         preDialogueCheckByObjectId.clear();
+        preDialogueCheckByGroupId.clear();
     }
 
     public void rearmTrippableByObjectId(String objectId) {
@@ -523,15 +558,10 @@ public class InteractionSystem extends EntitySystem {
         }
         interactible.incrementInteractionCount();
 
-        // Merchant interactions stay key-compatible with existing UI flow.
-        if (interactible.isMerchant()) {
-            isMerchantMode = true;
-            onMerchantInteraction.run();
-            return;
-        }
-
         String dialogueSource = resolveDialogueSource(interactible);
         List<DialogueEntry> resolvedFlow = resolveDialogueFlow(interactible, playerName, dialogueSource);
+        
+        // All interactions follow the same pattern: dialogue first, then special interaction
         if (resolvedFlow.isEmpty()) {
             runSpecialInteraction(specialInteraction, specialContext);
             return;
@@ -851,19 +881,37 @@ public class InteractionSystem extends EntitySystem {
     private Consumer<SpecialInteractionContext> resolveSpecialInteraction(Interactible interactible) {
         String objectId = interactible == null ? null : interactible.getObjectId();
         String normalizedObjectId = normalizeObjectId(objectId);
-        if (normalizedObjectId.isEmpty()) {
+        if (!normalizedObjectId.isEmpty()) {
+            Consumer<SpecialInteractionContext> byObjectId = specialInteractionByObjectId.get(normalizedObjectId);
+            if (byObjectId != null) {
+                return byObjectId;
+            }
+        }
+
+        String groupId = interactible == null ? null : interactible.getGroupId();
+        String normalizedGroupId = normalizeGroupId(groupId);
+        if (normalizedGroupId.isEmpty()) {
             return null;
         }
-        return specialInteractionByObjectId.get(normalizedObjectId);
+        return specialInteractionByGroupId.get(normalizedGroupId);
     }
 
     private Predicate<SpecialInteractionContext> resolvePreDialogueCheck(Interactible interactible) {
         String objectId = interactible == null ? null : interactible.getObjectId();
         String normalizedObjectId = normalizeObjectId(objectId);
-        if (normalizedObjectId.isEmpty()) {
+        if (!normalizedObjectId.isEmpty()) {
+            Predicate<SpecialInteractionContext> byObjectId = preDialogueCheckByObjectId.get(normalizedObjectId);
+            if (byObjectId != null) {
+                return byObjectId;
+            }
+        }
+
+        String groupId = interactible == null ? null : interactible.getGroupId();
+        String normalizedGroupId = normalizeGroupId(groupId);
+        if (normalizedGroupId.isEmpty()) {
             return null;
         }
-        return preDialogueCheckByObjectId.get(normalizedObjectId);
+        return preDialogueCheckByGroupId.get(normalizedGroupId);
     }
 
     private static String normalizeObjectId(String objectId) {
@@ -871,6 +919,13 @@ public class InteractionSystem extends EntitySystem {
             return "";
         }
         return objectId.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private static String normalizeGroupId(String groupId) {
+        if (groupId == null) {
+            return "";
+        }
+        return groupId.trim().toLowerCase(Locale.ROOT);
     }
 
     private void queueSpecialInteractionAfterDialogue(

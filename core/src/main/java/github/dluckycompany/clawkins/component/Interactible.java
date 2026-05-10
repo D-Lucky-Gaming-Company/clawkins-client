@@ -13,6 +13,7 @@ public class Interactible implements Component {
 
     private final String objectName;
     private final String objectId;
+    private final String groupId;
     private final String dialogueDirectory;
     private final boolean hasCollision;
     private final boolean isTrippable;
@@ -47,8 +48,21 @@ public class Interactible implements Component {
             DialoguePosition dialoguePosition,
             boolean isMerchant,
             boolean isTrippable) {
+        this(objectName, objectId, null, dialogueDirectory, hasCollision, dialoguePosition, isMerchant, isTrippable);
+    }
+
+    public Interactible(
+            String objectName,
+            String objectId,
+            String groupId,
+            String dialogueDirectory,
+            boolean hasCollision,
+            DialoguePosition dialoguePosition,
+            boolean isMerchant,
+            boolean isTrippable) {
         this.objectName = objectName;
         this.objectId = objectId;
+        this.groupId = groupId;
         this.dialogueDirectory = dialogueDirectory;
         this.hasCollision = hasCollision;
         this.isTrippable = isTrippable;
@@ -63,6 +77,10 @@ public class Interactible implements Component {
 
     public String getObjectId() {
         return objectId;
+    }
+
+    public String getGroupId() {
+        return groupId;
     }
 
     public String getDialogueDirectory() {

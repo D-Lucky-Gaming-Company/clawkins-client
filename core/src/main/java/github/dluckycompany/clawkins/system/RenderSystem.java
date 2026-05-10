@@ -19,6 +19,7 @@ import com.badlogic.gdx.maps.objects.RectangleMapObject;
 import com.badlogic.gdx.maps.tiled.TiledMap;
 import com.badlogic.gdx.maps.tiled.TiledMapTile;
 import com.badlogic.gdx.maps.tiled.TiledMapTileLayer;
+import com.badlogic.gdx.maps.tiled.objects.TiledMapTileMapObject;
 import com.badlogic.gdx.maps.tiled.renderers.OrthogonalTiledMapRenderer;
 import com.badlogic.gdx.maps.tiled.tiles.AnimatedTiledMapTile;
 import com.badlogic.gdx.math.Circle;
@@ -34,6 +35,7 @@ import github.dluckycompany.clawkins.component.Graphic;
 import github.dluckycompany.clawkins.component.Interactible;
 import github.dluckycompany.clawkins.component.MapTransitionZone;
 import github.dluckycompany.clawkins.component.Player;
+import github.dluckycompany.clawkins.component.Prop;
 import github.dluckycompany.clawkins.component.Tiled;
 import github.dluckycompany.clawkins.component.Transform;
 import github.dluckycompany.clawkins.encounter.EncounterTrigger;
@@ -201,7 +203,11 @@ public class RenderSystem extends SortedIteratingSystem implements Disposable {
     protected void processEntity(Entity entity, float deltaTime) {
         Transform transform = Transform.MAPPER.get(entity);
         Graphic graphic = Graphic.MAPPER.get(entity);
-        if (graphic.getRegion() == null) {
+        TextureRegion region = graphic.getRegion();
+        if (Prop.MAPPER.get(entity) != null) {
+            region = resolveAnimatedPropRegion(entity, region);
+        }
+        if (region == null) {
             return;
         }
 
@@ -211,13 +217,29 @@ public class RenderSystem extends SortedIteratingSystem implements Disposable {
 
         batch.setColor(graphic.getColor());
         batch.draw(
-                graphic.getRegion(),
+                region,
                 position.x - (1f - scaling.x) * size.x * 0.5f,
                 position.y - (1f - scaling.y) * size.y * 0.5f,
                 size.x * 0.5f, size.y * 0.5f,
                 size.x, size.y,
                 scaling.x, scaling.y,
                 transform.getRotationDeg());
+    }
+
+    private TextureRegion resolveAnimatedPropRegion(Entity entity, TextureRegion fallbackRegion) {
+        Tiled tiled = Tiled.MAPPER.get(entity);
+        if (tiled == null) {
+            return fallbackRegion;
+        }
+        if (!(tiled.getMapObjectRef() instanceof TiledMapTileMapObject tileMapObject)) {
+            return fallbackRegion;
+        }
+        TiledMapTile tile = tileMapObject.getTile();
+        if (tile == null) {
+            return fallbackRegion;
+        }
+        TextureRegion currentRegion = tile.getTextureRegion();
+        return currentRegion != null ? currentRegion : fallbackRegion;
     }
 
     // -------------------------------------------------------------------------

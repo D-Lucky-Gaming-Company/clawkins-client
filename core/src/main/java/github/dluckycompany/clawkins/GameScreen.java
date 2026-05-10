@@ -60,6 +60,7 @@ import github.dluckycompany.clawkins.encounter.EncounterEventType;
 import github.dluckycompany.clawkins.input.InputConventions;
 import github.dluckycompany.clawkins.item.Item;
 import github.dluckycompany.clawkins.item.ItemFactory;
+import github.dluckycompany.clawkins.item.MerchantInventory;
 import github.dluckycompany.clawkins.model.Gender;
 import github.dluckycompany.clawkins.model.PlayerProfile;
 import github.dluckycompany.clawkins.progress.PlayerProgress;
@@ -70,7 +71,9 @@ import github.dluckycompany.clawkins.system.CameraSystem;
 import github.dluckycompany.clawkins.system.EnemySystem;
 import github.dluckycompany.clawkins.system.InteractionSystem;
 import github.dluckycompany.clawkins.system.MapTransitionSystem;
+import github.dluckycompany.clawkins.encounter.RandomEncounterGenerator;
 import github.dluckycompany.clawkins.system.MoveSystem;
+import github.dluckycompany.clawkins.system.RandomEncounterSystem;
 import github.dluckycompany.clawkins.system.PlayerInputSystem;
 import github.dluckycompany.clawkins.system.RenderSystem;
 import github.dluckycompany.clawkins.tiled.TiledObjectConfigurator;
@@ -192,6 +195,7 @@ public class GameScreen extends ScreenAdapter {
     private final EncounterEventBus encounterEventBus;
     private final PlayerProgress playerProgress;
     private final BattleService battleService;
+    private final RandomEncounterGenerator randomEncounterGenerator;
     private final BattleOverlay battleOverlay;
     private final InteractionSystem interactionSystem;
     private final DialogueOverlay dialogueOverlay;
@@ -253,6 +257,9 @@ public class GameScreen extends ScreenAdapter {
     private BossFightPromptState activeBossFightPrompt;
     private SaveGamePromptState activeSaveGamePrompt;
     private SaveActionPromptState activeSaveActionPrompt;
+    private FallenPromptState activeFallenPrompt;
+    private boolean queuedFallenScreenAfterBattle;
+    private boolean defeatSessionEffectsApplied;
     private float saveToastTimer;
     private float interactionRetriggerBlockSeconds;
     private Entity bertJrPropEntity;
@@ -264,8 +271,8 @@ public class GameScreen extends ScreenAdapter {
     private final Map<String, BossMusicHooks> bossMusicHooksByEncounterId = new HashMap<>();
     private ActiveBossMusicState activeBossMusicState;
     
-    // Player profile from character setup
-    private github.dluckycompany.clawkins.model.PlayerProfile playerProfile;
+    // Player profile from character setup (name and gender)
+    private PlayerProfile playerProfile;
     
     // Cheat console system for developer debugging
     private github.dluckycompany.clawkins.debug.CheatCodeManager cheatCodeManager;
@@ -276,8 +283,9 @@ public class GameScreen extends ScreenAdapter {
     private static final float VIRTUAL_UI_WIDTH = 800f;
     private static final float VIRTUAL_UI_HEIGHT = 600f;
 
-    public GameScreen(Main game) {
+    public GameScreen(Main game, PlayerProfile playerProfile) {
         this.game = game;
+        this.playerProfile = playerProfile;
         AssetService assetService = game.getAssetService();
         Viewport viewport = game.getViewport();
         OrthographicCamera camera = game.getCamera();
@@ -314,6 +322,7 @@ public class GameScreen extends ScreenAdapter {
         this.playerBattleState = new PlayerBattleState();
         this.interactionSystem.setClawkinPartySupplier(playerBattleState::getParty);
         this.battleService = new BattleService(this.encounterEventBus, playerBattleState);
+        this.randomEncounterGenerator = new RandomEncounterGenerator();
         this.engine.addSystem(new EncounterDetectionSystem(this.encounterEventBus));
         DialogueBoxRenderer dialogueBoxRenderer = new DialogueBoxRenderer();
         this.battleOverlay = new BattleOverlay(game, dialogueBoxRenderer);
@@ -360,6 +369,16 @@ public class GameScreen extends ScreenAdapter {
         // Tiled map services
         this.tiledService = new TiledService(assetService);
         this.tiledObjectConfigurator = new TiledObjectConfigurator(engine, assetService, playerBattleState);
+        this.engine.addSystem(new RandomEncounterSystem(
+                this.tiledService,
+                this.encounterEventBus,
+                this.randomEncounterGenerator,
+                this.battleService));
+        
+        // Set player name from character setup if available
+        if (playerProfile != null) {
+            tiledObjectConfigurator.setPlayerNameOverride(playerProfile.getName());
+        }
 
         // Wire up callbacks:
         // - When a map object is found → TiledObjectConfigurator creates an entity
@@ -375,7 +394,15 @@ public class GameScreen extends ScreenAdapter {
             audioService.setMap(map);
             audioService.onEvent(AudioEventType.MAP_CHANGED);
         };
-        this.tiledService.setMapChangeConsumer(renderConsumer.andThen(cameraConsumer).andThen(moveConsumer).andThen(enemyConsumer).andThen(transitionConsumer).andThen(audioConsumer));
+        Consumer<TiledMap> randomEncounterReset = m -> engine.getSystem(RandomEncounterSystem.class).resetTravelLedger();
+        this.tiledService.setMapChangeConsumer(
+                renderConsumer
+                        .andThen(cameraConsumer)
+                        .andThen(moveConsumer)
+                        .andThen(enemyConsumer)
+                        .andThen(transitionConsumer)
+                        .andThen(audioConsumer)
+                        .andThen(randomEncounterReset));
         
         // Initialize cheat console system
         this.cheatCodeManager = new github.dluckycompany.clawkins.debug.CheatCodeManager(playerBattleState);
@@ -458,25 +485,35 @@ public class GameScreen extends ScreenAdapter {
         }
         refreshProgressSnapshots();
         
-        // Create the merchant shop UI (fixed virtual resolution)
+        // Create the merchant shop UI (matches InventoryUI structure)
+        MerchantInventory defaultMerchantInventory = MerchantInventory.createDefaultInventory();
         this.merchantShopUI = new MerchantShopUI(
+            inventoryStage,
+            new BitmapFont(),
             playerBattleState.getInventory(),
-            playerBattleState.getWallet(),
-            "Merchant",
+            defaultMerchantInventory,
+            playerBattleState.getParty(),
             battleOverlay.getSkin(),
-            new BitmapFont()
+            playerBattleState.getWallet(),
+            audioService,
+            "Merchant",  // Default merchant name
+            false  // Not in battle context
         );
-        merchantShopUI.setOnCloseCallback(() -> {
+        merchantShopUI.setOnBackPressed(() -> {
             closeMerchantShop();
             hudWallet.updateDisplay();
         });
         
-        // Wire up merchant interaction callback
-        interactionSystem.setOnMerchantInteraction(() -> {
-            openMerchantShop();
-        });
         registerBossMusicHooks();
         registerSpecialInteractions();
+        
+        // Log player profile information
+        if (playerProfile != null) {
+            Gdx.app.log("GameScreen", "Initialized with player: " + 
+                playerProfile.getName() + " (" + playerProfile.getGender().getDisplayName() + ")");
+        } else {
+            Gdx.app.log("GameScreen", "Initialized without player profile (loading from save or initial screen)");
+        }
         
         // Create the full-screen inventory screen and cache it
         this.inventoryScreen = new InventoryScreen(game, playerBattleState.getInventory(), this);
@@ -533,6 +570,17 @@ public class GameScreen extends ScreenAdapter {
             startMansionPathBlockForcedMove(context.playerEntity());
         });
         registerSavePointInteractions();
+        
+        // Register merchant shop interactions (shop_01 and shop_02)
+        // Both shops use the same dialogue from merchants.json
+        // After dialogue completes, the merchant shop UI opens
+        interactionSystem.registerSpecialInteraction("shop_01", context -> {
+            openMerchantShop();
+        });
+        interactionSystem.registerSpecialInteraction("shop_02", context -> {
+            openMerchantShop();
+        });
+        
         interactionSystem.registerSpecialInteraction(TRIGGER_BOSS_BERT_JR_ID, context -> {
             if (battleService.hasBattleSession() || playerProgress.isEventAccomplished(EVENT_BOSS_0_DEFEATED)) {
                 return;
@@ -597,14 +645,15 @@ public class GameScreen extends ScreenAdapter {
     }
 
     private void openSavePromptFromInteractible() {
-        if (isBossFightPromptVisible() || isSaveGamePromptVisible() || isSaveActionPromptVisible()) {
+        if (isBossFightPromptVisible() || isSaveGamePromptVisible() || isSaveActionPromptVisible()
+                || isFallenPromptVisible()) {
             return;
         }
         promptSaveGameChoice(this::openSaveActionPrompt, () -> {});
     }
 
     private void openSaveActionPrompt() {
-        if (isBossFightPromptVisible() || isSaveActionPromptVisible()) {
+        if (isBossFightPromptVisible() || isSaveActionPromptVisible() || isFallenPromptVisible()) {
             return;
         }
         activeSaveActionPrompt = new SaveActionPromptState(game.getSaveStateManager().hasSaveStates());
@@ -740,6 +789,7 @@ public class GameScreen extends ScreenAdapter {
         updateBossFightPromptInput();
         updateSaveGamePromptInput();
         updateSaveActionPromptInput();
+        updateFallenPromptInput();
         saveToastTimer = Math.max(0f, saveToastTimer - delta);
         interactionRetriggerBlockSeconds = Math.max(0f, interactionRetriggerBlockSeconds - delta);
 
@@ -747,6 +797,7 @@ public class GameScreen extends ScreenAdapter {
         if (!battleService.hasBattleSession() && !interactionSystem.isDialogueVisible() && !merchantShopVisible
                 && !mapTransitionFade.isTransitioning() && !isSpecialMovementActive()
                 && !isBossFightPromptVisible() && !isSaveGamePromptVisible() && !isSaveActionPromptVisible()
+                && !isFallenPromptVisible()
                 && !isBertJrPreDialogueSequenceActive()
                 && !teamViewerVisible && !summaryVisible
                 && !cheatConsoleOverlay.isVisible()) {
@@ -839,7 +890,7 @@ public class GameScreen extends ScreenAdapter {
             renderDimmingOverlay();
             renderUIWithViewport(inventoryStage, uiDelta);
         } else if (!isBattleActive && merchantShopVisible && merchantShopUI != null) {
-            renderDimmingOverlay();
+            renderFullBlackoutOverlay();  // Use full blackout instead of dimming
             renderUIWithViewport(inventoryStage, uiDelta);
         }
 
@@ -848,6 +899,7 @@ public class GameScreen extends ScreenAdapter {
         }
         renderAreaTitle(uiDelta);
         renderSaveToast();
+        renderFallenPrompt();
         
         // Render cheat console overlay (always on top, independent stage)
         if (cheatConsoleOverlay.isVisible()) {
@@ -868,6 +920,27 @@ public class GameScreen extends ScreenAdapter {
         shapeRenderer.setProjectionMatrix(inventoryStage.getCamera().combined);
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
         shapeRenderer.setColor(0f, 0f, 0f, 0.45f);
+        
+        // Draw black rectangle covering entire virtual UI space (800x600)
+        shapeRenderer.rect(0, 0, VIRTUAL_UI_WIDTH, VIRTUAL_UI_HEIGHT);
+        
+        // End rendering
+        shapeRenderer.end();
+        Gdx.gl.glDisable(GL20.GL_BLEND);
+    }
+    
+    /**
+     * Render a fully opaque black overlay to completely hide the game background.
+     * Used for merchant shop and inventory screens where the game should not be visible.
+     */
+    private void renderFullBlackoutOverlay() {
+        Gdx.gl.glEnable(GL20.GL_BLEND);
+        Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
+
+        // Configure ShapeRenderer to use filled rectangle mode
+        shapeRenderer.setProjectionMatrix(inventoryStage.getCamera().combined);
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+        shapeRenderer.setColor(0f, 0f, 0f, 1.0f);  // Fully opaque black
         
         // Draw black rectangle covering entire virtual UI space (800x600)
         shapeRenderer.rect(0, 0, VIRTUAL_UI_WIDTH, VIRTUAL_UI_HEIGHT);
@@ -983,6 +1056,7 @@ public class GameScreen extends ScreenAdapter {
             interactionSystem.setProcessing(true);
             engine.getSystem(MoveSystem.class).setProcessing(false);
             engine.getSystem(EncounterDetectionSystem.class).setProcessing(false);
+            engine.getSystem(RandomEncounterSystem.class).setProcessing(false);
             mapTransitionSystem.setProcessing(false);
             return;
         }
@@ -992,6 +1066,7 @@ public class GameScreen extends ScreenAdapter {
             interactionSystem.setProcessing(false);
             engine.getSystem(MoveSystem.class).setProcessing(true);
             engine.getSystem(EncounterDetectionSystem.class).setProcessing(false);
+            engine.getSystem(RandomEncounterSystem.class).setProcessing(false);
             mapTransitionSystem.setProcessing(false);
             return;
         }
@@ -1001,6 +1076,7 @@ public class GameScreen extends ScreenAdapter {
         boolean bossPromptLocked = isBossFightPromptVisible();
         boolean savePromptLocked = isSaveGamePromptVisible();
         boolean saveActionPromptLocked = isSaveActionPromptVisible();
+        boolean fallenPromptLocked = isFallenPromptVisible();
         boolean interactionRetriggerLocked = interactionRetriggerBlockSeconds > 0f;
         boolean merchantLocked = merchantShopVisible;
         boolean mapTransitionLocked = mapTransitionFade.isTransitioning();
@@ -1011,6 +1087,7 @@ public class GameScreen extends ScreenAdapter {
                 && !bossPromptLocked
                 && !savePromptLocked
                 && !saveActionPromptLocked
+                && !fallenPromptLocked
                 && !merchantLocked
                 && !mapTransitionLocked
                 && !menuLocked
@@ -1020,10 +1097,12 @@ public class GameScreen extends ScreenAdapter {
                     && !bossPromptLocked
                     && !savePromptLocked
                     && !saveActionPromptLocked
+                    && !fallenPromptLocked
                     && !interactionRetriggerLocked
                     && !merchantLocked
                     && !menuLocked
                     && !cheatConsoleLocked);
+            engine.getSystem(RandomEncounterSystem.class).setProcessing(shouldEnableExploration);
             return;
         }
 
@@ -1033,12 +1112,14 @@ public class GameScreen extends ScreenAdapter {
                 && !bossPromptLocked
                 && !savePromptLocked
                 && !saveActionPromptLocked
+                && !fallenPromptLocked
                 && !interactionRetriggerLocked
                 && !merchantLocked
                 && !menuLocked
                 && !cheatConsoleLocked);
         engine.getSystem(MoveSystem.class).setProcessing(shouldEnableExploration);
         engine.getSystem(EncounterDetectionSystem.class).setProcessing(shouldEnableExploration);
+        engine.getSystem(RandomEncounterSystem.class).setProcessing(shouldEnableExploration);
         mapTransitionSystem.setProcessing(shouldEnableExploration);
     }
 
@@ -1402,6 +1483,7 @@ public class GameScreen extends ScreenAdapter {
         String encounterId = resolveActiveEncounterId();
 
         if (hasSession && !wasBattleSessionPresent) {
+            defeatSessionEffectsApplied = false;
             audioService.onEvent(AudioEventType.ENCOUNTER_STARTED);
             audioService.onEvent(AudioEventType.BATTLE_STARTED);
             runBossBattleStartMusicHook(encounterId);
@@ -1424,14 +1506,20 @@ public class GameScreen extends ScreenAdapter {
                     playerProgress.markEventAccomplished(EVENT_BOSS_0_DEFEATED);
                     hideBertJrProp();
                 }
-            } else if (endPhase == BattlePhase.DEFEAT) {
-                audioService.onEvent(AudioEventType.BATTLE_DEFEAT);
-                runBossPostBattleMusicHook(encounterId, false);
-                refreshProgressSnapshots();
-                if (ENCOUNTER_BERT_JR_ID.equals(encounterId)) {
-                    playerProgress.incrementLosses(EVENT_BOSS_0);
-                }
             }
+        }
+
+        if (hasSession
+                && battleService.getBattleStateMachine().getPhase() == BattlePhase.DEFEAT
+                && !defeatSessionEffectsApplied) {
+            defeatSessionEffectsApplied = true;
+            audioService.onEvent(AudioEventType.BATTLE_DEFEAT);
+            runBossPostBattleMusicHook(encounterId, false);
+            refreshProgressSnapshots();
+            if (ENCOUNTER_BERT_JR_ID.equals(encounterId)) {
+                playerProgress.incrementLosses(EVENT_BOSS_0);
+            }
+            queuedFallenScreenAfterBattle = true;
         }
 
         if (!hasSession && wasBattleSessionPresent) {
@@ -1443,6 +1531,12 @@ public class GameScreen extends ScreenAdapter {
             closeAllMenuUi();
             System.out.println("[GameScreen] Inventory cleanup complete, ready for exploration");
             activeBossMusicState = null;
+
+            if (queuedFallenScreenAfterBattle) {
+                queuedFallenScreenAfterBattle = false;
+                activeFallenPrompt = new FallenPromptState();
+                audioService.playSound(SoundEffect.FALLEN);
+            }
         }
 
         wasBattleSessionPresent = hasSession;
@@ -2384,7 +2478,7 @@ public class GameScreen extends ScreenAdapter {
         merchantShopVisible = true;
         if (merchantShopUI != null) {
             inventoryStage.clear();
-            inventoryStage.addActor(merchantShopUI);
+            merchantShopUI.buildLayout();  // Build the UI layout like InventoryUI
             // Set input processor for consistent coordinate unprojection with virtual viewport
             Gdx.input.setInputProcessor(inventoryStage);
         }
@@ -2547,7 +2641,71 @@ public class GameScreen extends ScreenAdapter {
                 || isBossFightPromptVisible()
                 || isSaveGamePromptVisible()
                 || isSaveActionPromptVisible()
-                || cheatConsoleOverlay.isVisible();
+                || cheatConsoleOverlay.isVisible()
+                || isFallenPromptVisible();
+    }
+
+    private boolean isFallenPromptVisible() {
+        return activeFallenPrompt != null;
+    }
+
+    private void updateFallenPromptInput() {
+        FallenPromptState prompt = activeFallenPrompt;
+        if (prompt == null || isBossFightPromptVisible() || isSaveGamePromptVisible() || isSaveActionPromptVisible()) {
+            return;
+        }
+
+        boolean changed = false;
+        if (InputConventions.isMenuUpJustPressed() && !prompt.checkpointSelected) {
+            prompt.checkpointSelected = true;
+            changed = true;
+        } else if (InputConventions.isMenuDownJustPressed() && prompt.checkpointSelected) {
+            prompt.checkpointSelected = false;
+            changed = true;
+        }
+        if (changed) {
+            audioService.playSound(SoundEffect.UI_HOVER);
+        }
+
+        if (InputConventions.isInteractJustPressed()) {
+            audioService.playSound(SoundEffect.UI_SELECT);
+            if (prompt.checkpointSelected) {
+                handleFallenReturnToLastCheckpointChoice();
+                return;
+            }
+            activeFallenPrompt = null;
+            openLoadStateScreen();
+        }
+    }
+
+    private void renderFallenPrompt() {
+        FallenPromptState prompt = activeFallenPrompt;
+        if (prompt == null || isBossFightPromptVisible() || isSaveGamePromptVisible() || isSaveActionPromptVisible()) {
+            return;
+        }
+        renderFullBlackoutOverlay();
+
+        String line1 = promptOptionText("Return to Last Checkpoint", prompt.checkpointSelected);
+        String line2 = promptOptionText("Load Save", !prompt.checkpointSelected);
+        String text = "You Have Fallen\n\n" + line1 + "\n" + line2;
+        dialogueOverlay.renderPrompt(batch, inventoryStage.getViewport(), text, Interactible.DialoguePosition.BOTTOM);
+    }
+
+    /**
+     * Placeholder for reloading the last story checkpoint after a party wipe.
+     */
+    private void placeholderReturnToLastCheckpoint() {
+        // Integrate checkpoint restore flow here later.
+    }
+
+    private void handleFallenReturnToLastCheckpointChoice() {
+        FallenPromptState prompt = activeFallenPrompt;
+        if (prompt == null) {
+            return;
+        }
+        activeFallenPrompt = null;
+        blockInteractionRetrigger();
+        placeholderReturnToLastCheckpoint();
     }
 
     private static final class BossFightPromptState {
@@ -2581,6 +2739,11 @@ public class GameScreen extends ScreenAdapter {
         private SaveActionPromptState(boolean overwriteMode) {
             this.overwriteMode = overwriteMode;
         }
+    }
+
+    private static final class FallenPromptState {
+        /** true = Return to Last Checkpoint, false = Load Save */
+        private boolean checkpointSelected = true;
     }
 
     private static final class BossMusicHooks {

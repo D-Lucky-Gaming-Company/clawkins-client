@@ -35,8 +35,15 @@ Merchant behavior is unchanged and still short-circuits to merchant UI logic.
 `InteractionSystem` now provides:
 
 - `registerSpecialInteraction(String objectId, Consumer<SpecialInteractionContext> callback)`
+- `registerSpecialInteractionByGroupId(String groupId, Consumer<SpecialInteractionContext> callback)`
+- `registerPreDialogueCheck(String objectId, Predicate<SpecialInteractionContext> preDialogueCheck)`
+- `registerPreDialogueCheckByGroupId(String groupId, Predicate<SpecialInteractionContext> preDialogueCheck)`
 - `unregisterSpecialInteraction(String objectId)`
+- `unregisterSpecialInteractionByGroupId(String groupId)`
+- `unregisterPreDialogueCheck(String objectId)`
+- `unregisterPreDialogueCheckByGroupId(String groupId)`
 - `clearSpecialInteractions()`
+- `clearPreDialogueChecks()`
 
 And context payload:
 
@@ -68,10 +75,27 @@ Notes:
 - If chest should be one-time only, add your own persistence guard (save flag, map state, or inventory marker).
 - Keep this logic data-driven by keying from `ObjectId`, not map coordinates.
 
+## Update: Optional `GroupId` support (2026-05-11)
+
+`GroupId` can now be added to interactible or merchant map objects, but it is optional.
+
+- If `GroupId` is missing or blank, behavior remains unchanged.
+- `TiledObjectConfigurator` reads `GroupId` (also accepts `groupId`) and stores it in `Interactible`.
+- `InteractionSystem` can now register special interactions and pre-dialogue checks by `GroupId`.
+
+Resolution order for callbacks/checks:
+
+1. Match by normalized `ObjectId` first.
+2. If no object-level match exists, fallback to normalized `GroupId`.
+
+This keeps object-level behavior precise while enabling grouped behavior for multiple objects.
+
 ## Files changed
 
 - `core/src/main/java/github/dluckycompany/clawkins/system/InteractionSystem.java`
 - `core/src/main/java/github/dluckycompany/clawkins/GameScreen.java`
+- `core/src/main/java/github/dluckycompany/clawkins/component/Interactible.java`
+- `core/src/main/java/github/dluckycompany/clawkins/tiled/TiledObjectConfigurator.java`
 - `docs/development/readme.md`
 
 ## Why this design

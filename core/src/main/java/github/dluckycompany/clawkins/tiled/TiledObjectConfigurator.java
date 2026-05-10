@@ -11,12 +11,12 @@ import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.g2d.TextureRegion;
 import com.badlogic.gdx.maps.MapObject;
 import com.badlogic.gdx.maps.MapProperties;
-import com.badlogic.gdx.maps.tiled.TiledMapTile;
-import com.badlogic.gdx.maps.tiled.objects.TiledMapTileMapObject;
 import com.badlogic.gdx.maps.objects.CircleMapObject;
 import com.badlogic.gdx.maps.objects.EllipseMapObject;
 import com.badlogic.gdx.maps.objects.PolygonMapObject;
 import com.badlogic.gdx.maps.objects.RectangleMapObject;
+import com.badlogic.gdx.maps.tiled.TiledMapTile;
+import com.badlogic.gdx.maps.tiled.objects.TiledMapTileMapObject;
 import com.badlogic.gdx.math.Rectangle;
 import com.badlogic.gdx.math.Vector2;
 
@@ -53,6 +53,7 @@ public class TiledObjectConfigurator {
     private final Engine engine;
     private final AssetService assetService;
     private final PlayerBattleState playerBattleState;
+    private String playerNameOverride;  // Override for player name from character setup
 
     private enum ObjectType {
         PLAYER,
@@ -68,6 +69,18 @@ public class TiledObjectConfigurator {
         this.engine = engine;
         this.assetService = assetService;
         this.playerBattleState = playerBattleState;
+        this.playerNameOverride = null;
+    }
+    
+    /**
+     * Sets the player name override from character setup.
+     * This overrides the "Name" property from Tiled maps.
+     *
+     * @param playerName the player name from character setup, or null to use map default
+     */
+    public void setPlayerNameOverride(String playerName) {
+        this.playerNameOverride = playerName;
+        Gdx.app.log(TAG, "Player name override set to: " + playerName);
     }
 
     /**
@@ -166,7 +179,15 @@ public class TiledObjectConfigurator {
                 
                 Gdx.app.log(TAG, "Creating new PLAYER entity");
                 float moveSpeed = getFloatProperty(tileMapObject, "moveSpeed", 3f);
-                String playerName = getStringProperty(tileMapObject, "Name", "Player");
+                
+                // Use player name from character setup if available, otherwise use map property
+                String playerName = (playerNameOverride != null && !playerNameOverride.isEmpty()) 
+                    ? playerNameOverride 
+                    : getStringProperty(tileMapObject, "Name", "Player");
+                
+                Gdx.app.log(TAG, "Player name: " + playerName + 
+                    (playerNameOverride != null ? " (from character setup)" : " (from map)"));
+                
                 int playerHp = getIntProperty(tileMapObject, "playerHp", 100);
                 int playerAttack = getIntProperty(tileMapObject, "playerAttack", 12);
                 int playerDefense = getIntProperty(tileMapObject, "playerDefense", 8);
@@ -269,6 +290,7 @@ public class TiledObjectConfigurator {
                 if (objectId == null || objectId.isBlank()) {
                     objectId = objectIdFallback;
                 }
+                String groupId = getOptionalGroupId(tileMapObject);
                 String dialogueDirectory = getStringProperty(tileMapObject, "DialogueDirectory", "...");
                 boolean hasCollision = getBooleanProperty(tileMapObject, "hasCollision", true);
                 boolean isTrippable = getBooleanProperty(tileMapObject, "isTrippable", false);
@@ -277,7 +299,8 @@ public class TiledObjectConfigurator {
 
                 entity.add(new Interactible(
                         objectName,
-                    objectId,
+                        objectId,
+                        groupId,
                         dialogueDirectory,
                         hasCollision,
                         dialoguePosition,
@@ -293,7 +316,8 @@ public class TiledObjectConfigurator {
                 if (objectId == null || objectId.isBlank()) {
                     objectId = objectIdFallback;
                 }
-                String dialogueDirectory = getStringProperty(tileMapObject, "DialogueDirectory", "Welcome!");
+                String groupId = getOptionalGroupId(tileMapObject);
+                String dialogueDirectory = getStringProperty(tileMapObject, "DialogueDirectory", "dialogue/merchants.json");
                 boolean hasCollision = getBooleanProperty(tileMapObject, "hasCollision", true);
                 boolean isTrippable = getBooleanProperty(tileMapObject, "isTrippable", false);
                 String posRaw = getStringProperty(tileMapObject, "DialoguePosition", "BOTTOM");
@@ -301,7 +325,8 @@ public class TiledObjectConfigurator {
 
                 entity.add(new Interactible(
                         objectName,
-                    objectId,
+                        objectId,
+                        groupId,
                         dialogueDirectory,
                         hasCollision,
                         dialoguePosition,
@@ -371,7 +396,8 @@ public class TiledObjectConfigurator {
         if (objectId == null || objectId.isBlank()) {
             objectId = objectIdFallback;
         }
-        String dialogueDirectory = getStringProperty(mapObject, "DialogueDirectory", isMerchant ? "Welcome!" : "...");
+        String groupId = getOptionalGroupId(mapObject);
+        String dialogueDirectory = getStringProperty(mapObject, "DialogueDirectory", isMerchant ? "dialogue/merchants.json" : "...");
         boolean hasCollision = getBooleanProperty(mapObject, "hasCollision", true);
         boolean isTrippable = getBooleanProperty(mapObject, "isTrippable", false);
         String posRaw = getStringProperty(mapObject, "DialoguePosition", "BOTTOM");
@@ -380,12 +406,24 @@ public class TiledObjectConfigurator {
         entity.add(new Interactible(
                 objectName,
                 objectId,
+                groupId,
                 dialogueDirectory,
                 hasCollision,
                 dialoguePosition,
                 isMerchant,
                 isTrippable
         ));
+    }
+
+    private static String getOptionalGroupId(MapObject object) {
+        String groupId = getStringProperty(object, "GroupId", "");
+        if (groupId == null || groupId.isBlank()) {
+            groupId = getStringProperty(object, "groupId", "");
+        }
+        if (groupId == null || groupId.isBlank()) {
+            return null;
+        }
+        return groupId.trim();
     }
 
     private static Interactible.DialoguePosition parseDialoguePosition(String raw) {

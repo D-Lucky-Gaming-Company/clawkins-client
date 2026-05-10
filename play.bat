@@ -1,12 +1,13 @@
 @echo off
-REM TestGame - Quick Play Script
+REM Clawkins: Dawn of the Primal - Quick Play Script
 REM Run this file to start the game immediately
 
 setlocal enabledelayedexpansion
 
 echo.
 echo ========================================
-echo     TestGame - Launching Game
+echo  Clawkins: Dawn of the Primal
+echo  Launching Game...
 echo ========================================
 echo.
 
