@@ -257,6 +257,9 @@ public class GameScreen extends ScreenAdapter {
     private BossFightPromptState activeBossFightPrompt;
     private SaveGamePromptState activeSaveGamePrompt;
     private SaveActionPromptState activeSaveActionPrompt;
+    private FallenPromptState activeFallenPrompt;
+    private boolean queuedFallenScreenAfterBattle;
+    private boolean defeatSessionEffectsApplied;
     private float saveToastTimer;
     private float interactionRetriggerBlockSeconds;
     private Entity bertJrPropEntity;
@@ -642,14 +645,15 @@ public class GameScreen extends ScreenAdapter {
     }
 
     private void openSavePromptFromInteractible() {
-        if (isBossFightPromptVisible() || isSaveGamePromptVisible() || isSaveActionPromptVisible()) {
+        if (isBossFightPromptVisible() || isSaveGamePromptVisible() || isSaveActionPromptVisible()
+                || isFallenPromptVisible()) {
             return;
         }
         promptSaveGameChoice(this::openSaveActionPrompt, () -> {});
     }
 
     private void openSaveActionPrompt() {
-        if (isBossFightPromptVisible() || isSaveActionPromptVisible()) {
+        if (isBossFightPromptVisible() || isSaveActionPromptVisible() || isFallenPromptVisible()) {
             return;
         }
         activeSaveActionPrompt = new SaveActionPromptState(game.getSaveStateManager().hasSaveStates());
@@ -785,6 +789,7 @@ public class GameScreen extends ScreenAdapter {
         updateBossFightPromptInput();
         updateSaveGamePromptInput();
         updateSaveActionPromptInput();
+        updateFallenPromptInput();
         saveToastTimer = Math.max(0f, saveToastTimer - delta);
         interactionRetriggerBlockSeconds = Math.max(0f, interactionRetriggerBlockSeconds - delta);
 
@@ -792,6 +797,7 @@ public class GameScreen extends ScreenAdapter {
         if (!battleService.hasBattleSession() && !interactionSystem.isDialogueVisible() && !merchantShopVisible
                 && !mapTransitionFade.isTransitioning() && !isSpecialMovementActive()
                 && !isBossFightPromptVisible() && !isSaveGamePromptVisible() && !isSaveActionPromptVisible()
+                && !isFallenPromptVisible()
                 && !isBertJrPreDialogueSequenceActive()
                 && !teamViewerVisible && !summaryVisible
                 && !cheatConsoleOverlay.isVisible()) {
@@ -893,6 +899,7 @@ public class GameScreen extends ScreenAdapter {
         }
         renderAreaTitle(uiDelta);
         renderSaveToast();
+        renderFallenPrompt();
         
         // Render cheat console overlay (always on top, independent stage)
         if (cheatConsoleOverlay.isVisible()) {
@@ -1069,6 +1076,7 @@ public class GameScreen extends ScreenAdapter {
         boolean bossPromptLocked = isBossFightPromptVisible();
         boolean savePromptLocked = isSaveGamePromptVisible();
         boolean saveActionPromptLocked = isSaveActionPromptVisible();
+        boolean fallenPromptLocked = isFallenPromptVisible();
         boolean interactionRetriggerLocked = interactionRetriggerBlockSeconds > 0f;
         boolean merchantLocked = merchantShopVisible;
         boolean mapTransitionLocked = mapTransitionFade.isTransitioning();
@@ -1079,6 +1087,7 @@ public class GameScreen extends ScreenAdapter {
                 && !bossPromptLocked
                 && !savePromptLocked
                 && !saveActionPromptLocked
+                && !fallenPromptLocked
                 && !merchantLocked
                 && !mapTransitionLocked
                 && !menuLocked
@@ -1088,6 +1097,7 @@ public class GameScreen extends ScreenAdapter {
                     && !bossPromptLocked
                     && !savePromptLocked
                     && !saveActionPromptLocked
+                    && !fallenPromptLocked
                     && !interactionRetriggerLocked
                     && !merchantLocked
                     && !menuLocked
@@ -1102,6 +1112,7 @@ public class GameScreen extends ScreenAdapter {
                 && !bossPromptLocked
                 && !savePromptLocked
                 && !saveActionPromptLocked
+                && !fallenPromptLocked
                 && !interactionRetriggerLocked
                 && !merchantLocked
                 && !menuLocked
@@ -1472,6 +1483,7 @@ public class GameScreen extends ScreenAdapter {
         String encounterId = resolveActiveEncounterId();
 
         if (hasSession && !wasBattleSessionPresent) {
+            defeatSessionEffectsApplied = false;
             audioService.onEvent(AudioEventType.ENCOUNTER_STARTED);
             audioService.onEvent(AudioEventType.BATTLE_STARTED);
             runBossBattleStartMusicHook(encounterId);
@@ -1494,14 +1506,20 @@ public class GameScreen extends ScreenAdapter {
                     playerProgress.markEventAccomplished(EVENT_BOSS_0_DEFEATED);
                     hideBertJrProp();
                 }
-            } else if (endPhase == BattlePhase.DEFEAT) {
-                audioService.onEvent(AudioEventType.BATTLE_DEFEAT);
-                runBossPostBattleMusicHook(encounterId, false);
-                refreshProgressSnapshots();
-                if (ENCOUNTER_BERT_JR_ID.equals(encounterId)) {
-                    playerProgress.incrementLosses(EVENT_BOSS_0);
-                }
             }
+        }
+
+        if (hasSession
+                && battleService.getBattleStateMachine().getPhase() == BattlePhase.DEFEAT
+                && !defeatSessionEffectsApplied) {
+            defeatSessionEffectsApplied = true;
+            audioService.onEvent(AudioEventType.BATTLE_DEFEAT);
+            runBossPostBattleMusicHook(encounterId, false);
+            refreshProgressSnapshots();
+            if (ENCOUNTER_BERT_JR_ID.equals(encounterId)) {
+                playerProgress.incrementLosses(EVENT_BOSS_0);
+            }
+            queuedFallenScreenAfterBattle = true;
         }
 
         if (!hasSession && wasBattleSessionPresent) {
@@ -1513,6 +1531,12 @@ public class GameScreen extends ScreenAdapter {
             closeAllMenuUi();
             System.out.println("[GameScreen] Inventory cleanup complete, ready for exploration");
             activeBossMusicState = null;
+
+            if (queuedFallenScreenAfterBattle) {
+                queuedFallenScreenAfterBattle = false;
+                activeFallenPrompt = new FallenPromptState();
+                audioService.playSound(SoundEffect.FALLEN);
+            }
         }
 
         wasBattleSessionPresent = hasSession;
@@ -2617,7 +2641,71 @@ public class GameScreen extends ScreenAdapter {
                 || isBossFightPromptVisible()
                 || isSaveGamePromptVisible()
                 || isSaveActionPromptVisible()
-                || cheatConsoleOverlay.isVisible();
+                || cheatConsoleOverlay.isVisible()
+                || isFallenPromptVisible();
+    }
+
+    private boolean isFallenPromptVisible() {
+        return activeFallenPrompt != null;
+    }
+
+    private void updateFallenPromptInput() {
+        FallenPromptState prompt = activeFallenPrompt;
+        if (prompt == null || isBossFightPromptVisible() || isSaveGamePromptVisible() || isSaveActionPromptVisible()) {
+            return;
+        }
+
+        boolean changed = false;
+        if (InputConventions.isMenuUpJustPressed() && !prompt.checkpointSelected) {
+            prompt.checkpointSelected = true;
+            changed = true;
+        } else if (InputConventions.isMenuDownJustPressed() && prompt.checkpointSelected) {
+            prompt.checkpointSelected = false;
+            changed = true;
+        }
+        if (changed) {
+            audioService.playSound(SoundEffect.UI_HOVER);
+        }
+
+        if (InputConventions.isInteractJustPressed()) {
+            audioService.playSound(SoundEffect.UI_SELECT);
+            if (prompt.checkpointSelected) {
+                handleFallenReturnToLastCheckpointChoice();
+                return;
+            }
+            activeFallenPrompt = null;
+            openLoadStateScreen();
+        }
+    }
+
+    private void renderFallenPrompt() {
+        FallenPromptState prompt = activeFallenPrompt;
+        if (prompt == null || isBossFightPromptVisible() || isSaveGamePromptVisible() || isSaveActionPromptVisible()) {
+            return;
+        }
+        renderFullBlackoutOverlay();
+
+        String line1 = promptOptionText("Return to Last Checkpoint", prompt.checkpointSelected);
+        String line2 = promptOptionText("Load Save", !prompt.checkpointSelected);
+        String text = "You Have Fallen\n\n" + line1 + "\n" + line2;
+        dialogueOverlay.renderPrompt(batch, inventoryStage.getViewport(), text, Interactible.DialoguePosition.BOTTOM);
+    }
+
+    /**
+     * Placeholder for reloading the last story checkpoint after a party wipe.
+     */
+    private void placeholderReturnToLastCheckpoint() {
+        // Integrate checkpoint restore flow here later.
+    }
+
+    private void handleFallenReturnToLastCheckpointChoice() {
+        FallenPromptState prompt = activeFallenPrompt;
+        if (prompt == null) {
+            return;
+        }
+        activeFallenPrompt = null;
+        blockInteractionRetrigger();
+        placeholderReturnToLastCheckpoint();
     }
 
     private static final class BossFightPromptState {
@@ -2651,6 +2739,11 @@ public class GameScreen extends ScreenAdapter {
         private SaveActionPromptState(boolean overwriteMode) {
             this.overwriteMode = overwriteMode;
         }
+    }
+
+    private static final class FallenPromptState {
+        /** true = Return to Last Checkpoint, false = Load Save */
+        private boolean checkpointSelected = true;
     }
 
     private static final class BossMusicHooks {
