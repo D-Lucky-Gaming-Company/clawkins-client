@@ -34,9 +34,20 @@ public class BattleActionSfxHandler {
         audioService.playSound(SoundEffect.BATTLE_SPECIAL);
     }
 
-    public void playForEnemyActionResult(List<BattleTextSpan> spans) {
+    public void playForEnemyActionResult(List<BattleTextSpan> spans, String battleLogText) {
         if (audioService == null) {
             return;
+        }
+        if (battleLogText != null && !battleLogText.isBlank()) {
+            String normalized = battleLogText.toLowerCase();
+            if (normalized.contains("parry deflects")) {
+                audioService.playSound(SoundEffect.PARRY_WIN);
+                return;
+            }
+            if (normalized.contains("parry slips")) {
+                audioService.playSound(SoundEffect.PARRY_FAIL);
+                return;
+            }
         }
         if (containsRole(spans, BattleTextRole.DAMAGE)) {
             audioService.playSound(SoundEffect.BATTLE_ENEMY_ACTION);

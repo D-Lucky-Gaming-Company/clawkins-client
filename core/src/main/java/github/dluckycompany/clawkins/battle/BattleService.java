@@ -69,6 +69,7 @@ public class BattleService {
                 List.of(new BattleUnit(enemyId, event.getEnemyHp(), event.getEnemyAttack(), event.getEnemyDefense(), event.getEnemySpeed())),
             activeSkills,
             event.getEnemySkills(),
+                event.getEnemyLevel(),
                 enemyLabel,
                 event.getEnemyImagePath(),
                 allyLabel

@@ -107,6 +107,10 @@ public class Interactible implements Component {
         return interactionCount;
     }
 
+    public void setInteractionCount(int interactionCount) {
+        this.interactionCount = Math.max(0, interactionCount);
+    }
+
     public void incrementInteractionCount() {
         interactionCount++;
     }

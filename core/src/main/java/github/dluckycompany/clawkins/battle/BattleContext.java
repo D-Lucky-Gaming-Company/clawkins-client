@@ -11,6 +11,7 @@ public class BattleContext {
     private final List<BattleUnit> enemies;
     private final List<BattleSkill> playerSkills;
     private final List<BattleSkill> enemySkills;
+    private final int enemyLevel;
     private final String enemyDisplayName;
     private final String enemyPortraitPath;
     /** Same label as the player HP bar (clawkin name, id fallback). Updated on clawkin switch. */
@@ -25,6 +26,7 @@ public class BattleContext {
             List<BattleUnit> enemies,
             List<BattleSkill> playerSkills,
             List<BattleSkill> enemySkills,
+            int enemyLevel,
             String enemyDisplayName,
             String enemyPortraitPath,
             String allyDisplayName) {
@@ -34,6 +36,7 @@ public class BattleContext {
         this.enemies = new ArrayList<>(enemies);
         this.playerSkills = new ArrayList<>(playerSkills);
         this.enemySkills = new ArrayList<>(enemySkills);
+        this.enemyLevel = enemyLevel;
         this.enemyDisplayName = enemyDisplayName == null ? "" : enemyDisplayName;
         this.enemyPortraitPath = enemyPortraitPath == null ? "" : enemyPortraitPath.trim();
         this.allyDisplayName = allyDisplayName == null ? "" : allyDisplayName;
@@ -75,6 +78,10 @@ public class BattleContext {
 
     public List<BattleSkill> getEnemySkills() {
         return Collections.unmodifiableList(enemySkills);
+    }
+
+    public int getEnemyLevel() {
+        return enemyLevel;
     }
 
     /** HUD label for the enemy (from map {@code enemyName}). */

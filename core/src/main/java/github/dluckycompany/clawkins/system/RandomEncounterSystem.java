@@ -12,6 +12,8 @@ import com.badlogic.gdx.math.Vector2;
 import github.dluckycompany.clawkins.Main;
 import github.dluckycompany.clawkins.asset.MapAsset;
 import github.dluckycompany.clawkins.battle.BattleService;
+import github.dluckycompany.clawkins.battle.PlayerBattleState;
+import github.dluckycompany.clawkins.character.Clawkin;
 import github.dluckycompany.clawkins.component.Player;
 import github.dluckycompany.clawkins.component.Transform;
 import github.dluckycompany.clawkins.encounter.EncounterDifficultyTier;
@@ -153,8 +155,35 @@ public class RandomEncounterSystem extends EntitySystem {
                         + ", chance=" + chance
                         + ", triggered=" + triggered);
         if (triggered) {
-            randomEncounterGenerator.randomEncounter(tier, encounterEventBus);
+            int playerLevel = resolvePlayerEncounterLevel();
+            randomEncounterGenerator.randomEncounter(tier, playerLevel, encounterEventBus);
         }
+    }
+
+    private int resolvePlayerEncounterLevel() {
+        PlayerBattleState state = battleService.getPlayerBattleState();
+        if (state == null) {
+            return 1;
+        }
+
+        Clawkin active = state.getActiveClawkin();
+        if (active != null) {
+            return Math.max(1, active.getLevel());
+        }
+
+        int total = 0;
+        int count = 0;
+        for (Clawkin member : state.getAlivePartyMembers()) {
+            if (member == null) {
+                continue;
+            }
+            total += Math.max(1, member.getLevel());
+            count++;
+        }
+        if (count <= 0) {
+            return 1;
+        }
+        return Math.max(1, Math.round((float) total / count));
     }
 
     private static MapAsset resolveMapAsset(TiledMap map) {

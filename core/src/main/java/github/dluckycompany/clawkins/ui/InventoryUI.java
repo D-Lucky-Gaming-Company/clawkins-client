@@ -873,6 +873,9 @@ public class InventoryUI {
         }
 
         if (!isUseAllowedInCurrentContext(selectedItem)) {
+            if (audioService != null) {
+                audioService.playSound(SoundEffect.FAILURE_1);
+            }
             showUsePermissionDialog(
                 "Use Not Allowed",
                 buildUseDeniedMessage(selectedItem)

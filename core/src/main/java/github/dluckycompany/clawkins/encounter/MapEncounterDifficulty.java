@@ -7,15 +7,29 @@ import java.util.Map;
 
 /**
  * Assigns {@link EncounterDifficultyTier} to {@link MapAsset} for random encounter rolls.
- * Only {@link EncounterDifficultyTier#EASY} maps are configured; other tiers are reserved
- * until maps are assigned.
  */
 public final class MapEncounterDifficulty {
     private static final Map<MapAsset, EncounterDifficultyTier> BY_ASSET = new EnumMap<>(MapAsset.class);
 
     static {
-        assignEasy(MapAsset.FIELD, MapAsset.FIELD_2, MapAsset.FIELD_4);
-        // Placeholder: add MapAsset.MOUNTAIN_1 -> MIDDLE, etc., when ready.
+        assignEasy(
+                MapAsset.FIELD,
+                MapAsset.FIELD_2,
+                MapAsset.FIELD_3,
+                MapAsset.FIELD_4,
+                MapAsset.FIELD_5,
+                MapAsset.FIELD_SECRET);
+        assignIntermediate(
+                MapAsset.MOUNTAIN_1,
+                MapAsset.MOUNTAIN_2,
+                MapAsset.MOUNTAIN_3,
+                MapAsset.MOUNTAIN_4,
+                MapAsset.MOUNTAIN_5);
+        assignHard(
+                MapAsset.CAVE_ENTRANCE,
+                MapAsset.CAVE_1,
+                MapAsset.CAVE_2,
+                MapAsset.CAVE_3);
     }
 
     private MapEncounterDifficulty() {
@@ -24,6 +38,18 @@ public final class MapEncounterDifficulty {
     private static void assignEasy(MapAsset... assets) {
         for (MapAsset a : assets) {
             BY_ASSET.put(a, EncounterDifficultyTier.EASY);
+        }
+    }
+
+    private static void assignIntermediate(MapAsset... assets) {
+        for (MapAsset a : assets) {
+            BY_ASSET.put(a, EncounterDifficultyTier.INTERMEDIATE);
+        }
+    }
+
+    private static void assignHard(MapAsset... assets) {
+        for (MapAsset a : assets) {
+            BY_ASSET.put(a, EncounterDifficultyTier.HARD);
         }
     }
 
