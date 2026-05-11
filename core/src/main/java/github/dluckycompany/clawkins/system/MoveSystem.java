@@ -75,7 +75,7 @@ public class MoveSystem extends IteratingSystem {
     private ImmutableArray<Entity> solidEntities;
 
     public MoveSystem() {
-        super(Family.all(Move.class, Transform.class).get());
+        super(Family.all(Move.class, Transform.class).get(), 10);
         this.collisionLayers = new ArrayList<>();
         this.barrierHitboxes = new ArrayList<>();
         this.debugTileCollisionBoxes = new ArrayList<>();

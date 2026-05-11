@@ -144,7 +144,7 @@ public class BattleHud implements Disposable {
     // -----------------------------------------------------------------------
 
     private static final String PLAYER_PLACEHOLDER_PATH = "entities/clawkins/Clawkin_01_Ginger.png";
-    private static final String BOSS_PLACEHOLDER_PATH   = "entities/clawkins/Clawkin_04_Bert_Jr.png";
+    private static final String BOSS_PLACEHOLDER_PATH   = "entities/clawkins/Clawkin_14_Stray.png";
 
     // -----------------------------------------------------------------------
     // Button asset paths (individual PNG files)
@@ -181,6 +181,9 @@ public class BattleHud implements Disposable {
     private final Stage stage;
     private final Texture battleBg;
     private final BitmapFont font;
+
+    /** Encounter-specific background texture loaded dynamically; disposed by this class. */
+    private Texture encounterBgTex;
 
     // Owned placeholder textures and actors (dispose in dispose())
     private Texture playerPlaceholderTex;
@@ -337,6 +340,54 @@ public class BattleHud implements Disposable {
         lastEnemyPortraitKey = null;
         lastPartyVisualKey = "";
         Gdx.input.setInputProcessor(null);
+    }
+
+    /**
+     * Swaps the battle background to the given asset path.
+     * If the path is null, blank, or the file doesn't exist, restores the default background.
+     *
+     * @param backgroundPath internal asset path to the background PNG
+     */
+    public void setBattleBackground(String backgroundPath) {
+        Texture newTex = null;
+        if (backgroundPath != null && !backgroundPath.isBlank()) {
+            if (Gdx.files.internal(backgroundPath).exists()) {
+                newTex = new Texture(Gdx.files.internal(backgroundPath));
+            } else {
+                Gdx.app.error("BattleHud", "Battle background not found: " + backgroundPath);
+            }
+        }
+
+        // Dispose previous encounter-specific texture if any
+        if (encounterBgTex != null) {
+            encounterBgTex.dispose();
+            encounterBgTex = null;
+        }
+
+        if (newTex != null) {
+            encounterBgTex = newTex;
+            if (bg != null) {
+                bg.setDrawable(new TextureRegionDrawable(new TextureRegion(encounterBgTex)));
+            }
+        } else {
+            // Restore default
+            if (bg != null) {
+                bg.setDrawable(new TextureRegionDrawable(new TextureRegion(battleBg)));
+            }
+        }
+    }
+
+    /**
+     * Resets the battle background to the default asset.
+     */
+    public void resetBattleBackground() {
+        if (encounterBgTex != null) {
+            encounterBgTex.dispose();
+            encounterBgTex = null;
+        }
+        if (bg != null) {
+            bg.setDrawable(new TextureRegionDrawable(new TextureRegion(battleBg)));
+        }
     }
 
     /** Returns true when the HUD is currently active. */
@@ -609,7 +660,7 @@ public class BattleHud implements Disposable {
                 activeEnemyTex = null;
             }
             activeEnemyTex = new Texture(Gdx.files.internal(path));
-            applyTextureToBossImage(activeEnemyTex, isBertJrBossEncounter(encounterId));
+            applyTextureToBossImage(activeEnemyTex, false);  // Never flip boss images
             return;
         }
         restoreBossPlaceholderPortrait();
@@ -640,7 +691,7 @@ public class BattleHud implements Disposable {
         }
         if (bossImage != null && bossPlaceholderTex != null) {
             TextureRegion region = new TextureRegion(bossPlaceholderTex);
-            region.flip(true, false);
+            // No flip - use original orientation
             bossImage.setDrawable(new TextureRegionDrawable(region));
         }
     }
@@ -869,6 +920,42 @@ public class BattleHud implements Disposable {
             playerUnit,
             "[3] "
         );
+
+        // Update slot 4 (Item button) — hidden until Skill 4 unlocks at Level 20
+        SkillSlot slot4 = skillManager.getSkillSlot(3);
+        if (slot4 == null) {
+            // No Skill 4 defined for this Clawkin — keep button hidden
+            setSkill4Visible(false);
+        } else if (slot4.isLocked(skillManager.getCurrentLevel())) {
+            // Skill 4 exists but level requirement not met — hide completely
+            setSkill4Visible(false);
+        } else {
+            // Level 20+ reached — show and enable Skill 4
+            setSkill4Visible(true);
+            updateSkillButton(
+                itemBtn,
+                itemLbl,
+                slot4,
+                skillManager.getCurrentLevel(),
+                playerUnit,
+                "[4] "
+            );
+        }
+    }
+
+    /**
+     * Shows or hides the Skill 4 button and its label.
+     * Skill 4 is hidden below Level 20 and revealed once unlocked.
+     */
+    private void setSkill4Visible(boolean visible) {
+        if (itemBtn != null) {
+            itemBtn.setVisible(visible);
+            itemBtn.setDisabled(!visible);
+            itemBtn.setTouchable(visible ? Touchable.enabled : Touchable.disabled);
+        }
+        if (itemLbl != null) {
+            itemLbl.setVisible(visible);
+        }
     }
     
     /**
@@ -1080,6 +1167,7 @@ public class BattleHud implements Disposable {
         if (fleeButtonTex != null) fleeButtonTex.dispose();
         if (activeClawkinTex != null) activeClawkinTex.dispose();
         if (activeEnemyTex != null) activeEnemyTex.dispose();
+        if (encounterBgTex != null) encounterBgTex.dispose();
         // battleBg is owned by AssetService â€” do NOT dispose it here
     }
 
@@ -1159,8 +1247,7 @@ public class BattleHud implements Disposable {
         specialLbl = new Label("[3] 4 Turns", labelStyle);
         itemLbl = new Label("[4] Special Skill", labelStyle);
 
-        playerHpTable = new Table();
-        bossHpTable = new Table();
+        playerHpTable = new Table();        bossHpTable = new Table();
         playerExpTable = new Table();
 
         playerHpCorner = new Table();
@@ -1188,6 +1275,9 @@ public class BattleHud implements Disposable {
         buildClawkinContainer();
         applyResponsiveLayout();
         positionPlaceholders();
+
+        // Skill 4 (item button) is hidden by default — revealed at Level 20 via updateSkillLabels
+        setSkill4Visible(false);
 
         stage.addActor(bg);
         stage.addActor(clawkinWrapper);  // Container + icons

@@ -9,6 +9,7 @@ import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.math.Interpolation;
 import com.badlogic.gdx.scenes.scene2d.InputEvent;
+import com.badlogic.gdx.scenes.scene2d.InputListener;
 import com.badlogic.gdx.scenes.scene2d.Stage;
 import com.badlogic.gdx.scenes.scene2d.actions.Actions;
 import com.badlogic.gdx.scenes.scene2d.ui.Dialog;
@@ -87,13 +88,15 @@ public class MerchantShopUI {
     private int selectedIndex = -1;
     private int lastSelectedIndex = -1;  // For debouncing navigation SFX
 
-    // Keyboard action mode: false=list navigation, true=USE/DROP selection.
+    // Keyboard action mode: false=list navigation, true=BUY or SELL button focus.
     private boolean actionMode = false;
-    private int actionIndex = 0; // 0=USE, 1=DROP
+    private int actionIndex = 0; // 0=primary (BUY or first action), 1=secondary when both exist
     private TextButton useBtnRef;
     private TextButton dropBtnRef;
     private TextButton buyTabRef;  // Store BUY tab reference for highlighting
     private TextButton sellTabRef;  // Store SELL tab reference for highlighting
+    /** Stage-level listener (same pattern as {@link InventoryScreen}). */
+    private InputListener stageKeyboardListener;
     private PartySelectionDialog activePartyDialog;
     private DropQuantityDialog activeDropDialog;
     private BuyQuantityDialog activeBuyDialog;
@@ -318,6 +321,8 @@ public class MerchantShopUI {
      * - Selection highlight: 8px radius beige overlay
      */
     public void buildLayout() {
+        detachStageKeyboardListener();
+
         // Create root table (fills entire stage)
         rootTable = new Table();
         rootTable.setFillParent(true);
@@ -482,6 +487,43 @@ public class MerchantShopUI {
 
         // Add root table to stage
         stage.addActor(rootTable);
+        attachStageKeyboardListener();
+    }
+
+    /**
+     * Removes the stage keyboard listener. Call when closing the shop so shared {@link Stage}
+     * input is not captured by a hidden merchant UI.
+     */
+    public void detachStageKeyboardListener() {
+        if (stageKeyboardListener != null) {
+            stage.removeListener(stageKeyboardListener);
+            stageKeyboardListener = null;
+        }
+    }
+
+    private void attachStageKeyboardListener() {
+        if (stageKeyboardListener != null) {
+            return;
+        }
+        stageKeyboardListener = new InputListener() {
+            @Override
+            public boolean keyDown(InputEvent event, int keycode) {
+                if (handleNavigationKey(keycode)) {
+                    return true;
+                }
+                if (keycode == Input.Keys.ESCAPE
+                        || keycode == Input.Keys.X
+                        || keycode == Input.Keys.BACKSPACE
+                        || keycode == Input.Keys.BUTTON_B) {
+                    if (onBackPressed != null) {
+                        onBackPressed.run();
+                    }
+                    return true;
+                }
+                return keycode == Input.Keys.E;
+            }
+        };
+        stage.addListener(stageKeyboardListener);
     }
 
     /**
@@ -705,70 +747,81 @@ public class MerchantShopUI {
             return true;
         }
 
-        switch (keycode) {
-            // ── Tab switching ──────────────────────────────────────────────
-            case Input.Keys.Q -> {
-                switchToTab(ShopMode.BUY);
-                return true;
-            }
-            case Input.Keys.E -> {
-                switchToTab(ShopMode.SELL);
-                return true;
-            }
-
-            // ── List navigation ────────────────────────────────────────────
-            case Input.Keys.UP -> {
-                if (actionMode) {
-                    actionMode = false;
-                    updateActionButtonHighlight();
-                } else {
-                    navigateSelection(-1);
-                }
-                return true;
-            }
-            case Input.Keys.DOWN -> {
-                if (actionMode) {
-                    // already in action mode, nothing to cycle — just stay
-                } else {
-                    navigateSelection(1);
-                }
-                return true;
-            }
-
-            // ── Confirm ────────────────────────────────────────────────────
-            case Input.Keys.ENTER, Input.Keys.NUMPAD_ENTER, Input.Keys.Z, Input.Keys.BUTTON_A -> {
-                if (navigableItems.isEmpty()) {
-                    return true;
-                }
-                if (selectedIndex < 0 || selectedIndex >= navigableItems.size()) {
-                    selectedIndex = 0;
-                }
-                if (!actionMode) {
-                    selectItem(navigableItems.get(selectedIndex), navigableRows.get(selectedIndex));
-                    actionMode = true;
-                    actionIndex = 0;
-                    updateActionButtonHighlight();
-                    return true;
-                }
-                // In action mode: confirm the buy/sell
-                if (currentMode == ShopMode.BUY) {
-                    triggerBuyAction();
-                } else {
-                    triggerSellAction();
-                }
-                return true;
-            }
-
-            // ── Back / cancel ──────────────────────────────────────────────
-            case Input.Keys.X, Input.Keys.ESCAPE, Input.Keys.BACKSPACE, Input.Keys.BUTTON_B -> {
-                handleCancelInput();
-                return true;
-            }
-
-            default -> {
-                return false;
-            }
+        if (keycode == Input.Keys.Q) {
+            switchToTab(ShopMode.BUY);
+            return true;
         }
+        if (keycode == Input.Keys.E) {
+            switchToTab(ShopMode.SELL);
+            return true;
+        }
+
+        // Use if/else (not switch multi-label): LibGDX maps DPAD_* and arrow keys to
+        // the same int constants, which triggers duplicate case labels.
+        if (keycode == Input.Keys.W || keycode == Input.Keys.UP || keycode == Input.Keys.DPAD_UP) {
+            if (actionMode) {
+                actionIndex = 0;
+                updateActionButtonHighlight();
+            } else {
+                navigateSelection(-1);
+            }
+            return true;
+        }
+        if (keycode == Input.Keys.S || keycode == Input.Keys.DOWN || keycode == Input.Keys.DPAD_DOWN) {
+            if (actionMode) {
+                actionIndex = 1;
+                updateActionButtonHighlight();
+            } else {
+                navigateSelection(1);
+            }
+            return true;
+        }
+        if (keycode == Input.Keys.A || keycode == Input.Keys.LEFT || keycode == Input.Keys.DPAD_LEFT) {
+            if (actionMode) {
+                actionIndex = 0;
+                updateActionButtonHighlight();
+            } else {
+                navigateSelection(-1);
+            }
+            return true;
+        }
+        if (keycode == Input.Keys.D || keycode == Input.Keys.RIGHT || keycode == Input.Keys.DPAD_RIGHT) {
+            if (actionMode) {
+                actionIndex = 1;
+                updateActionButtonHighlight();
+            } else {
+                navigateSelection(1);
+            }
+            return true;
+        }
+        if (keycode == Input.Keys.ENTER || keycode == Input.Keys.NUMPAD_ENTER || keycode == Input.Keys.Z
+                || keycode == Input.Keys.SPACE || keycode == Input.Keys.BUTTON_A) {
+            if (navigableItems.isEmpty()) {
+                return true;
+            }
+            if (selectedIndex < 0 || selectedIndex >= navigableItems.size()) {
+                selectedIndex = 0;
+            }
+            if (!actionMode) {
+                selectItem(navigableItems.get(selectedIndex), navigableRows.get(selectedIndex));
+                actionMode = true;
+                actionIndex = 0;
+                updateActionButtonHighlight();
+                return true;
+            }
+            if (currentMode == ShopMode.BUY) {
+                triggerBuyAction();
+            } else {
+                triggerSellAction();
+            }
+            return true;
+        }
+        if (keycode == Input.Keys.X || keycode == Input.Keys.ESCAPE || keycode == Input.Keys.BACKSPACE
+                || keycode == Input.Keys.BUTTON_B) {
+            handleCancelInput();
+            return true;
+        }
+        return false;
     }
 
     private void handleCancelInput() {
@@ -1199,18 +1252,23 @@ public class MerchantShopUI {
     }
 
     private void updateActionButtonHighlight() {
-        if (useBtnRef == null || dropBtnRef == null) {
+        if (useBtnRef != null && dropBtnRef != null) {
+            if (!actionMode) {
+                useBtnRef.setColor(Color.WHITE);
+                dropBtnRef.setColor(Color.WHITE);
+            } else {
+                useBtnRef.setColor(actionIndex == 0 ? ACTION_SELECTED_TINT : Color.WHITE);
+                dropBtnRef.setColor(actionIndex == 1 ? ACTION_SELECTED_TINT : Color.WHITE);
+            }
             return;
         }
-
-        if (!actionMode) {
-            useBtnRef.setColor(Color.WHITE);
-            dropBtnRef.setColor(Color.WHITE);
+        if (useBtnRef != null) {
+            useBtnRef.setColor(actionMode ? ACTION_SELECTED_TINT : Color.WHITE);
             return;
         }
-
-        useBtnRef.setColor(actionIndex == 0 ? ACTION_SELECTED_TINT : Color.WHITE);
-        dropBtnRef.setColor(actionIndex == 1 ? ACTION_SELECTED_TINT : Color.WHITE);
+        if (dropBtnRef != null) {
+            dropBtnRef.setColor(actionMode ? ACTION_SELECTED_TINT : Color.WHITE);
+        }
     }
 
     private com.badlogic.gdx.scenes.scene2d.utils.NinePatchDrawable createItemRowDefaultBackground() {

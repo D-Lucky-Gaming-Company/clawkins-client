@@ -38,8 +38,8 @@ public class SkillManager {
         
         int slotIndex = 0;
         for (SkillUnlockSystem.SkillUnlockEntry entry : entries) {
-            if (slotIndex >= 3) {
-                break; // Only support 3 skill slots for now
+            if (slotIndex >= 4) {
+                break; // Support up to 4 skill slots (Skill 4 unlocks at Level 20)
             }
             skillSlots.add(new SkillSlot(entry.getSkill(), entry.getUnlockLevel(), slotIndex));
             slotIndex++;
