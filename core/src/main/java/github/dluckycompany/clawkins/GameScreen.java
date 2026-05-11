@@ -1182,7 +1182,7 @@ public class GameScreen extends ScreenAdapter {
         boolean isBattleActive = battleService.hasBattleSession();
 
         if (!isBattleActive && teamViewerVisible && teamViewerScreen != null) {
-            renderDimmingOverlay();
+            renderPhysicalBlackout();
             renderUIWithViewport(inventoryStage, uiDelta);
         } else if (!isBattleActive && (sideMenuOverlay.isSettingsVisible() || sideMenuOverlay.isSidebarVisible())) {
             renderDimmingOverlay();
@@ -1246,6 +1246,16 @@ public class GameScreen extends ScreenAdapter {
         // End rendering
         shapeRenderer.end();
         Gdx.gl.glDisable(GL20.GL_BLEND);
+    }
+
+    /**
+     * Clears the entire physical framebuffer to black, including FitViewport letterbox bars.
+     * Use this before rendering full-screen UI overlays (team viewer, summary) so the map
+     * does not bleed through the sides on widescreen or non-16:9 displays.
+     */
+    private void renderPhysicalBlackout() {
+        Gdx.gl.glClearColor(0f, 0f, 0f, 1f);
+        Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
     }
 
     /**
