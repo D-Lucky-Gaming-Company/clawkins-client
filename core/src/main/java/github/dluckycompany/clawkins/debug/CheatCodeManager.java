@@ -268,32 +268,45 @@ public class CheatCodeManager {
             }
         });
         
-        // Items cheat - adds basic test items
+        // Items cheat - adds a sampler of items across all categories
         registerCheat("items", () -> {
             try {
-                int beforePotions = playerBattleState.getInventory().getQuantity(ItemFactory.BASIC_POTION);
-                int beforeElixirs = playerBattleState.getInventory().getQuantity(ItemFactory.FULL_HEAL);
-                int beforeAttackBoosts = playerBattleState.getInventory().getQuantity(ItemFactory.ATTACK_BOOST);
-                int beforeDefenseBoosts = playerBattleState.getInventory().getQuantity(ItemFactory.DEFENSE_BOOST);
-                
-                // Add some basic items using ItemFactory
+                // Potions — one of each tier
+                playerBattleState.getInventory().addItem(ItemFactory.DONUT, 3);
                 playerBattleState.getInventory().addItem(ItemFactory.BASIC_POTION, 5);
+                playerBattleState.getInventory().addItem(ItemFactory.PANCAKE_STACK, 3);
+                playerBattleState.getInventory().addItem(ItemFactory.SUPER_POTION, 3);
+                playerBattleState.getInventory().addItem(ItemFactory.MEGA_POTION, 2);
                 playerBattleState.getInventory().addItem(ItemFactory.FULL_HEAL, 2);
+                // Revives
+                playerBattleState.getInventory().addItem(ItemFactory.REVIVE, 3);
+                playerBattleState.getInventory().addItem(ItemFactory.SUPER_REVIVE, 2);
+                // Stat boosters — tier 1 per stat
                 playerBattleState.getInventory().addItem(ItemFactory.ATTACK_BOOST, 3);
                 playerBattleState.getInventory().addItem(ItemFactory.DEFENSE_BOOST, 3);
-                
-                int afterPotions = playerBattleState.getInventory().getQuantity(ItemFactory.BASIC_POTION);
-                int afterElixirs = playerBattleState.getInventory().getQuantity(ItemFactory.FULL_HEAL);
-                int afterAttackBoosts = playerBattleState.getInventory().getQuantity(ItemFactory.ATTACK_BOOST);
-                int afterDefenseBoosts = playerBattleState.getInventory().getQuantity(ItemFactory.DEFENSE_BOOST);
-                
-                Gdx.app.log("CheatCodeManager", String.format("Items cheat:\n  Potions: %d -> %d\n  Elixirs: %d -> %d\n  Attack Boosts: %d -> %d\n  Defense Boosts: %d -> %d",
-                    beforePotions, afterPotions, beforeElixirs, afterElixirs, beforeAttackBoosts, afterAttackBoosts, beforeDefenseBoosts, afterDefenseBoosts));
-                
-                return CheatResult.success("Added test items: 5x Potion, 2x Elixir, 3x Attack Boost, 3x Defense Boost");
+                playerBattleState.getInventory().addItem(ItemFactory.SPEED_BOOST, 3);
+
+                Gdx.app.log("CheatCodeManager", "Items cheat: added sampler of items");
+                return CheatResult.success("Added item sampler: potions, revives, and stat boosts!");
             } catch (Exception e) {
                 Gdx.app.error("CheatCodeManager", "Items cheat failed", e);
                 return CheatResult.failure("Failed to add items: " + e.getMessage());
+            }
+        });
+
+        // Allitems cheat - adds 2 of every item in the game
+        registerCheat("allitems", () -> {
+            try {
+                int count = 0;
+                for (github.dluckycompany.clawkins.item.Item item : ItemFactory.getAllItems()) {
+                    playerBattleState.getInventory().addItem(item, 2);
+                    count++;
+                }
+                Gdx.app.log("CheatCodeManager", "Allitems cheat: added 2x of " + count + " items");
+                return CheatResult.success("Added 2x of all " + count + " items!");
+            } catch (Exception e) {
+                Gdx.app.error("CheatCodeManager", "Allitems cheat failed", e);
+                return CheatResult.failure("Failed to add all items: " + e.getMessage());
             }
         });
         
@@ -337,7 +350,8 @@ public class CheatCodeManager {
             sb.append("rich - Add 10000 coins\n");
             sb.append("poor - Remove all money\n");
             sb.append("heal - Heal all party members\n");
-            sb.append("items - Add test items\n");
+            sb.append("items - Add a sampler of items\n");
+            sb.append("allitems - Add 2x of every item in the game\n");
             sb.append("maxlevel - Max out all Clawkin levels\n");
             sb.append("macaramboni - Add 5x Macaramboni (level boost items)\n");
             sb.append("whereami - Show current location\n");
