@@ -224,6 +224,11 @@ public class GameScreen extends ScreenAdapter {
     /** Matches {@code ObjectId} on cave_3.tmx Cerberus trigger. */
     private static final String TRIGGER_BOSS_2_ID = "trigger_boss_2";
     private static final String END_ROAD_OBJECT_ID = "end_road";
+    /** {@code cave_3.tmx} trippable that rolls credits after Cerberus (see {@link #cerberusPostVictoryEndingWalkActive}). */
+    private static final String END_TRIGGER_OBJECT_ID = "end_trigger";
+    private static final float CERBERUS_POST_VICTORY_WALK_SPEED_FACTOR = 0.5f;
+    /** Match {@link github.dluckycompany.clawkins.system.InteractionSystem} trippable overlap origin. */
+    private static final float PLAYER_TRIPPABLE_ORIGIN_Y_FACTOR = 0.22f;
     private static final String MANSION_PATH_BLOCK_OBJECT_ID = "mansion_path_block";
     private static final String BED_COTTAGE_OBJECT_ID = "bed_cottage";
     private static final String PROP_BERT_JR_OBJECT_ID = "bertjr_prop";
@@ -241,6 +246,9 @@ public class GameScreen extends ScreenAdapter {
     /** Camera follow easing vs default {@link CameraSystem} during Cerberus pre-dialogue (0.25 = quarter speed). */
     private static final float CERBERUS_BOSS_PREDIALOGUE_CAMERA_SMOOTH_MUL = 0.25f;
     private static final float CERBERUS_BOSS_PREDIALOGUE_CAMERA_FAIL_SAFE_SEC = 10f;
+    /** Negative shifts framing left while the camera follows the Cerberus prop. */
+    private static final float CERBERUS_BOSS_CAMERA_PROP_FRAMING_BIAS_X = -0.65f;
+    private static final float CERBERUS_BOSS_POST_DIALOGUE_CAMERA_FAIL_SAFE_SEC = 8f;
     private static final String DIALOGUE_SPARTACUS_AFTER_BOSS = "dialogue/spartacus_Afterboss.json";
     private static final float GARDEN_BOSS1_CUTSCENE_OFF_CAMERA_MARGIN = 0.85f;
     /** After a prop passes the off-screen edge, keep moving this long before removal. */
@@ -352,6 +360,13 @@ public class GameScreen extends ScreenAdapter {
     private boolean cerberusBridgeAtmos1Zoom;
     /** Bridge tension (slow walk + dia music) until Cerberus is defeated or map reloads. */
     private boolean cerberusBridgeConveyorUntilBossDefeated;
+    /** Set when Cerberus is beaten; consumed when the battle session fully ends. */
+    private boolean pendingCerberusPostVictoryEndingWalk;
+    /**
+     * Automated walk toward {@link #END_TRIGGER_OBJECT_ID} at {@link #CERBERUS_POST_VICTORY_WALK_SPEED_FACTOR}× speed;
+     * player input disabled, trippables still run.
+     */
+    private boolean cerberusPostVictoryEndingWalkActive;
     /**
      * Cerberus boss (Bert-Jr pattern): pre-dialogue eases camera onto the prop and returns {@code false} until
      * centered, then {@link InteractionSystem#triggerInteractionByObjectId} re-enters for map dialogue → post-dialogue
@@ -361,6 +376,10 @@ public class GameScreen extends ScreenAdapter {
     private float cerberusBossPredialogueFailSafeRemaining;
     /** When true, pre-dialogue allows the normal {@code DialogueDirectory} flow. Cleared when post-dialogue runs. */
     private boolean cerberusBossCameraLinedUpForDialogue;
+    /** After map dialogue: ease camera back to the player, then show the fight prompt (no snap). */
+    private boolean cerberusBossPostDialogueCameraReturnPending;
+    private float cerberusBossPostDialogueReturnFailSafeRemaining;
+    private boolean cerberusBossDeferredPromptDeclineIsFirst;
 
     private enum MansionGardenBoss1CutscenePhase {
         INACTIVE,
@@ -689,6 +708,26 @@ public class GameScreen extends ScreenAdapter {
         interactionSystem.registerSpecialInteraction(MANSION_PATH_BLOCK_OBJECT_ID, context -> {
             startMansionPathBlockForcedMove(context.playerEntity());
         });
+        interactionSystem.registerSkipDialogueForObjectId(END_TRIGGER_OBJECT_ID);
+        interactionSystem.registerSpecialInteraction(END_TRIGGER_OBJECT_ID, context -> {
+            if (!cerberusPostVictoryEndingWalkActive) {
+                return;
+            }
+            cerberusPostVictoryEndingWalkActive = false;
+            Entity playerEntity = context.playerEntity();
+            if (playerEntity != null) {
+                Move move = Move.MAPPER.get(playerEntity);
+                if (move != null) {
+                    move.getDirection().setZero();
+                    move.setMaxSpeed(move.getBaseSpeed());
+                }
+                PlayerAnimation anim = PlayerAnimation.MAPPER.get(playerEntity);
+                if (anim != null) {
+                    anim.setMoving(false);
+                }
+            }
+            triggerEndingCredits();
+        });
         registerSavePointInteractions();
         registerCheckpointInteractions();
         for (String nurseHealObjectId : NURSE_HEAL_OBJECT_IDS) {
@@ -778,32 +817,7 @@ public class GameScreen extends ScreenAdapter {
             if (battleService.hasBattleSession() || playerProgress.isEventAccomplished(EVENT_BOSS_2_DEFEATED)) {
                 return;
             }
-            restoreCerberusBossEncounterCameraToPlayer();
-            playerProgress.incrementAttempts(EVENT_BOSS_2);
-            promptBossFightChoice(
-                    "Cerberus",
-                    () -> {
-                        playerProgress.incrementAccepted(EVENT_BOSS_2);
-                        runBossPreBattleMusicHook(ENCOUNTER_CERBERUS_ID);
-                        encounterEventBus.publish(new EncounterEvent(
-                                EncounterEventType.START_ENCOUNTER,
-                                ENCOUNTER_CERBERUS_ID,
-                                ENCOUNTER_TABLE_CERBERUS_ID,
-                                CERBERUS_PLACEHOLDER_LEVEL,
-                                CERBERUS_PLACEHOLDER_HP,
-                                CERBERUS_PLACEHOLDER_ATTACK,
-                                CERBERUS_PLACEHOLDER_DEFENSE,
-                                CERBERUS_PLACEHOLDER_SPEED,
-                                createCerberusBossSkills(),
-                                "Cerberus",
-                                CERBERUS_PORTRAIT_PATH
-                        ));
-                    },
-                    () -> applyCerberusEncounterDeclineOutcome(
-                            context.playerEntity(),
-                            context.interactionCount() == 1
-                    )
-            );
+            beginCerberusBossPostDialogueSmoothCameraReturnForFightPrompt(context.interactionCount() == 1);
         });
 
         interactionSystem.registerPreDialogueCheck(CERBERUS_ATMOS0_OBJECT_ID, context -> {
@@ -1130,7 +1144,7 @@ public class GameScreen extends ScreenAdapter {
 
         // Handle side-menu and submenu navigation while in exploration.
         if (!battleService.hasBattleSession() && !interactionSystem.isDialogueVisible() && !merchantShopVisible
-                && !mapTransitionFade.isTransitioning() && !isSpecialMovementActive()
+                && !mapTransitionFade.isTransitioning() && !isSpecialMovementActive() && !cerberusPostVictoryEndingWalkActive
                 && !isBossFightPromptVisible() && !isSaveGamePromptVisible() && !isSaveActionPromptVisible()
                 && !isNurseStationPromptVisible()
                 && !isFallenPromptVisible()
@@ -1200,6 +1214,7 @@ public class GameScreen extends ScreenAdapter {
         
         syncAudioStates();
         syncSystemStates();
+        updateCerberusPostVictoryEndingWalk(delta);
         tryConsumePendingMansionGardenBoss1Cutscene();
         updateMansionGardenBoss1Cutscene(delta);
 
@@ -1214,6 +1229,7 @@ public class GameScreen extends ScreenAdapter {
         engine.update(worldDelta);
         updateCerberusBridgePresentationState(worldDelta);
         updateCerberusBossPredialogueCameraApproach(worldDelta);
+        updateCerberusBossPostDialogueCameraReturn(worldDelta);
         battleOverlay.render(batch, battleService);
         dialogueOverlay.render(batch, inventoryStage.getViewport(), interactionSystem);
         renderBossFightPrompt();
@@ -1446,7 +1462,39 @@ public class GameScreen extends ScreenAdapter {
             mapTransitionSystem.setProcessing(false);
             return;
         }
-        if (cerberusBossPredialogueCameraActive) {
+        if (cerberusPostVictoryEndingWalkActive) {
+            explorationSystemsEnabled = false;
+            engine.getSystem(PlayerInputSystem.class).setProcessing(false);
+            engine.getSystem(CerberusBridgeWalkSlowSystem.class).setProcessing(false);
+            boolean battleLocked = battleService.hasBattleSession();
+            boolean dialogueLocked = interactionSystem.isDialogueVisible();
+            boolean bossPromptLocked = isBossFightPromptVisible();
+            boolean savePromptLocked = isSaveGamePromptVisible();
+            boolean saveActionPromptLocked = isSaveActionPromptVisible();
+            boolean nursePromptLocked = isNurseStationPromptVisible();
+            boolean fallenPromptLocked = isFallenPromptVisible();
+            boolean interactionRetriggerLocked = interactionRetriggerBlockSeconds > 0f;
+            boolean merchantLocked = merchantShopVisible;
+            boolean menuLocked = sideMenuOverlay.isBlockingGameplay() || teamViewerVisible;
+            boolean cheatConsoleLocked = cheatConsoleOverlay.isVisible();
+            interactionSystem.setProcessing(!battleLocked
+                    && !dialogueLocked
+                    && !bossPromptLocked
+                    && !savePromptLocked
+                    && !saveActionPromptLocked
+                    && !nursePromptLocked
+                    && !fallenPromptLocked
+                    && !interactionRetriggerLocked
+                    && !merchantLocked
+                    && !menuLocked
+                    && !cheatConsoleLocked);
+            engine.getSystem(MoveSystem.class).setProcessing(true);
+            engine.getSystem(EncounterDetectionSystem.class).setProcessing(false);
+            engine.getSystem(RandomEncounterSystem.class).setProcessing(false);
+            mapTransitionSystem.setProcessing(false);
+            return;
+        }
+        if (cerberusBossPredialogueCameraActive || cerberusBossPostDialogueCameraReturnPending) {
             explorationSystemsEnabled = false;
             engine.getSystem(PlayerInputSystem.class).setProcessing(false);
             engine.getSystem(CerberusBridgeWalkSlowSystem.class).setProcessing(false);
@@ -1481,7 +1529,8 @@ public class GameScreen extends ScreenAdapter {
                 && !mapTransitionLocked
                 && !menuLocked
                 && !cheatConsoleLocked;
-        boolean randomEncountersEnabled = shouldEnableExploration && !isCerberusConveyorWalkActive();
+        boolean randomEncountersEnabled = shouldEnableExploration && !isCerberusConveyorWalkActive()
+                && !cerberusPostVictoryEndingWalkActive;
         if (shouldEnableExploration == explorationSystemsEnabled) {
             interactionSystem.setProcessing(!battleLocked
                     && !bossPromptLocked
@@ -1551,7 +1600,7 @@ public class GameScreen extends ScreenAdapter {
 
     private void startEndRoadForcedMove(Entity playerEntity) {
         if (playerEntity == null || isSpecialMovementActive() || isCerberusConveyorWalkActive()
-                || isMansionGardenBoss1CutsceneMovementLocked()) {
+                || cerberusPostVictoryEndingWalkActive || isMansionGardenBoss1CutsceneMovementLocked()) {
             return;
         }
         Move move = Move.MAPPER.get(playerEntity);
@@ -1564,7 +1613,7 @@ public class GameScreen extends ScreenAdapter {
 
     private void startMansionPathBlockForcedMove(Entity playerEntity) {
         if (playerEntity == null || isSpecialMovementActive() || isCerberusConveyorWalkActive()
-                || isMansionGardenBoss1CutsceneMovementLocked()) {
+                || cerberusPostVictoryEndingWalkActive || isMansionGardenBoss1CutsceneMovementLocked()) {
             return;
         }
         Move move = Move.MAPPER.get(playerEntity);
@@ -1588,7 +1637,7 @@ public class GameScreen extends ScreenAdapter {
             PlayerAnimation.Direction animationDirection,
             float durationSeconds) {
         if (playerEntity == null || isSpecialMovementActive() || isCerberusConveyorWalkActive()
-                || isMansionGardenBoss1CutsceneMovementLocked()) {
+                || cerberusPostVictoryEndingWalkActive || isMansionGardenBoss1CutsceneMovementLocked()) {
             return;
         }
         Move move = Move.MAPPER.get(playerEntity);
@@ -1987,6 +2036,7 @@ public class GameScreen extends ScreenAdapter {
                     playerProgress.markEventAccomplished(EVENT_BOSS_2_DEFEATED);
                     removeAllPropEntitiesByObjectId(PROP_CERBERUS_OBJECT_ID);
                     clearCerberusBridgePresentationAfterBossVictory();
+                    pendingCerberusPostVictoryEndingWalk = true;
                 }
             } else if (endPhase == BattlePhase.ESCAPE) {
                 applyEncounterEscapeOutcome(encounterId);
@@ -2006,6 +2056,7 @@ public class GameScreen extends ScreenAdapter {
                 playerProgress.incrementLosses(EVENT_BOSS_1);
             } else if (ENCOUNTER_CERBERUS_ID.equals(encounterId)) {
                 playerProgress.incrementLosses(EVENT_BOSS_2);
+                pendingCerberusPostVictoryEndingWalk = false;
             }
             queuedFallenScreenAfterBattle = true;
         }
@@ -2030,6 +2081,11 @@ public class GameScreen extends ScreenAdapter {
 
             refreshMansionGardenBossPropsState(true);
             refreshCerberusPropForCurrentMap();
+
+            if (pendingCerberusPostVictoryEndingWalk) {
+                pendingCerberusPostVictoryEndingWalk = false;
+                tryBeginCerberusPostVictoryEndingWalk();
+            }
         }
 
         wasBattleSessionPresent = hasSession;
@@ -3662,6 +3718,8 @@ public class GameScreen extends ScreenAdapter {
         cerberusBridgeAtmos1Zoom = false;
         cerberusBridgeConveyorUntilBossDefeated = false;
         cerberusBossCameraLinedUpForDialogue = false;
+        cerberusBossPostDialogueCameraReturnPending = false;
+        cerberusBossPostDialogueReturnFailSafeRemaining = 0f;
         snapWorldCameraZoom(1f);
         audioService.clearMapMusicOverride();
     }
@@ -3698,6 +3756,7 @@ public class GameScreen extends ScreenAdapter {
         cerberusBridgePresentationActive = false;
         cerberusBridgeAtmos1Zoom = false;
         cerberusBridgeConveyorUntilBossDefeated = false;
+        cancelCerberusBossEncounterCameraIfActive();
         snapWorldCameraZoom(1f);
         audioService.clearMapMusicOverride();
         audioService.playCurrentMapMusic();
@@ -3707,6 +3766,109 @@ public class GameScreen extends ScreenAdapter {
         return cerberusBridgeConveyorUntilBossDefeated
                 && MapAsset.CAVE_3.name().equals(resolveCurrentMapKey())
                 && !playerProgress.isEventAccomplished(EVENT_BOSS_2_DEFEATED);
+    }
+
+    private void tryBeginCerberusPostVictoryEndingWalk() {
+        if (!playerProgress.isEventAccomplished(EVENT_BOSS_2_DEFEATED)) {
+            return;
+        }
+        if (!MapAsset.CAVE_3.name().equals(resolveCurrentMapKey())) {
+            return;
+        }
+        if (findPlayerEntity() == null) {
+            return;
+        }
+        if (findInteractibleEntityByObjectId(END_TRIGGER_OBJECT_ID) == null) {
+            Gdx.app.error("GameScreen", "end_trigger interactible missing; skipping post-Cerberus ending walk.");
+            return;
+        }
+        cerberusPostVictoryEndingWalkActive = true;
+        interactionSystem.rearmTrippableByObjectId(END_TRIGGER_OBJECT_ID);
+    }
+
+    private void stopCerberusPostVictoryEndingWalk() {
+        cerberusPostVictoryEndingWalkActive = false;
+        Entity player = findPlayerEntity();
+        if (player == null) {
+            return;
+        }
+        Move move = Move.MAPPER.get(player);
+        if (move != null) {
+            move.getDirection().setZero();
+            move.setMaxSpeed(move.getBaseSpeed());
+        }
+        PlayerAnimation anim = PlayerAnimation.MAPPER.get(player);
+        if (anim != null) {
+            anim.setMoving(false);
+        }
+    }
+
+    private void updateCerberusPostVictoryEndingWalk(float delta) {
+        if (!cerberusPostVictoryEndingWalkActive) {
+            return;
+        }
+        if (!MapAsset.CAVE_3.name().equals(resolveCurrentMapKey())
+                || !playerProgress.isEventAccomplished(EVENT_BOSS_2_DEFEATED)) {
+            stopCerberusPostVictoryEndingWalk();
+            return;
+        }
+        Entity player = findPlayerEntity();
+        Entity trigger = findInteractibleEntityByObjectId(END_TRIGGER_OBJECT_ID);
+        if (player == null || trigger == null) {
+            stopCerberusPostVictoryEndingWalk();
+            return;
+        }
+        Move move = Move.MAPPER.get(player);
+        Transform playerTr = Transform.MAPPER.get(player);
+        Transform triggerTr = Transform.MAPPER.get(trigger);
+        if (move == null || playerTr == null || triggerTr == null) {
+            stopCerberusPostVictoryEndingWalk();
+            return;
+        }
+        float px = playerTr.getPosition().x + playerTr.getSize().x * 0.5f;
+        float py = playerTr.getPosition().y + playerTr.getSize().y * PLAYER_TRIPPABLE_ORIGIN_Y_FACTOR;
+        float cx = triggerTr.getPosition().x + triggerTr.getSize().x * 0.5f;
+        float cy = triggerTr.getPosition().y + triggerTr.getSize().y * 0.5f;
+        float dx = cx - px;
+        float dy = cy - py;
+        float len2 = dx * dx + dy * dy;
+        if (len2 < 1e-8f) {
+            dx = 0f;
+            dy = 1f;
+        }
+        move.getDirection().set(dx, dy).nor();
+        move.setMaxSpeed(move.getBaseSpeed() * CERBERUS_POST_VICTORY_WALK_SPEED_FACTOR);
+        PlayerAnimation anim = PlayerAnimation.MAPPER.get(player);
+        if (anim != null) {
+            anim.setMoving(true);
+            if (dy < 0f) {
+                anim.setDirection(PlayerAnimation.Direction.SOUTH);
+            } else if (dy > 0f) {
+                anim.setDirection(PlayerAnimation.Direction.NORTH);
+            } else if (dx < 0f) {
+                anim.setDirection(PlayerAnimation.Direction.WEST);
+            } else {
+                anim.setDirection(PlayerAnimation.Direction.EAST);
+            }
+        }
+    }
+
+    private Entity findInteractibleEntityByObjectId(String objectId) {
+        if (objectId == null || objectId.isBlank()) {
+            return null;
+        }
+        String normalizedTarget = objectId.trim().toLowerCase(Locale.ROOT);
+        ImmutableArray<Entity> list = engine.getEntitiesFor(Family.all(Interactible.class, Transform.class).get());
+        for (Entity entity : list) {
+            Interactible inter = Interactible.MAPPER.get(entity);
+            if (inter == null || inter.getObjectId() == null) {
+                continue;
+            }
+            if (normalizedTarget.equals(inter.getObjectId().trim().toLowerCase(Locale.ROOT))) {
+                return entity;
+            }
+        }
+        return null;
     }
 
     private void updateCerberusBridgePresentationState(float delta) {
@@ -3775,6 +3937,7 @@ public class GameScreen extends ScreenAdapter {
         CameraSystem cam = engine.getSystem(CameraSystem.class);
         if (cam != null) {
             cam.setSmoothingSpeedMultiplier(CERBERUS_BOSS_PREDIALOGUE_CAMERA_SMOOTH_MUL);
+            cam.setFollowTargetBiasWorldX(CERBERUS_BOSS_CAMERA_PROP_FRAMING_BIAS_X);
         }
         cerberusBossPredialogueFailSafeRemaining = CERBERUS_BOSS_PREDIALOGUE_CAMERA_FAIL_SAFE_SEC;
         cerberusBossPredialogueCameraActive = true;
@@ -3813,7 +3976,63 @@ public class GameScreen extends ScreenAdapter {
         }
     }
 
-    private void restoreCerberusBossEncounterCameraToPlayer() {
+    private void beginCerberusBossPostDialogueSmoothCameraReturnForFightPrompt(boolean declineIsFirstApproach) {
+        cerberusBossPostDialogueCameraReturnPending = true;
+        cerberusBossPostDialogueReturnFailSafeRemaining = CERBERUS_BOSS_POST_DIALOGUE_CAMERA_FAIL_SAFE_SEC;
+        cerberusBossDeferredPromptDeclineIsFirst = declineIsFirstApproach;
+        restoreCerberusBossEncounterCameraToPlayer(false);
+    }
+
+    private void updateCerberusBossPostDialogueCameraReturn(float delta) {
+        if (!cerberusBossPostDialogueCameraReturnPending) {
+            return;
+        }
+        float dt = Math.max(0f, delta);
+        cerberusBossPostDialogueReturnFailSafeRemaining -= dt;
+        CameraSystem cam = engine.getSystem(CameraSystem.class);
+        boolean arrived = cam != null && cam.isCameraNearFollowTarget(0.08f);
+        if (arrived || cerberusBossPostDialogueReturnFailSafeRemaining <= 0f) {
+            if (!arrived && cam != null) {
+                Entity player = findPlayerEntity();
+                Transform tr = player == null ? null : Transform.MAPPER.get(player);
+                if (tr != null) {
+                    cam.snapTo(tr);
+                }
+            }
+            cerberusBossPostDialogueCameraReturnPending = false;
+            cerberusBossPostDialogueReturnFailSafeRemaining = 0f;
+            playerProgress.incrementAttempts(EVENT_BOSS_2);
+            promptBossFightChoice(
+                    "Cerberus",
+                    () -> {
+                        playerProgress.incrementAccepted(EVENT_BOSS_2);
+                        runBossPreBattleMusicHook(ENCOUNTER_CERBERUS_ID);
+                        encounterEventBus.publish(new EncounterEvent(
+                                EncounterEventType.START_ENCOUNTER,
+                                ENCOUNTER_CERBERUS_ID,
+                                ENCOUNTER_TABLE_CERBERUS_ID,
+                                CERBERUS_PLACEHOLDER_LEVEL,
+                                CERBERUS_PLACEHOLDER_HP,
+                                CERBERUS_PLACEHOLDER_ATTACK,
+                                CERBERUS_PLACEHOLDER_DEFENSE,
+                                CERBERUS_PLACEHOLDER_SPEED,
+                                createCerberusBossSkills(),
+                                "Cerberus",
+                                CERBERUS_PORTRAIT_PATH
+                        ));
+                    },
+                    () -> applyCerberusEncounterDeclineOutcome(
+                            findPlayerEntity(),
+                            cerberusBossDeferredPromptDeclineIsFirst
+                    )
+            );
+        }
+    }
+
+    /**
+     * @param snapToPlayer if true, camera jumps to the player (cancel / map transition); if false, follow eases back.
+     */
+    private void restoreCerberusBossEncounterCameraToPlayer(boolean snapToPlayer) {
         Entity player = findPlayerEntity();
         Entity prop = findPropEntityByObjectId(PROP_CERBERUS_OBJECT_ID);
         if (prop != null && prop.getComponent(CameraFollow.class) != null) {
@@ -3824,8 +4043,9 @@ public class GameScreen extends ScreenAdapter {
         }
         CameraSystem cam = engine.getSystem(CameraSystem.class);
         if (cam != null) {
+            cam.setFollowTargetBiasWorldX(0f);
             cam.setSmoothingSpeedMultiplier(1f);
-            if (player != null) {
+            if (snapToPlayer && player != null) {
                 Transform tr = Transform.MAPPER.get(player);
                 if (tr != null) {
                     cam.snapTo(tr);
@@ -3838,7 +4058,9 @@ public class GameScreen extends ScreenAdapter {
         cerberusBossPredialogueCameraActive = false;
         cerberusBossPredialogueFailSafeRemaining = 0f;
         cerberusBossCameraLinedUpForDialogue = false;
-        restoreCerberusBossEncounterCameraToPlayer();
+        cerberusBossPostDialogueCameraReturnPending = false;
+        cerberusBossPostDialogueReturnFailSafeRemaining = 0f;
+        restoreCerberusBossEncounterCameraToPlayer(true);
     }
 
     private void refreshCerberusPropForCurrentMap() {
