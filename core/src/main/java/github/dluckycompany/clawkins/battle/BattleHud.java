@@ -302,6 +302,9 @@ public class BattleHud implements Disposable {
     /** Currently selected skill button (0=Attack, 1=Defend, 2=Special, 3=Item). */
     private int selectedSkillIndex = 0;
 
+    /** True once updateSkillLabels(SkillManager, ...) has been called; disables legacy availability override. */
+    private boolean skillManagerActive = false;
+
     private static final float SELECTED_SKILL_SCALE = 1.08f;
 
     // -----------------------------------------------------------------------
@@ -343,6 +346,7 @@ public class BattleHud implements Disposable {
         lastDisplayedClawkinKey = null;
         lastEnemyPortraitKey = null;
         lastPartyVisualKey = "";
+        skillManagerActive = false;
         Gdx.input.setInputProcessor(null);
     }
 
@@ -906,6 +910,7 @@ public class BattleHud implements Disposable {
         if (skillManager == null) {
             return;
         }
+        skillManagerActive = true;
         
         // Update slot 1 (Attack button)
         updateSkillButton(
@@ -1651,6 +1656,11 @@ public class BattleHud implements Disposable {
     }
 
     private void updateSkillButtonAvailability() {
+        // When SkillManager-based updateSkillLabels has been called, it is the authoritative
+        // source for button enabled/disabled state. Skip the legacy skill-count-based override.
+        if (skillManagerActive) {
+            return;
+        }
         int skillCount = getActiveSkillCount();
         updateSkillButtonAvailability(attackBtn, 0, skillCount);
         updateSkillButtonAvailability(defendBtn, 1, skillCount);
