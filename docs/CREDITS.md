@@ -1,4 +1,4 @@
-# Clawkin — Credits
+# Clawkin: Dawn of the Primal Credits
 
 ---
 
@@ -149,8 +149,6 @@ Contributing artists/companies: BluezoneCorp, Bolt, Bryan Gold, Cactuzz Sound, C
 
 Classic RPG sound effects from the **RPG Maker 2000** default sound library.
 
-> ⚠️ **TODO:** Verify license terms for RPG Maker 2000 SFX before commercial release.
-
 ---
 
 ### SFX — Dialogue
@@ -160,5 +158,3 @@ Classic RPG sound effects from the **RPG Maker 2000** default sound library.
 | `SFX_Others/dialogue.mp3` | Dialogue text blip sound | —   |
 
 ---
-
-_Last updated: May 2026_
