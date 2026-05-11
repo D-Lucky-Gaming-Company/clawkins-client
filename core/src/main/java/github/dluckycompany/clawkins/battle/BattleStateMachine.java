@@ -243,7 +243,7 @@ public class BattleStateMachine {
             setLastLog(lb.text(), lb.spans());
             Gdx.app.log(TAG, "Player parry stance applied -> turns=" + turns + ", skill=" + skillName);
         } else {
-            // Heavy Paw: flat 15 damage
+            // DAMAGE skills: apply base damage
             int damage = skill != null ? skill.getEffectBaseStat() : 10;
             enemy.setHp(Math.max(0, enemy.getHp() - damage));
             LogBuilder lb = new LogBuilder()
@@ -257,6 +257,11 @@ public class BattleStateMachine {
                     .appendPlain(".");
             setLastLog(lb.text(), lb.spans());
             Gdx.app.log(TAG, "Player damage applied -> damage=" + damage);
+
+            // Set cooldown for DAMAGE skills
+            if (skill != null && skill.getTurnCooldown() > 0) {
+                player.setSkillCooldown(skillName, skill.getTurnCooldown());
+            }
         }
 
         if (skill != null && skill.getTurnCooldown() > 0) {
