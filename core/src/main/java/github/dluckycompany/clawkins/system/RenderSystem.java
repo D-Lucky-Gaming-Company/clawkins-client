@@ -33,6 +33,7 @@ import com.badlogic.gdx.utils.Disposable;
 import com.badlogic.gdx.utils.viewport.Viewport;
 import github.dluckycompany.clawkins.Main;
 import github.dluckycompany.clawkins.component.Enemy;
+import github.dluckycompany.clawkins.component.FieldTrainerWalkSprite;
 import github.dluckycompany.clawkins.component.Graphic;
 import github.dluckycompany.clawkins.component.Interactible;
 import github.dluckycompany.clawkins.component.MapTransitionZone;
@@ -79,6 +80,8 @@ public class RenderSystem extends SortedIteratingSystem implements Disposable {
     private static final float ALERT_ICON_OFFSET_Y = 2f * Main.UNIT_SCALE;
     /** Player alert sits lower (toward the head) than enemy alerts; one frame in world units. */
     private static final float PLAYER_ALERT_ICON_EXTRA_Y = -16f * Main.UNIT_SCALE;
+    /** Trainer-tall sprites: nudge alert icon down by one 16px frame in world units. */
+    private static final float TRAINER_ENEMY_ALERT_ICON_EXTRA_Y = -16f * Main.UNIT_SCALE;
     private static final float RANDOM_ENCOUNTER_PLAYER_ALERT_DURATION = 0.45f;
 
     private final Batch batch;
@@ -725,7 +728,10 @@ public class RenderSystem extends SortedIteratingSystem implements Disposable {
             if (enemy == null || transform == null || enemy.getState() != Enemy.State.ALERTED) {
                 continue;
             }
-            drawAlertIconAbove(transform, 0f);
+            float extraY = FieldTrainerWalkSprite.MAPPER.get(enemyEntity) != null
+                    ? TRAINER_ENEMY_ALERT_ICON_EXTRA_Y
+                    : 0f;
+            drawAlertIconAbove(transform, extraY);
         }
 
         if (playerAlertTimer > 0f) {
