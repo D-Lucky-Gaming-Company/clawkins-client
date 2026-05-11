@@ -122,6 +122,8 @@ public class BattleOverlay implements Disposable {
     private int pendingVictoryCoinReward = 0;
     private boolean pendingVictoryMilestone = false;
     private String pendingVictoryMilestoneText = "";
+    private int pendingVictoryMilestoneThreshold = -1;
+    private boolean pendingVictoryMilestoneGainedSkill = false;
     /** Prevents double-applying {@link GameScreen#DEFAULT_BATTLE_XP_REWARD} if victory dialogue is reopened. */
     private boolean victoryXpGrantedThisSession = false;
     private static final int[] LEVEL_MILESTONE_THRESHOLDS = {10, 15, 20};
@@ -818,6 +820,8 @@ public class BattleOverlay implements Disposable {
         pendingVictoryCoinReward = 0;
         pendingVictoryMilestone = false;
         pendingVictoryMilestoneText = "";
+        pendingVictoryMilestoneThreshold = -1;
+        pendingVictoryMilestoneGainedSkill = false;
         victoryXpGrantedThisSession = false;
     }
 
@@ -847,10 +851,15 @@ public class BattleOverlay implements Disposable {
         int milestoneThreshold = highestCrossedLevelMilestoneThreshold(beforeLevel, afterLevel);
         boolean gainedSkill = partyGainedSkillsFromLevelUps(beforeLevel, afterLevel);
         pendingVictoryMilestone = milestoneThreshold >= 0 || gainedSkill;
-        pendingVictoryMilestoneText =
-                pendingVictoryMilestone
-                        ? buildVictoryMilestoneDialogueText(milestoneThreshold, gainedSkill)
-                        : "";
+        if (pendingVictoryMilestone) {
+            pendingVictoryMilestoneThreshold = milestoneThreshold;
+            pendingVictoryMilestoneGainedSkill = gainedSkill;
+            pendingVictoryMilestoneText = buildVictoryMilestoneDialogueText(milestoneThreshold, gainedSkill);
+        } else {
+            pendingVictoryMilestoneThreshold = -1;
+            pendingVictoryMilestoneGainedSkill = false;
+            pendingVictoryMilestoneText = "";
+        }
         int enemyLevel = LevelSystem.MIN_LEVEL;
         if (context != null) {
             enemyLevel = context.getEnemyLevel();
@@ -958,10 +967,20 @@ public class BattleOverlay implements Disposable {
         if (!pendingVictoryMilestone || pendingVictoryMilestoneText == null || pendingVictoryMilestoneText.isEmpty()) {
             return false;
         }
-        openDialogue(null, pendingVictoryMilestoneText, List.of(), DialogueFlowPhase.VICTORY_MILESTONE);
+        String text = pendingVictoryMilestoneText;
+        int threshold = pendingVictoryMilestoneThreshold;
+        boolean gainedSkill = pendingVictoryMilestoneGainedSkill;
+        openDialogue(
+                null,
+                text,
+                buildVictoryMilestoneDialogueSpans(text, threshold, gainedSkill),
+                DialogueFlowPhase.VICTORY_MILESTONE
+        );
         playMilestoneSound();
         pendingVictoryMilestone = false;
         pendingVictoryMilestoneText = "";
+        pendingVictoryMilestoneThreshold = -1;
+        pendingVictoryMilestoneGainedSkill = false;
         return true;
     }
 
@@ -1017,6 +1036,39 @@ public class BattleOverlay implements Disposable {
             return "Milestone!\nYou learned a new skill!";
         }
         return "";
+    }
+
+    private List<BattleTextSpan> buildVictoryMilestoneDialogueSpans(
+            String text, int milestoneThreshold, boolean gainedSkill
+    ) {
+        if (text == null || text.isEmpty()) {
+            return List.of();
+        }
+
+        ArrayList<BattleTextSpan> spans = new ArrayList<>();
+
+        int headlineStart = text.indexOf("Milestone!");
+        if (headlineStart >= 0) {
+            spans.add(new BattleTextSpan(headlineStart, headlineStart + "Milestone!".length(), BattleTextRole.MILESTONE));
+        }
+
+        if (milestoneThreshold >= 0) {
+            String targetToken = "Level " + milestoneThreshold;
+            int targetStart = text.lastIndexOf(targetToken);
+            if (targetStart >= 0) {
+                spans.add(new BattleTextSpan(targetStart, targetStart + targetToken.length(), BattleTextRole.NAME));
+            }
+        }
+
+        if (gainedSkill) {
+            String skillPhrase = "new skill";
+            int skillStart = text.indexOf(skillPhrase);
+            if (skillStart >= 0) {
+                spans.add(new BattleTextSpan(skillStart, skillStart + skillPhrase.length(), BattleTextRole.NAME));
+            }
+        }
+
+        return List.copyOf(spans);
     }
     
     /**
