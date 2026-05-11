@@ -182,6 +182,9 @@ public class BattleHud implements Disposable {
     private final Texture battleBg;
     private final BitmapFont font;
 
+    /** Encounter-specific background texture loaded dynamically; disposed by this class. */
+    private Texture encounterBgTex;
+
     // Owned placeholder textures and actors (dispose in dispose())
     private Texture playerPlaceholderTex;
     private Texture bossPlaceholderTex;
@@ -337,6 +340,54 @@ public class BattleHud implements Disposable {
         lastEnemyPortraitKey = null;
         lastPartyVisualKey = "";
         Gdx.input.setInputProcessor(null);
+    }
+
+    /**
+     * Swaps the battle background to the given asset path.
+     * If the path is null, blank, or the file doesn't exist, restores the default background.
+     *
+     * @param backgroundPath internal asset path to the background PNG
+     */
+    public void setBattleBackground(String backgroundPath) {
+        Texture newTex = null;
+        if (backgroundPath != null && !backgroundPath.isBlank()) {
+            if (Gdx.files.internal(backgroundPath).exists()) {
+                newTex = new Texture(Gdx.files.internal(backgroundPath));
+            } else {
+                Gdx.app.error("BattleHud", "Battle background not found: " + backgroundPath);
+            }
+        }
+
+        // Dispose previous encounter-specific texture if any
+        if (encounterBgTex != null) {
+            encounterBgTex.dispose();
+            encounterBgTex = null;
+        }
+
+        if (newTex != null) {
+            encounterBgTex = newTex;
+            if (bg != null) {
+                bg.setDrawable(new TextureRegionDrawable(new TextureRegion(encounterBgTex)));
+            }
+        } else {
+            // Restore default
+            if (bg != null) {
+                bg.setDrawable(new TextureRegionDrawable(new TextureRegion(battleBg)));
+            }
+        }
+    }
+
+    /**
+     * Resets the battle background to the default asset.
+     */
+    public void resetBattleBackground() {
+        if (encounterBgTex != null) {
+            encounterBgTex.dispose();
+            encounterBgTex = null;
+        }
+        if (bg != null) {
+            bg.setDrawable(new TextureRegionDrawable(new TextureRegion(battleBg)));
+        }
     }
 
     /** Returns true when the HUD is currently active. */
@@ -1116,6 +1167,7 @@ public class BattleHud implements Disposable {
         if (fleeButtonTex != null) fleeButtonTex.dispose();
         if (activeClawkinTex != null) activeClawkinTex.dispose();
         if (activeEnemyTex != null) activeEnemyTex.dispose();
+        if (encounterBgTex != null) encounterBgTex.dispose();
         // battleBg is owned by AssetService â€” do NOT dispose it here
     }
 
