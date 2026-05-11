@@ -3043,9 +3043,21 @@ public class GameScreen extends ScreenAdapter {
         merchantShopVisible = true;
         if (merchantShopUI != null) {
             inventoryStage.clear();
-            merchantShopUI.buildLayout();  // Build the UI layout like InventoryUI
+            merchantShopUI.buildLayout();
             // Set input processor for consistent coordinate unprojection with virtual viewport
             Gdx.input.setInputProcessor(inventoryStage);
+
+            // Wire keyboard navigation to the merchant shop UI
+            inventoryStage.addListener(new com.badlogic.gdx.scenes.scene2d.InputListener() {
+                @Override
+                public boolean keyDown(com.badlogic.gdx.scenes.scene2d.InputEvent event, int keycode) {
+                    if (merchantShopUI != null) {
+                        return merchantShopUI.handleNavigationKey(keycode);
+                    }
+                    return false;
+                }
+            });
+            inventoryStage.setKeyboardFocus(null); // ensure stage receives key events
         }
     }
 

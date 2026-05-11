@@ -669,8 +669,24 @@ public class MerchantShopUI {
     }
 
     /**
-     * Handle keyboard navigation in the inventory list.
-     * Supports both WASD and arrow keys.
+     * Switch to BUY or SELL tab programmatically (used by keyboard navigation).
+     */
+    private void switchToTab(ShopMode mode) {
+        if (currentMode == mode) return;
+        currentMode = mode;
+        if (audioService != null) {
+            audioService.playSound(SoundEffect.UI_SELECT);
+        }
+        updateTabHighlights();
+        populateItemList();
+    }
+
+    /**
+     * Handle keyboard navigation in the merchant shop.
+     * Q/E  → switch BUY/SELL tab
+     * UP/DOWN arrows → navigate item list
+     * Enter/Z → confirm selection
+     * X/Escape → back
      */
     public boolean handleNavigationKey(int keycode) {
         if (activePartyDialog != null) {
@@ -690,52 +706,43 @@ public class MerchantShopUI {
         }
 
         switch (keycode) {
-            case Input.Keys.W, Input.Keys.UP -> {
+            // ── Tab switching ──────────────────────────────────────────────
+            case Input.Keys.Q -> {
+                switchToTab(ShopMode.BUY);
+                return true;
+            }
+            case Input.Keys.E -> {
+                switchToTab(ShopMode.SELL);
+                return true;
+            }
+
+            // ── List navigation ────────────────────────────────────────────
+            case Input.Keys.UP -> {
                 if (actionMode) {
-                    actionIndex = 0;
+                    actionMode = false;
                     updateActionButtonHighlight();
                 } else {
                     navigateSelection(-1);
                 }
                 return true;
             }
-            case Input.Keys.S, Input.Keys.DOWN -> {
+            case Input.Keys.DOWN -> {
                 if (actionMode) {
-                    actionIndex = 1;
-                    updateActionButtonHighlight();
+                    // already in action mode, nothing to cycle — just stay
                 } else {
                     navigateSelection(1);
                 }
                 return true;
             }
-            case Input.Keys.A, Input.Keys.LEFT -> {
-                if (actionMode) {
-                    actionIndex = 0;
-                    updateActionButtonHighlight();
-                } else {
-                    navigateSelection(-1);
-                }
-                return true;
-            }
-            case Input.Keys.D, Input.Keys.RIGHT -> {
-                if (actionMode) {
-                    actionIndex = 1;
-                    updateActionButtonHighlight();
-                } else {
-                    navigateSelection(1);
-                }
-                return true;
-            }
-            case Input.Keys.ENTER, Input.Keys.NUMPAD_ENTER, Input.Keys.Z, Input.Keys.SPACE, Input.Keys.BUTTON_A -> {
-                // Enter should mirror click flow: select item, then choose USE/DROP, then confirm.
+
+            // ── Confirm ────────────────────────────────────────────────────
+            case Input.Keys.ENTER, Input.Keys.NUMPAD_ENTER, Input.Keys.Z, Input.Keys.BUTTON_A -> {
                 if (navigableItems.isEmpty()) {
                     return true;
                 }
-
                 if (selectedIndex < 0 || selectedIndex >= navigableItems.size()) {
                     selectedIndex = 0;
                 }
-
                 if (!actionMode) {
                     selectItem(navigableItems.get(selectedIndex), navigableRows.get(selectedIndex));
                     actionMode = true;
@@ -743,18 +750,21 @@ public class MerchantShopUI {
                     updateActionButtonHighlight();
                     return true;
                 }
-
-                if (actionIndex == 0) {
+                // In action mode: confirm the buy/sell
+                if (currentMode == ShopMode.BUY) {
                     triggerBuyAction();
                 } else {
                     triggerSellAction();
                 }
                 return true;
             }
+
+            // ── Back / cancel ──────────────────────────────────────────────
             case Input.Keys.X, Input.Keys.ESCAPE, Input.Keys.BACKSPACE, Input.Keys.BUTTON_B -> {
                 handleCancelInput();
                 return true;
             }
+
             default -> {
                 return false;
             }
@@ -810,7 +820,7 @@ public class MerchantShopUI {
             new Label.LabelStyle(font, TEXT_PRIMARY));
         selectPrompt.setFontScale(1.4f);
         selectPrompt.setWrap(true);
-        Label selectHint = new Label("Use W/S or Arrow Keys. Press Z/Enter to choose, X to back.",
+        Label selectHint = new Label("Q/E: switch tab  |  Arrows: navigate  |  Z/Enter: select  |  X/Esc: back",
             new Label.LabelStyle(font, TEXT_MUTED));
         selectHint.setFontScale(0.95f);
         selectHint.setWrap(true);
@@ -1142,41 +1152,21 @@ public class MerchantShopUI {
     }
     
     private void showSimpleDialog(String title, String message) {
-        Dialog dialog = new Dialog(title, skin);
-        dialog.text(message);
-        dialog.button("OK", true);
-        dialog.show(stage);
-        activeModalDialog = dialog;
+        // Clear any active quantity dialog first to prevent double-modal stacking
+        activeBuyDialog = null;
+        activeDropDialog = null;
+        showUsePermissionDialog(title, message, null);
     }
-    
+
     /**
-     * Show a success dialog with proper padding and layout
-     * Fixes cramped popup issue with proper spacing
+     * Show a success/result dialog using the consistent styled modal.
+     * Clears any active quantity dialogs first to prevent stacking.
      */
     private void showSuccessDialog(String title, String message) {
-        Dialog dialog = new Dialog(title, skin) {
-            @Override
-            protected void result(Object object) {
-                // Dialog closes automatically
-            }
-        };
-        
-        // CRITICAL: Proper padding and spacing for readable layout
-        dialog.getContentTable().pad(30);  // 30px padding around content
-        dialog.getButtonTable().pad(20);   // 20px padding around buttons
-        dialog.getButtonTable().padTop(15); // Extra space above buttons
-        
-        // Add message with proper wrapping and centering
-        Label messageLabel = new Label(message, skin);
-        messageLabel.setWrap(true);
-        messageLabel.setAlignment(Align.center);
-        dialog.getContentTable().add(messageLabel).width(300).center().space(10);
-        
-        // Add OK button with proper styling
-        dialog.button("OK", true);
-        
-        dialog.show(stage);
-        activeModalDialog = dialog;
+        // Clear any active quantity dialog first to prevent double-modal stacking
+        activeBuyDialog = null;
+        activeDropDialog = null;
+        showUsePermissionDialog(title, message, null);
     }
     
     /**
@@ -1317,25 +1307,7 @@ public class MerchantShopUI {
     }
 
     private void showDropResultDialog(String message) {
-        Dialog dialog = new Dialog("Drop Confirmed", skin) {
-            @Override
-            protected void result(Object object) {
-                activeModalDialog = null;
-                activeModalOnClose = null;
-            }
-        };
-        dialog.setModal(true);
-        dialog.setMovable(false);
-
-        Label body = new Label(message, new Label.LabelStyle(font, TEXT_PRIMARY));
-        body.setWrap(true);
-        body.setFontScale(1.1f);
-
-        dialog.getContentTable().add(body).width(430f).pad(16f);
-        dialog.button("OK");
-        activeModalDialog = dialog;
-        activeModalOnClose = null;
-        dialog.show(stage);
+        showUsePermissionDialog("Drop Confirmed", message, null);
     }
 
     private void closeActiveModalDialog() {
