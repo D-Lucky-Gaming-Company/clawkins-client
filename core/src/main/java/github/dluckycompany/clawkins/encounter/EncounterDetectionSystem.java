@@ -6,6 +6,7 @@ import com.badlogic.ashley.core.EntitySystem;
 import com.badlogic.ashley.core.Family;
 import com.badlogic.ashley.utils.ImmutableArray;
 import com.badlogic.gdx.math.Rectangle;
+import github.dluckycompany.clawkins.component.FieldTrainerWalkSprite;
 import github.dluckycompany.clawkins.component.Player;
 import github.dluckycompany.clawkins.component.Transform;
 
@@ -51,7 +52,7 @@ public class EncounterDetectionSystem extends EntitySystem {
         Entity currentOverlap = null;
         for (Entity triggerEntity : triggers) {
             Transform triggerTransform = Transform.MAPPER.get(triggerEntity);
-            Rectangle tRect = toRect(triggerTransform, triggerRect);
+            Rectangle tRect = triggerOverlapRect(triggerEntity, triggerTransform, triggerRect);
             boolean feetInside = tRect.contains(probeX, probeY);
             boolean bodyOverlap = tRect.overlaps(playerHitbox);
             if (!feetInside && !bodyOverlap) {
@@ -98,6 +99,17 @@ public class EncounterDetectionSystem extends EntitySystem {
                 transform.getSize().x,
                 transform.getSize().y
         );
+    }
+
+    /**
+     * Trainer field enemies use a tall sprite rect; overlap uses the same compact bottom-centered
+     * hitbox proportions as the player so encounters do not fire from the sprite's empty margins.
+     */
+    private static Rectangle triggerOverlapRect(Entity triggerEntity, Transform transform, Rectangle out) {
+        if (FieldTrainerWalkSprite.MAPPER.get(triggerEntity) != null) {
+            return toPlayerHitbox(transform, out);
+        }
+        return toRect(transform, out);
     }
 
     private static Rectangle toPlayerHitbox(Transform transform, Rectangle out) {

@@ -15,6 +15,8 @@ public enum MusicTrack {
     BACKALLEY_SHOP,
     TAMERGROUNDS,
     BOSS_CERBERUS,
+    /** Cerberus bridge / atmosphere dialogue bed (cave_3 {@code cerberus_enc_atmos0}). */
+    BOSS_CERBERUS_DIA,
     BOSS_SPARTACUS,
     BOSS_SANTIRAL,
     BOSS_BERTJR_DIA_FIRST_ENCOUNTER,

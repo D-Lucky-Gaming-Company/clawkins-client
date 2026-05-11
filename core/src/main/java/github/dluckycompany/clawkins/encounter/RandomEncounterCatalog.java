@@ -25,44 +25,44 @@ public final class RandomEncounterCatalog {
     }
 
     private static final List<Definition> EASY = List.of(
-            new Definition("The Dark Rider", 40, 8, 10, 6),
-            new Definition("Mist Walker", 38, 9, 9, 7),
-            new Definition("Fen Lurker", 42, 7, 11, 5),
-            new Definition("Dusk Scout", 36, 10, 8, 8),
-            new Definition("Hollow Drifter", 44, 8, 10, 5),
-            new Definition("Rime Footpad", 39, 9, 10, 6)
+            new Definition("The Dark Rider", 40, 14, 10, 6),
+            new Definition("Mist Walker", 38, 15, 9, 7),
+            new Definition("Fen Lurker", 42, 13, 11, 5),
+            new Definition("Dusk Scout", 36, 16, 8, 8),
+            new Definition("Hollow Drifter", 44, 14, 10, 5),
+            new Definition("Rime Footpad", 39, 15, 10, 6)
     );
 
     private static final List<Definition> MIDDLE = List.of(
-            new Definition("Ash Vanguard", 48, 11, 12, 7),
-            new Definition("Gutter Jackal", 46, 13, 10, 8),
-            new Definition("Ironbone Marauder", 52, 10, 14, 6),
-            new Definition("Needle Stalker", 44, 12, 11, 9),
-            new Definition("Saltmarsh Reaver", 50, 11, 13, 7)
+            new Definition("Ash Vanguard", 48, 17, 12, 7),
+            new Definition("Gutter Jackal", 46, 19, 10, 8),
+            new Definition("Ironbone Marauder", 52, 16, 14, 6),
+            new Definition("Needle Stalker", 44, 18, 11, 9),
+            new Definition("Saltmarsh Reaver", 50, 17, 13, 7)
     );
 
     private static final List<Definition> NORMAL = List.of(
-            new Definition("Cinder Knight", 58, 14, 15, 8),
-            new Definition("Blackroot Witch", 54, 16, 13, 9),
-            new Definition("Stormline Raider", 62, 13, 16, 8),
-            new Definition("Glassfang Hunter", 56, 15, 14, 10),
-            new Definition("Depth Charter", 60, 14, 15, 9)
+            new Definition("Cinder Knight", 58, 20, 15, 8),
+            new Definition("Blackroot Witch", 54, 22, 13, 9),
+            new Definition("Stormline Raider", 62, 19, 16, 8),
+            new Definition("Glassfang Hunter", 56, 21, 14, 10),
+            new Definition("Depth Charter", 60, 20, 15, 9)
     );
 
     private static final List<Definition> INTERMEDIATE = List.of(
-            new Definition("Pale Inquisitor", 70, 17, 18, 10),
-            new Definition("Mire Executioner", 74, 16, 20, 9),
-            new Definition("Thorn Abbess", 66, 19, 17, 11),
-            new Definition("Red Ledger Enforcer", 72, 18, 19, 10),
-            new Definition("Bell Hollow Elite", 68, 18, 18, 11)
+            new Definition("Pale Inquisitor", 70, 23, 18, 10),
+            new Definition("Mire Executioner", 74, 22, 20, 9),
+            new Definition("Thorn Abbess", 66, 25, 17, 11),
+            new Definition("Red Ledger Enforcer", 72, 24, 19, 10),
+            new Definition("Bell Hollow Elite", 68, 24, 18, 11)
     );
 
     private static final List<Definition> HARD = List.of(
-            new Definition("Sable Crown Knight", 85, 22, 24, 11),
-            new Definition("Grave Liturge", 80, 24, 22, 12),
-            new Definition("World-Thread Stalker", 88, 21, 26, 11),
-            new Definition("Drowned Ordinator", 92, 20, 28, 10),
-            new Definition("Third Seal Warden", 86, 23, 25, 12)
+            new Definition("Sable Crown Knight", 85, 28, 24, 11),
+            new Definition("Grave Liturge", 80, 30, 22, 12),
+            new Definition("World-Thread Stalker", 88, 27, 26, 11),
+            new Definition("Drowned Ordinator", 92, 26, 28, 10),
+            new Definition("Third Seal Warden", 86, 29, 25, 12)
     );
 
     private static final Map<EncounterDifficultyTier, List<Definition>> BY_TIER = buildTierMap();

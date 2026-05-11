@@ -26,6 +26,7 @@ import com.badlogic.gdx.graphics.g2d.GlyphLayout;
 import com.badlogic.gdx.graphics.g2d.freetype.FreeTypeFontGenerator;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.maps.tiled.TiledMap;
+import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Rectangle;
 import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.scenes.scene2d.Stage;
@@ -52,6 +53,7 @@ import github.dluckycompany.clawkins.character.Clawkin;
 import github.dluckycompany.clawkins.character.LevelSystem;
 import github.dluckycompany.clawkins.component.Interactible;
 import github.dluckycompany.clawkins.component.MapTransitionZone;
+import github.dluckycompany.clawkins.component.CameraFollow;
 import github.dluckycompany.clawkins.component.Graphic;
 import github.dluckycompany.clawkins.component.Move;
 import github.dluckycompany.clawkins.component.Player;
@@ -74,9 +76,11 @@ import github.dluckycompany.clawkins.save.SaveState;
 import github.dluckycompany.clawkins.save.SaveStateManager;
 import github.dluckycompany.clawkins.system.AnimationSystem;
 import github.dluckycompany.clawkins.system.CameraSystem;
+import github.dluckycompany.clawkins.system.CerberusBridgeWalkSlowSystem;
 import github.dluckycompany.clawkins.system.EnemySystem;
 import github.dluckycompany.clawkins.system.EnemyTrainerSpriteSystem;
 import github.dluckycompany.clawkins.system.InteractionSystem;
+import github.dluckycompany.clawkins.system.InteractionSystem.SpecialInteractionContext;
 import github.dluckycompany.clawkins.system.MapTransitionSystem;
 import github.dluckycompany.clawkins.system.MoveSystem;
 import github.dluckycompany.clawkins.system.PlayerInputSystem;
@@ -192,7 +196,7 @@ public class GameScreen extends ScreenAdapter {
     private static final String ENCOUNTER_CERBERUS_ID = "boss_2_encounter";
     /** Placeholder combat tuning for Cerberus; replace when Boss 1 progression is locked. */
     private static final String ENCOUNTER_TABLE_CERBERUS_ID = "main_boss_cerberus";
-    private static final String CERBERUS_PORTRAIT_PATH = "characters/boss_placeholder.png";
+    private static final String CERBERUS_PORTRAIT_PATH = "entities/clawkins/Clawkin_13_Cerberus.png";
     private static final int CERBERUS_PLACEHOLDER_LEVEL = 18;
     private static final int CERBERUS_PLACEHOLDER_HP = 420;
     private static final int CERBERUS_PLACEHOLDER_ATTACK = 48;
@@ -227,8 +231,20 @@ public class GameScreen extends ScreenAdapter {
     private static final String PROP_MANSION_DUKEKHAI = "dukekhai_prop";
     private static final String PROP_MANSION_SPARTACUS_1 = "spartacus_prop_1";
     private static final String PROP_MANSION_DUKEKHAI_1 = "dukekhai_prop_1";
+    /** {@code cave_3.tmx} Cerberus tile prop; removed after {@link #EVENT_BOSS_2_DEFEATED}. */
+    private static final String PROP_CERBERUS_OBJECT_ID = "cerberus_prop";
+    /** Cave bridge atmosphere (trips {@code dialogue/cerberus_bridge.json}). */
+    private static final String CERBERUS_ATMOS0_OBJECT_ID = "cerberus_enc_atmos0";
+    private static final String CERBERUS_ATMOS1_OBJECT_ID = "cerberus_enc_atmos1";
+    private static final float CERBERUS_ATMOS0_CAMERA_ZOOM = 1.34f;
+    private static final float CERBERUS_ATMOS1_CAMERA_ZOOM = 1.62f;
+    /** Camera follow easing vs default {@link CameraSystem} during Cerberus pre-dialogue (0.25 = quarter speed). */
+    private static final float CERBERUS_BOSS_PREDIALOGUE_CAMERA_SMOOTH_MUL = 0.25f;
+    private static final float CERBERUS_BOSS_PREDIALOGUE_CAMERA_FAIL_SAFE_SEC = 10f;
     private static final String DIALOGUE_SPARTACUS_AFTER_BOSS = "dialogue/spartacus_Afterboss.json";
     private static final float GARDEN_BOSS1_CUTSCENE_OFF_CAMERA_MARGIN = 0.85f;
+    /** After a prop passes the off-screen edge, keep moving this long before removal. */
+    private static final float GARDEN_BOSS1_CUTSCENE_EXIT_EXTRA_SECONDS = 1f;
     private static final Set<String> SAVE_POINT_OBJECT_IDS = Set.of(
             BED_COTTAGE_OBJECT_ID
     );
@@ -330,6 +346,21 @@ public class GameScreen extends ScreenAdapter {
     private boolean bertJrPropReachedTarget;
     private boolean bertJrPreDialogueSequenceActive;
     private boolean bertJrFirstEncounterMusicStarted;
+    /** After {@code cerberus_enc_atmos0}: music + first zoom tier until Cerberus is defeated or map reloads. */
+    private boolean cerberusBridgePresentationActive;
+    /** After {@code cerberus_enc_atmos1}: additional zoom until Cerberus is defeated or map reloads. */
+    private boolean cerberusBridgeAtmos1Zoom;
+    /** Bridge tension (slow walk + dia music) until Cerberus is defeated or map reloads. */
+    private boolean cerberusBridgeConveyorUntilBossDefeated;
+    /**
+     * Cerberus boss (Bert-Jr pattern): pre-dialogue eases camera onto the prop and returns {@code false} until
+     * centered, then {@link InteractionSystem#triggerInteractionByObjectId} re-enters for map dialogue → post-dialogue
+     * special (fight prompt).
+     */
+    private boolean cerberusBossPredialogueCameraActive;
+    private float cerberusBossPredialogueFailSafeRemaining;
+    /** When true, pre-dialogue allows the normal {@code DialogueDirectory} flow. Cleared when post-dialogue runs. */
+    private boolean cerberusBossCameraLinedUpForDialogue;
 
     private enum MansionGardenBoss1CutscenePhase {
         INACTIVE,
@@ -342,6 +373,7 @@ public class GameScreen extends ScreenAdapter {
     private boolean pendingMansionGardenBoss1Cutscene;
     private Entity mansionGardenCutsceneSpartacus1Entity;
     private Entity mansionGardenCutsceneDuke1Entity;
+    private float mansionGardenBoss1CutscenePastExitElapsed;
     private final Map<String, BossMusicHooks> bossMusicHooksByEncounterId = new HashMap<>();
     private ActiveBossMusicState activeBossMusicState;
     
@@ -369,13 +401,14 @@ public class GameScreen extends ScreenAdapter {
         // Create and configure the Ashley ECS Engine
         this.engine = new Engine();
 
-        // Register systems in processing order:
-        // 0 – PlayerInputSystem  (reads WASD → sets Move.direction + Animation flags)
-        // 1 – AnimationSystem    (advances animation timer → writes frame to Graphic)
-        // 2 – MoveSystem         (applies direction * speed * delta to Transform)
-        // 3 – CameraSystem       (follows CameraFollow entity)
-        // 4 – RenderSystem       (draws map + entities)
+        // Register systems in processing order (Ashley: lower priority runs first):
+        // 0 – PlayerInputSystem        (WASD → Move + animation)
+        // 5 – CerberusBridgeWalkSlowSystem (caps player maxSpeed on cave bridge)
+        // 0 – InteractionSystem, AnimationSystem, EnemySystem (same tier as input)
+        // 10 – MoveSystem              (must run after input + Cerberus speed cap)
+        // … CameraSystem, RenderSystem
         this.engine.addSystem(new PlayerInputSystem());
+        this.engine.addSystem(new CerberusBridgeWalkSlowSystem(this::isCerberusConveyorWalkActive, () -> cerberusBridgeAtmos1Zoom));
         this.interactionSystem = new InteractionSystem();
         this.engine.addSystem(interactionSystem);
         this.engine.addSystem(new AnimationSystem());
@@ -606,6 +639,8 @@ public class GameScreen extends ScreenAdapter {
             TiledMap startMap = this.tiledService.loadMap(MapAsset.COTTAGE_SAMPLE);
             this.tiledService.setMap(startMap);
             refreshBertJrPropStateForCurrentMap();
+            refreshCerberusPropForCurrentMap();
+            refreshCerberusAtmos0AfterMapLoad();
             refreshMansionGardenBossPropsState(true);
             this.lastAreaNameForSfx = resolveAreaName(MapAsset.COTTAGE_SAMPLE);
             this.lastAreaDisplayKey = buildAreaDisplayKey(MapAsset.COTTAGE_SAMPLE);
@@ -737,12 +772,13 @@ public class GameScreen extends ScreenAdapter {
             );
         });
 
-        interactionSystem.registerPreDialogueCheck(TRIGGER_BOSS_2_ID, context ->
-                !playerProgress.isEventAccomplished(EVENT_BOSS_2_DEFEATED));
+        interactionSystem.registerPreDialogueCheck(TRIGGER_BOSS_2_ID, this::cerberusBossPreDialogueCheck);
         interactionSystem.registerSpecialInteraction(TRIGGER_BOSS_2_ID, context -> {
+            cerberusBossCameraLinedUpForDialogue = false;
             if (battleService.hasBattleSession() || playerProgress.isEventAccomplished(EVENT_BOSS_2_DEFEATED)) {
                 return;
             }
+            restoreCerberusBossEncounterCameraToPlayer();
             playerProgress.incrementAttempts(EVENT_BOSS_2);
             promptBossFightChoice(
                     "Cerberus",
@@ -768,6 +804,15 @@ public class GameScreen extends ScreenAdapter {
                             context.interactionCount() == 1
                     )
             );
+        });
+
+        interactionSystem.registerPreDialogueCheck(CERBERUS_ATMOS0_OBJECT_ID, context -> {
+            beginCerberusEncAtmos0Ambience();
+            return true;
+        });
+        interactionSystem.registerPreDialogueCheck(CERBERUS_ATMOS1_OBJECT_ID, context -> {
+            beginCerberusEncAtmos1Presentation();
+            return true;
         });
     }
 
@@ -984,6 +1029,8 @@ public class GameScreen extends ScreenAdapter {
 
         tiledService.setMap(currentMap);
         refreshBertJrPropStateForCurrentMap();
+        refreshCerberusPropForCurrentMap();
+        refreshCerberusAtmos0AfterMapLoad();
         refreshMansionGardenBossPropsState(true);
         mapTransitionSystem.setCooldown(0.2f);
 
@@ -1165,6 +1212,8 @@ public class GameScreen extends ScreenAdapter {
         worldDelta *= gameSpeedMultiplier;
         
         engine.update(worldDelta);
+        updateCerberusBridgePresentationState(worldDelta);
+        updateCerberusBossPredialogueCameraApproach(worldDelta);
         battleOverlay.render(batch, battleService);
         dialogueOverlay.render(batch, inventoryStage.getViewport(), interactionSystem);
         renderBossFightPrompt();
@@ -1367,6 +1416,7 @@ public class GameScreen extends ScreenAdapter {
         if (isBertJrPreDialogueSequenceActive()) {
             explorationSystemsEnabled = false;
             engine.getSystem(PlayerInputSystem.class).setProcessing(false);
+            engine.getSystem(CerberusBridgeWalkSlowSystem.class).setProcessing(false);
             interactionSystem.setProcessing(true);
             engine.getSystem(MoveSystem.class).setProcessing(false);
             engine.getSystem(EncounterDetectionSystem.class).setProcessing(false);
@@ -1377,6 +1427,7 @@ public class GameScreen extends ScreenAdapter {
         if (isMansionGardenBoss1CutsceneMovementLocked()) {
             explorationSystemsEnabled = false;
             engine.getSystem(PlayerInputSystem.class).setProcessing(false);
+            engine.getSystem(CerberusBridgeWalkSlowSystem.class).setProcessing(false);
             interactionSystem.setProcessing(false);
             engine.getSystem(MoveSystem.class).setProcessing(false);
             engine.getSystem(EncounterDetectionSystem.class).setProcessing(false);
@@ -1387,8 +1438,20 @@ public class GameScreen extends ScreenAdapter {
         if (isSpecialMovementActive()) {
             explorationSystemsEnabled = false;
             engine.getSystem(PlayerInputSystem.class).setProcessing(false);
+            engine.getSystem(CerberusBridgeWalkSlowSystem.class).setProcessing(false);
             interactionSystem.setProcessing(false);
             engine.getSystem(MoveSystem.class).setProcessing(true);
+            engine.getSystem(EncounterDetectionSystem.class).setProcessing(false);
+            engine.getSystem(RandomEncounterSystem.class).setProcessing(false);
+            mapTransitionSystem.setProcessing(false);
+            return;
+        }
+        if (cerberusBossPredialogueCameraActive) {
+            explorationSystemsEnabled = false;
+            engine.getSystem(PlayerInputSystem.class).setProcessing(false);
+            engine.getSystem(CerberusBridgeWalkSlowSystem.class).setProcessing(false);
+            interactionSystem.setProcessing(false);
+            engine.getSystem(MoveSystem.class).setProcessing(false);
             engine.getSystem(EncounterDetectionSystem.class).setProcessing(false);
             engine.getSystem(RandomEncounterSystem.class).setProcessing(false);
             mapTransitionSystem.setProcessing(false);
@@ -1418,6 +1481,7 @@ public class GameScreen extends ScreenAdapter {
                 && !mapTransitionLocked
                 && !menuLocked
                 && !cheatConsoleLocked;
+        boolean randomEncountersEnabled = shouldEnableExploration && !isCerberusConveyorWalkActive();
         if (shouldEnableExploration == explorationSystemsEnabled) {
             interactionSystem.setProcessing(!battleLocked
                     && !bossPromptLocked
@@ -1429,12 +1493,13 @@ public class GameScreen extends ScreenAdapter {
                     && !merchantLocked
                     && !menuLocked
                     && !cheatConsoleLocked);
-            engine.getSystem(RandomEncounterSystem.class).setProcessing(shouldEnableExploration);
+            engine.getSystem(RandomEncounterSystem.class).setProcessing(randomEncountersEnabled);
             return;
         }
 
         explorationSystemsEnabled = shouldEnableExploration;
         engine.getSystem(PlayerInputSystem.class).setProcessing(shouldEnableExploration);
+        engine.getSystem(CerberusBridgeWalkSlowSystem.class).setProcessing(shouldEnableExploration);
         interactionSystem.setProcessing(!battleLocked
                 && !bossPromptLocked
                 && !savePromptLocked
@@ -1447,7 +1512,7 @@ public class GameScreen extends ScreenAdapter {
                 && !cheatConsoleLocked);
         engine.getSystem(MoveSystem.class).setProcessing(shouldEnableExploration);
         engine.getSystem(EncounterDetectionSystem.class).setProcessing(shouldEnableExploration);
-        engine.getSystem(RandomEncounterSystem.class).setProcessing(shouldEnableExploration);
+        engine.getSystem(RandomEncounterSystem.class).setProcessing(randomEncountersEnabled);
         mapTransitionSystem.setProcessing(shouldEnableExploration);
     }
 
@@ -1485,7 +1550,8 @@ public class GameScreen extends ScreenAdapter {
     }
 
     private void startEndRoadForcedMove(Entity playerEntity) {
-        if (playerEntity == null || isSpecialMovementActive() || isMansionGardenBoss1CutsceneMovementLocked()) {
+        if (playerEntity == null || isSpecialMovementActive() || isCerberusConveyorWalkActive()
+                || isMansionGardenBoss1CutsceneMovementLocked()) {
             return;
         }
         Move move = Move.MAPPER.get(playerEntity);
@@ -1497,7 +1563,8 @@ public class GameScreen extends ScreenAdapter {
     }
 
     private void startMansionPathBlockForcedMove(Entity playerEntity) {
-        if (playerEntity == null || isSpecialMovementActive() || isMansionGardenBoss1CutsceneMovementLocked()) {
+        if (playerEntity == null || isSpecialMovementActive() || isCerberusConveyorWalkActive()
+                || isMansionGardenBoss1CutsceneMovementLocked()) {
             return;
         }
         Move move = Move.MAPPER.get(playerEntity);
@@ -1520,7 +1587,8 @@ public class GameScreen extends ScreenAdapter {
             float directionY,
             PlayerAnimation.Direction animationDirection,
             float durationSeconds) {
-        if (playerEntity == null || isSpecialMovementActive() || isMansionGardenBoss1CutsceneMovementLocked()) {
+        if (playerEntity == null || isSpecialMovementActive() || isCerberusConveyorWalkActive()
+                || isMansionGardenBoss1CutsceneMovementLocked()) {
             return;
         }
         Move move = Move.MAPPER.get(playerEntity);
@@ -1873,6 +1941,7 @@ public class GameScreen extends ScreenAdapter {
             return;
         }
 
+        cancelCerberusBossEncounterCameraIfActive();
         this.activeTransitionMap = targetMapKey;
         this.activeTransitionId = targetTransitionId;
         this.mapTransitionSwapDone = false;
@@ -1916,6 +1985,8 @@ public class GameScreen extends ScreenAdapter {
                 } else if (ENCOUNTER_CERBERUS_ID.equals(encounterId)) {
                     playerProgress.incrementWins(EVENT_BOSS_2);
                     playerProgress.markEventAccomplished(EVENT_BOSS_2_DEFEATED);
+                    removeAllPropEntitiesByObjectId(PROP_CERBERUS_OBJECT_ID);
+                    clearCerberusBridgePresentationAfterBossVictory();
                 }
             } else if (endPhase == BattlePhase.ESCAPE) {
                 applyEncounterEscapeOutcome(encounterId);
@@ -1958,6 +2029,7 @@ public class GameScreen extends ScreenAdapter {
             }
 
             refreshMansionGardenBossPropsState(true);
+            refreshCerberusPropForCurrentMap();
         }
 
         wasBattleSessionPresent = hasSession;
@@ -2118,6 +2190,8 @@ public class GameScreen extends ScreenAdapter {
         TiledMap newMap = tiledService.loadMap(targetAsset);
         tiledService.setMap(newMap);
         refreshBertJrPropStateForCurrentMap();
+        refreshCerberusPropForCurrentMap();
+        refreshCerberusAtmos0AfterMapLoad();
         refreshMansionGardenBossPropsState(true);
         pendingAreaTitleAsset = targetAsset;
 
@@ -2581,6 +2655,8 @@ public class GameScreen extends ScreenAdapter {
         Gdx.app.log("GameScreen", "Setting map (this will spawn entities)");
         tiledService.setMap(loadedMap);
         refreshBertJrPropStateForCurrentMap();
+        refreshCerberusPropForCurrentMap();
+        refreshCerberusAtmos0AfterMapLoad();
         refreshMansionGardenBossPropsState(true);
         
         int entityCountAfter = engine.getEntities().size();
@@ -2934,6 +3010,8 @@ public class GameScreen extends ScreenAdapter {
         
         // Refresh Bert Jr. prop state for the new map
         refreshBertJrPropStateForCurrentMap();
+        refreshCerberusPropForCurrentMap();
+        refreshCerberusAtmos0AfterMapLoad();
         refreshMansionGardenBossPropsState(true);
 
         // Reset map transition cooldown to prevent immediate re-triggering
@@ -3081,6 +3159,9 @@ public class GameScreen extends ScreenAdapter {
     private void closeMerchantShop() {
         merchantShopVisible = false;
         interactionSystem.closeMerchant();
+        if (merchantShopUI != null) {
+            merchantShopUI.detachStageKeyboardListener();
+        }
         // Restore world input processor when closing merchant shop
         Gdx.input.setInputProcessor(null);
     }
@@ -3573,6 +3654,203 @@ public class GameScreen extends ScreenAdapter {
         bertJrPropReachedTarget = true;
     }
 
+    /**
+     * Resets Cerberus bridge presentation (camera, music, slow walk) after map load or boss defeat.
+     */
+    private void refreshCerberusAtmos0AfterMapLoad() {
+        cerberusBridgePresentationActive = false;
+        cerberusBridgeAtmos1Zoom = false;
+        cerberusBridgeConveyorUntilBossDefeated = false;
+        cerberusBossCameraLinedUpForDialogue = false;
+        snapWorldCameraZoom(1f);
+        audioService.clearMapMusicOverride();
+    }
+
+    private void beginCerberusEncAtmos0Ambience() {
+        if (!MapAsset.CAVE_3.name().equals(resolveCurrentMapKey())) {
+            return;
+        }
+        if (playerProgress.isEventAccomplished(EVENT_BOSS_2_DEFEATED)) {
+            return;
+        }
+        if (cerberusBridgeConveyorUntilBossDefeated) {
+            return;
+        }
+        cerberusBridgePresentationActive = true;
+        cerberusBridgeConveyorUntilBossDefeated = true;
+        audioService.setMapMusicOverride(MusicTrack.BOSS_CERBERUS_DIA);
+    }
+
+    private void beginCerberusEncAtmos1Presentation() {
+        if (!MapAsset.CAVE_3.name().equals(resolveCurrentMapKey())) {
+            return;
+        }
+        if (playerProgress.isEventAccomplished(EVENT_BOSS_2_DEFEATED)) {
+            return;
+        }
+        if (!cerberusBridgeConveyorUntilBossDefeated) {
+            return;
+        }
+        cerberusBridgeAtmos1Zoom = true;
+    }
+
+    private void clearCerberusBridgePresentationAfterBossVictory() {
+        cerberusBridgePresentationActive = false;
+        cerberusBridgeAtmos1Zoom = false;
+        cerberusBridgeConveyorUntilBossDefeated = false;
+        snapWorldCameraZoom(1f);
+        audioService.clearMapMusicOverride();
+        audioService.playCurrentMapMusic();
+    }
+
+    private boolean isCerberusConveyorWalkActive() {
+        return cerberusBridgeConveyorUntilBossDefeated
+                && MapAsset.CAVE_3.name().equals(resolveCurrentMapKey())
+                && !playerProgress.isEventAccomplished(EVENT_BOSS_2_DEFEATED);
+    }
+
+    private void updateCerberusBridgePresentationState(float delta) {
+        float dt = Math.max(0f, delta);
+        OrthographicCamera cam = game.getCamera();
+        if (cam != null) {
+            float targetZ = 1f;
+            if (MapAsset.CAVE_3.name().equals(resolveCurrentMapKey())
+                    && !playerProgress.isEventAccomplished(EVENT_BOSS_2_DEFEATED)) {
+                if (cerberusBridgeAtmos1Zoom) {
+                    targetZ = CERBERUS_ATMOS1_CAMERA_ZOOM;
+                } else if (cerberusBridgePresentationActive) {
+                    targetZ = CERBERUS_ATMOS0_CAMERA_ZOOM;
+                }
+            }
+            cam.zoom += (targetZ - cam.zoom) * Math.min(1f, dt * 2.85f);
+            cam.zoom = MathUtils.clamp(cam.zoom, 0.4f, 3.5f);
+            cam.update();
+        }
+    }
+
+    private void snapWorldCameraZoom(float zoom) {
+        OrthographicCamera cam = game.getCamera();
+        if (cam != null) {
+            cam.zoom = MathUtils.clamp(zoom, 0.25f, 4f);
+            cam.update();
+        }
+    }
+
+    /**
+     * Handoff boss pipeline: pre-dialogue (camera) → map dialogue → post-dialogue special (fight prompt).
+     * Mirrors Bert Jr.: return {@code false} until camera is centered, then {@link InteractionSystem#triggerInteractionByObjectId}.
+     */
+    private boolean cerberusBossPreDialogueCheck(SpecialInteractionContext context) {
+        if (playerProgress.isEventAccomplished(EVENT_BOSS_2_DEFEATED)) {
+            return false;
+        }
+        if (!cerberusBossCameraLinedUpForDialogue) {
+            if (tryBeginCerberusBossPredialogueCamera()) {
+                return false;
+            }
+            cerberusBossCameraLinedUpForDialogue = true;
+        }
+        return true;
+    }
+
+    /**
+     * @return {@code true} if camera pan started and dialogue must wait; {@code false} if no prop (dialogue may run immediately).
+     */
+    private boolean tryBeginCerberusBossPredialogueCamera() {
+        Entity prop = findPropEntityByObjectId(PROP_CERBERUS_OBJECT_ID);
+        Entity player = findPlayerEntity();
+        if (prop == null || player == null) {
+            return false;
+        }
+        Transform propTr = Transform.MAPPER.get(prop);
+        if (propTr == null) {
+            return false;
+        }
+        if (player.getComponent(CameraFollow.class) != null) {
+            player.remove(CameraFollow.class);
+        }
+        if (prop.getComponent(CameraFollow.class) == null) {
+            prop.add(new CameraFollow());
+        }
+        CameraSystem cam = engine.getSystem(CameraSystem.class);
+        if (cam != null) {
+            cam.setSmoothingSpeedMultiplier(CERBERUS_BOSS_PREDIALOGUE_CAMERA_SMOOTH_MUL);
+        }
+        cerberusBossPredialogueFailSafeRemaining = CERBERUS_BOSS_PREDIALOGUE_CAMERA_FAIL_SAFE_SEC;
+        cerberusBossPredialogueCameraActive = true;
+        freezePlayerInPlace(player);
+        return true;
+    }
+
+    private void onCerberusPredialogueCameraCentered() {
+        cerberusBossPredialogueCameraActive = false;
+        cerberusBossPredialogueFailSafeRemaining = 0f;
+        CameraSystem cam = engine.getSystem(CameraSystem.class);
+        if (cam != null) {
+            cam.setSmoothingSpeedMultiplier(1f);
+        }
+        cerberusBossCameraLinedUpForDialogue = true;
+        interactionSystem.triggerInteractionByObjectId(TRIGGER_BOSS_2_ID);
+    }
+
+    private void updateCerberusBossPredialogueCameraApproach(float delta) {
+        if (!cerberusBossPredialogueCameraActive) {
+            return;
+        }
+        float dt = Math.max(0f, delta);
+        cerberusBossPredialogueFailSafeRemaining -= dt;
+        CameraSystem cam = engine.getSystem(CameraSystem.class);
+        boolean arrived = cam != null && cam.isCameraNearFollowTarget(0.07f);
+        if (arrived || cerberusBossPredialogueFailSafeRemaining <= 0f) {
+            if (!arrived && cam != null) {
+                Entity prop = findPropEntityByObjectId(PROP_CERBERUS_OBJECT_ID);
+                Transform propTr = prop == null ? null : Transform.MAPPER.get(prop);
+                if (propTr != null) {
+                    cam.snapTo(propTr);
+                }
+            }
+            onCerberusPredialogueCameraCentered();
+        }
+    }
+
+    private void restoreCerberusBossEncounterCameraToPlayer() {
+        Entity player = findPlayerEntity();
+        Entity prop = findPropEntityByObjectId(PROP_CERBERUS_OBJECT_ID);
+        if (prop != null && prop.getComponent(CameraFollow.class) != null) {
+            prop.remove(CameraFollow.class);
+        }
+        if (player != null && player.getComponent(CameraFollow.class) == null) {
+            player.add(new CameraFollow());
+        }
+        CameraSystem cam = engine.getSystem(CameraSystem.class);
+        if (cam != null) {
+            cam.setSmoothingSpeedMultiplier(1f);
+            if (player != null) {
+                Transform tr = Transform.MAPPER.get(player);
+                if (tr != null) {
+                    cam.snapTo(tr);
+                }
+            }
+        }
+    }
+
+    private void cancelCerberusBossEncounterCameraIfActive() {
+        cerberusBossPredialogueCameraActive = false;
+        cerberusBossPredialogueFailSafeRemaining = 0f;
+        cerberusBossCameraLinedUpForDialogue = false;
+        restoreCerberusBossEncounterCameraToPlayer();
+    }
+
+    private void refreshCerberusPropForCurrentMap() {
+        if (!MapAsset.CAVE_3.name().equals(resolveCurrentMapKey())) {
+            return;
+        }
+        if (!playerProgress.isEventAccomplished(EVENT_BOSS_2_DEFEATED)) {
+            return;
+        }
+        removeAllPropEntitiesByObjectId(PROP_CERBERUS_OBJECT_ID);
+    }
+
     private void startBertJrPropEntranceIfNeeded(int interactionCount) {
         if (interactionCount != 1 || playerProgress.isEventAccomplished(EVENT_BOSS_0_DEFEATED)) {
             return;
@@ -3711,6 +3989,7 @@ public class GameScreen extends ScreenAdapter {
     private void beginMansionGardenBoss1Cutscene() {
         refreshMansionGardenBossPropsState(false);
         freezePlayerInPlace(findPlayerEntity());
+        mansionGardenBoss1CutscenePastExitElapsed = 0f;
         mansionGardenCutsceneSpartacus1Entity = findPropEntityByObjectId(PROP_MANSION_SPARTACUS_1);
         mansionGardenCutsceneDuke1Entity = findPropEntityByObjectId(PROP_MANSION_DUKEKHAI_1);
         mansionGardenBoss1CutscenePhase = MansionGardenBoss1CutscenePhase.SPARTACUS_RUN;
@@ -3745,9 +4024,15 @@ public class GameScreen extends ScreenAdapter {
             t.getPosition().x += speed * dt;
             float right = t.getPosition().x + t.getSize().x;
             if (right > camCx + camHalfW + GARDEN_BOSS1_CUTSCENE_OFF_CAMERA_MARGIN) {
-                engine.removeEntity(e);
-                mansionGardenCutsceneSpartacus1Entity = null;
-                advanceMansionGardenBossCutsceneToAfterbossDialogue();
+                mansionGardenBoss1CutscenePastExitElapsed += dt;
+                if (mansionGardenBoss1CutscenePastExitElapsed >= GARDEN_BOSS1_CUTSCENE_EXIT_EXTRA_SECONDS) {
+                    engine.removeEntity(e);
+                    mansionGardenCutsceneSpartacus1Entity = null;
+                    mansionGardenBoss1CutscenePastExitElapsed = 0f;
+                    advanceMansionGardenBossCutsceneToAfterbossDialogue();
+                }
+            } else {
+                mansionGardenBoss1CutscenePastExitElapsed = 0f;
             }
             return;
         }
@@ -3767,19 +4052,27 @@ public class GameScreen extends ScreenAdapter {
             t.getPosition().x += speed * dt;
             float right = t.getPosition().x + t.getSize().x;
             if (right > camCx + camHalfW + GARDEN_BOSS1_CUTSCENE_OFF_CAMERA_MARGIN) {
-                engine.removeEntity(e);
-                mansionGardenCutsceneDuke1Entity = null;
-                completeMansionGardenBoss1Cutscene();
+                mansionGardenBoss1CutscenePastExitElapsed += dt;
+                if (mansionGardenBoss1CutscenePastExitElapsed >= GARDEN_BOSS1_CUTSCENE_EXIT_EXTRA_SECONDS) {
+                    engine.removeEntity(e);
+                    mansionGardenCutsceneDuke1Entity = null;
+                    mansionGardenBoss1CutscenePastExitElapsed = 0f;
+                    completeMansionGardenBoss1Cutscene();
+                }
+            } else {
+                mansionGardenBoss1CutscenePastExitElapsed = 0f;
             }
         }
     }
 
     private void advanceMansionGardenBossCutsceneToAfterbossDialogue() {
+        mansionGardenBoss1CutscenePastExitElapsed = 0f;
         mansionGardenBoss1CutscenePhase = MansionGardenBoss1CutscenePhase.DIALOGUE;
         interactionSystem.showScriptedDialogueFromFile(
                 DIALOGUE_SPARTACUS_AFTER_BOSS,
                 Interactible.DialoguePosition.BOTTOM,
                 () -> {
+                    mansionGardenBoss1CutscenePastExitElapsed = 0f;
                     mansionGardenBoss1CutscenePhase = MansionGardenBoss1CutscenePhase.DUKE_WALK;
                     mansionGardenCutsceneDuke1Entity = findPropEntityByObjectId(PROP_MANSION_DUKEKHAI_1);
                 });
@@ -3787,6 +4080,7 @@ public class GameScreen extends ScreenAdapter {
 
     private void completeMansionGardenBoss1Cutscene() {
         mansionGardenBoss1CutscenePhase = MansionGardenBoss1CutscenePhase.INACTIVE;
+        mansionGardenBoss1CutscenePastExitElapsed = 0f;
         mansionGardenCutsceneSpartacus1Entity = null;
         mansionGardenCutsceneDuke1Entity = null;
         playerProgress.markEventAccomplished(EVENT_BOSS_1_GARDEN_CUTSCENE_DONE);
