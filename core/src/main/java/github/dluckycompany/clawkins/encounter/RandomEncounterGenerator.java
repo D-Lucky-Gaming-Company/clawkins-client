@@ -40,9 +40,9 @@ public final class RandomEncounterGenerator {
         if (def == null) {
             def = RandomEncounterCatalog.fallbackDefinition();
         }
-        int enemyLevel = randomEnemyLevelForTier(tier, playerLevel);
+        int enemyLevel = rollEnemyLevelForTier(tier, playerLevel);
         float tierScale = RandomEncounterCatalog.statScaleFor(tier);
-        float levelScale = levelScale(enemyLevel);
+        float levelScale = levelScaleMultiplier(enemyLevel);
         float totalScale = tierScale * levelScale;
         int hp = scaleStat(def.baseHp() + jitter(4), totalScale);
         int atk = scaleStat(def.baseAttack() + jitter(2), totalScale);
@@ -86,15 +86,16 @@ public final class RandomEncounterGenerator {
     }
 
     /**
-     * Skill layout follows the Dark Rider example: attack / second offense or heal-with-attack / defense buff.
-     * Easy-tier random foes never get {@link BattleSkill.EffectType#HEAL}. Potencies get a small tier bump
-     * for higher difficulties.
+     * Public for {@link WildClawkinEncounterGenerator} and tests: same skill layout as random field encounters.
      */
-    private static List<BattleSkill> skillsForTier(EncounterDifficultyTier tier, int enemyLevel) {
-        int s1 = 8 + ThreadLocalRandom.current().nextInt(0, 5) + skillBonus(tier);
-        int s2Base = 16 + ThreadLocalRandom.current().nextInt(0, 7) + skillBonus(tier) * 2;
-        int s3 = 8 + ThreadLocalRandom.current().nextInt(0, 5) + skillBonus(tier);
-        int s4 = 14 + ThreadLocalRandom.current().nextInt(0, 7) + skillBonus(tier) * 2;
+    public static List<BattleSkill> skillsForTier(EncounterDifficultyTier tier, int enemyLevel) {
+        // Primary offense is base + attack[self]; keep bases high enough that similar-level
+        // player defense (~25–40) still yields ~5–15 chip after armor pen, not endless 1s.
+        int tierB = skillBonus(tier);
+        int s1 = 18 + ThreadLocalRandom.current().nextInt(0, 9) + tierB * 2;
+        int s2Base = 22 + ThreadLocalRandom.current().nextInt(0, 9) + tierB * 3;
+        int s3 = 14 + ThreadLocalRandom.current().nextInt(0, 6) + tierB * 2;
+        int s4 = 20 + ThreadLocalRandom.current().nextInt(0, 9) + tierB * 3;
         BattleSkill slot2 =
                 tier == EncounterDifficultyTier.EASY
                         ? new BattleSkill("Scratch", BattleSkill.EffectType.ATTACK, s2Base, "", 0, 0)
@@ -114,9 +115,14 @@ public final class RandomEncounterGenerator {
             skills.add(new BattleSkill("Brace", BattleSkill.EffectType.DEFENSE, s3, "", 2, 0));
         }
         if (enemyLevel >= 8) {
-            skills.add(new BattleSkill("Ravage", BattleSkill.EffectType.DAMAGE, s4, "attack[self] * 0.40", 0, 2));
+            skills.add(new BattleSkill("Ravage", BattleSkill.EffectType.DAMAGE, s4, "attack[self] * 0.65", 0, 2));
         }
         return skills;
+    }
+
+    /** Small additive bump shared with wild clawkin encounters (attack pressure). */
+    public static int tierPotencyBonus(EncounterDifficultyTier tier) {
+        return skillBonus(tier);
     }
 
     private static int skillBonus(EncounterDifficultyTier tier) {
@@ -130,7 +136,8 @@ public final class RandomEncounterGenerator {
         };
     }
 
-    private static int randomEnemyLevelForTier(EncounterDifficultyTier tier, int playerLevel) {
+    /** Level roll used for both catalog random encounters and wild clawkin map encounters. */
+    public static int rollEnemyLevelForTier(EncounterDifficultyTier tier, int playerLevel) {
         if (tier == null || tier == EncounterDifficultyTier.NONE) {
             return 1;
         }
@@ -210,7 +217,8 @@ public final class RandomEncounterGenerator {
         return ThreadLocalRandom.current().nextInt(min, max + 1);
     }
 
-    private static float levelScale(int level) {
+    /** Multiplier applied to catalog stats by enemy level; exposed for wild clawkin generation. */
+    public static float levelScaleMultiplier(int level) {
         int safeLevel = Math.max(1, level);
         if (safeLevel <= 5) {
             // Keep Lv5 enemies around parity with Lv5 Clawkins.
