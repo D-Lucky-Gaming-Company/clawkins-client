@@ -26,7 +26,9 @@ import com.badlogic.gdx.graphics.g2d.GlyphLayout;
 import com.badlogic.gdx.graphics.g2d.freetype.FreeTypeFontGenerator;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.maps.tiled.TiledMap;
+import com.badlogic.gdx.math.Interpolation;
 import com.badlogic.gdx.math.MathUtils;
+import com.badlogic.gdx.math.Matrix4;
 import com.badlogic.gdx.math.Rectangle;
 import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.scenes.scene2d.Stage;
@@ -267,6 +269,7 @@ public class GameScreen extends ScreenAdapter {
     );
     private static final float BERT_JR_PROP_INITIAL_X_OFFSET = 6f;
     private static final float BERT_JR_PROP_WALK_IN_SPEED = 1.2f;
+    private static final float ENDING_CREDITS_FADE_TO_BLACK_SECONDS = 2.75f;
 
     private final Main game;
     private final Engine engine;
@@ -327,6 +330,11 @@ public class GameScreen extends ScreenAdapter {
     private String pendingTransitionMap;
     private String pendingTransitionId;
     private final BattleTransition mapTransitionFade;
+    /** Fade to black before {@link #triggerEndingCredits()} when the player trips {@link #END_TRIGGER_OBJECT_ID}. */
+    private boolean endingCreditsFadeActive;
+    private float endingCreditsFadeElapsed;
+    private boolean endingCreditsFadeCompletionPosted;
+    private final Matrix4 endingCreditsFadeProj = new Matrix4();
     private String activeTransitionMap;
     private String activeTransitionId;
     private boolean mapTransitionSwapDone;
@@ -726,7 +734,7 @@ public class GameScreen extends ScreenAdapter {
                     anim.setMoving(false);
                 }
             }
-            triggerEndingCredits();
+            beginEndingCreditsFadeTransition();
         });
         registerSavePointInteractions();
         registerCheckpointInteractions();
@@ -1122,7 +1130,7 @@ public class GameScreen extends ScreenAdapter {
         
         // Handle pending teleport from cheat console
         String pendingTeleportMapKey = cheatCodeManager.getPendingTeleportMapKey();
-        if (pendingTeleportMapKey != null && !mapTransitionFade.isTransitioning()) {
+        if (pendingTeleportMapKey != null && !isMapOrEndingFadeTransitionActive()) {
             processTeleportCheat(pendingTeleportMapKey);
             cheatCodeManager.clearPendingTeleport();
         }
@@ -1144,7 +1152,7 @@ public class GameScreen extends ScreenAdapter {
 
         // Handle side-menu and submenu navigation while in exploration.
         if (!battleService.hasBattleSession() && !interactionSystem.isDialogueVisible() && !merchantShopVisible
-                && !mapTransitionFade.isTransitioning() && !isSpecialMovementActive() && !cerberusPostVictoryEndingWalkActive
+                && !isMapOrEndingFadeTransitionActive() && !isSpecialMovementActive() && !cerberusPostVictoryEndingWalkActive
                 && !isBossFightPromptVisible() && !isSaveGamePromptVisible() && !isSaveActionPromptVisible()
                 && !isNurseStationPromptVisible()
                 && !isFallenPromptVisible()
@@ -1179,10 +1187,21 @@ public class GameScreen extends ScreenAdapter {
             closeAllMenuUi();
         }
 
-        if (pendingTransitionMap != null && !mapTransitionFade.isTransitioning()) {
+        if (pendingTransitionMap != null && !isMapOrEndingFadeTransitionActive()) {
             beginMapTransition(pendingTransitionMap, pendingTransitionId);
             pendingTransitionMap = null;
             pendingTransitionId = null;
+        }
+
+        if (endingCreditsFadeActive) {
+            endingCreditsFadeElapsed += delta;
+            if (endingCreditsFadeElapsed >= ENDING_CREDITS_FADE_TO_BLACK_SECONDS) {
+                endingCreditsFadeElapsed = ENDING_CREDITS_FADE_TO_BLACK_SECONDS;
+                if (!endingCreditsFadeCompletionPosted) {
+                    endingCreditsFadeCompletionPosted = true;
+                    Gdx.app.postRunnable(this::triggerEndingCredits);
+                }
+            }
         }
 
         if (mapTransitionFade.isTransitioning()) {
@@ -1220,7 +1239,7 @@ public class GameScreen extends ScreenAdapter {
 
         // This single call updates ALL systems in order:
         // MoveSystem → CameraSystem → RenderSystem
-        float worldDelta = mapTransitionFade.isTransitioning() ? 0f : delta;
+        float worldDelta = isMapOrEndingFadeTransitionActive() ? 0f : delta;
         
         // Apply game speed multiplier from cheat (if enabled)
         float gameSpeedMultiplier = cheatCodeManager.getGameSpeedMultiplier();
@@ -1256,6 +1275,10 @@ public class GameScreen extends ScreenAdapter {
 
         if (mapTransitionFade.isTransitioning()) {
             mapTransitionFade.render(batch);
+        }
+        if (endingCreditsFadeActive) {
+            float t = Math.min(endingCreditsFadeElapsed / ENDING_CREDITS_FADE_TO_BLACK_SECONDS, 1f);
+            renderEndingCreditsFadeOverlay(Interpolation.fade.apply(t));
         }
         renderAreaTitle(uiDelta);
         renderSaveToast();
@@ -1515,7 +1538,7 @@ public class GameScreen extends ScreenAdapter {
         boolean fallenPromptLocked = isFallenPromptVisible();
         boolean interactionRetriggerLocked = interactionRetriggerBlockSeconds > 0f;
         boolean merchantLocked = merchantShopVisible;
-        boolean mapTransitionLocked = mapTransitionFade.isTransitioning();
+        boolean mapTransitionLocked = isMapOrEndingFadeTransitionActive();
         boolean menuLocked = sideMenuOverlay.isBlockingGameplay() || teamViewerVisible;
         boolean cheatConsoleLocked = cheatConsoleOverlay.isVisible();
         boolean shouldEnableExploration = !battleLocked
@@ -2572,11 +2595,44 @@ public class GameScreen extends ScreenAdapter {
         game.setScreen(MainMenuScreen.class);
     }
 
+    private boolean isMapOrEndingFadeTransitionActive() {
+        return mapTransitionFade.isTransitioning() || endingCreditsFadeActive;
+    }
+
+    private void beginEndingCreditsFadeTransition() {
+        if (mapTransitionFade.isTransitioning() || endingCreditsFadeActive) {
+            return;
+        }
+        endingCreditsFadeActive = true;
+        endingCreditsFadeElapsed = 0f;
+        endingCreditsFadeCompletionPosted = false;
+    }
+
+    private void renderEndingCreditsFadeOverlay(float alpha) {
+        if (alpha <= 0f) {
+            return;
+        }
+        Gdx.gl.glEnable(GL20.GL_BLEND);
+        Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
+        int w = Gdx.graphics.getBackBufferWidth();
+        int h = Gdx.graphics.getBackBufferHeight();
+        endingCreditsFadeProj.setToOrtho2D(0, 0, w, h);
+        shapeRenderer.setProjectionMatrix(endingCreditsFadeProj);
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+        shapeRenderer.setColor(0f, 0f, 0f, Math.min(1f, alpha));
+        shapeRenderer.rect(0, 0, w, h);
+        shapeRenderer.end();
+        Gdx.gl.glDisable(GL20.GL_BLEND);
+    }
+
     /**
      * Trigger the ending credits sequence.
-     * Called by the "end" cheat code.
+     * Used by the "end" cheat and after the {@link #END_TRIGGER_OBJECT_ID} fade completes.
      */
     public void triggerEndingCredits() {
+        endingCreditsFadeActive = false;
+        endingCreditsFadeElapsed = 0f;
+        endingCreditsFadeCompletionPosted = false;
         closeAllMenuUi();
         inventoryStage.clear();
         audioService.stopAll();
