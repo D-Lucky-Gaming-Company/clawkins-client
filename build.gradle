@@ -56,7 +56,7 @@ configure(subprojects) {
 
 subprojects {
   version = "$projectVersion"
-  ext.appName = 'TestProject'
+  ext.appName = 'Clawkins - Dawn of the Primal'
   repositories {
     mavenCentral()
     // You may want to remove the following line if you have errors downloading dependencies.
@@ -66,4 +66,4 @@ subprojects {
   }
 }
 
-eclipse.project.name = 'TestProject' + '-parent'
+eclipse.project.name = 'Clawkins - Dawn of the Primal' + '-parent'
