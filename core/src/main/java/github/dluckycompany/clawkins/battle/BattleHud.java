@@ -1011,6 +1011,7 @@ public class BattleHud implements Disposable {
         if (skill == null) {
             label.setText(prefix + "Locked");
             button.setDisabled(true);
+            button.setTouchable(Touchable.disabled);
             button.setColor(0.3f, 0.3f, 0.3f, 1.0f); // Dark gray
             return;
         }
@@ -1019,6 +1020,7 @@ public class BattleHud implements Disposable {
         if (slot.isLocked(currentLevel)) {
             label.setText(prefix + slot.getLockDisplayText(currentLevel));
             button.setDisabled(true);
+            button.setTouchable(Touchable.disabled);
             button.setColor(0.5f, 0.5f, 0.5f, 1.0f); // Gray with lock indicator
             return;
         }
@@ -1028,6 +1030,7 @@ public class BattleHud implements Disposable {
             int cooldown = playerUnit.getSkillCooldown(skill.getName());
             label.setText(prefix + skill.getName() + " (" + cooldown + ")");
             button.setDisabled(true);
+            button.setTouchable(Touchable.disabled);
             button.setColor(0.6f, 0.6f, 0.8f, 1.0f); // Blue-gray for cooldown
             return;
         }
@@ -1035,6 +1038,7 @@ public class BattleHud implements Disposable {
         // Skill is available
         label.setText(prefix + skill.getName());
         button.setDisabled(false);
+        button.setTouchable(Touchable.enabled);
         button.setColor(Color.WHITE);
     }
     
@@ -1055,10 +1059,12 @@ public class BattleHud implements Disposable {
             if (cooldown > 0) {
                 attackLbl.setText("[1] " + skill1.getName() + " (" + cooldown + " turns)");
                 attackBtn.setDisabled(true);
+                attackBtn.setTouchable(Touchable.disabled);
                 attackBtn.setColor(Color.GRAY);
             } else {
                 attackLbl.setText("[1] " + skill1.getName());
                 attackBtn.setDisabled(false);
+                attackBtn.setTouchable(Touchable.enabled);
                 attackBtn.setColor(Color.WHITE);
             }
         }
@@ -1068,10 +1074,12 @@ public class BattleHud implements Disposable {
             if (cooldown > 0) {
                 defendLbl.setText("[2] " + skill2.getName() + " (" + cooldown + " turns)");
                 defendBtn.setDisabled(true);
+                defendBtn.setTouchable(Touchable.disabled);
                 defendBtn.setColor(Color.GRAY);
             } else {
                 defendLbl.setText("[2] " + skill2.getName());
                 defendBtn.setDisabled(false);
+                defendBtn.setTouchable(Touchable.enabled);
                 defendBtn.setColor(Color.WHITE);
             }
         }
@@ -1081,10 +1089,12 @@ public class BattleHud implements Disposable {
             if (cooldown > 0) {
                 specialLbl.setText("[3] " + skill3.getName() + " (" + cooldown + " turns)");
                 specialBtn.setDisabled(true);
+                specialBtn.setTouchable(Touchable.disabled);
                 specialBtn.setColor(Color.GRAY);
             } else {
                 specialLbl.setText("[3] " + skill3.getName());
                 specialBtn.setDisabled(false);
+                specialBtn.setTouchable(Touchable.enabled);
                 specialBtn.setColor(Color.WHITE);
             }
         }

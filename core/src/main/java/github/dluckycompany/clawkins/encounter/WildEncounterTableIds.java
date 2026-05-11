@@ -22,19 +22,31 @@ public final class WildEncounterTableIds {
 
     public static boolean usesWildClawkinStats(String encounterTableId) {
         String t = normalize(encounterTableId);
-        return switch (t) {
-            case "", "default", "easy_enemy", "intermediate_enemy", "hard_enemy" -> true;
-            default -> false;
-        };
+        if (t.isEmpty() || "default".equals(t)) {
+            return true;
+        }
+        return hasDifficultyToken(t);
     }
 
     public static EncounterDifficultyTier tierForWildTable(String encounterTableId) {
         String t = normalize(encounterTableId);
-        return switch (t) {
-            case "hard_enemy" -> EncounterDifficultyTier.HARD;
-            case "intermediate_enemy" -> EncounterDifficultyTier.INTERMEDIATE;
-            case "", "default", "easy_enemy" -> EncounterDifficultyTier.EASY;
-            default -> EncounterDifficultyTier.EASY;
-        };
+        if (t.startsWith("hard_enemy") || t.contains("hard")) {
+            return EncounterDifficultyTier.HARD;
+        }
+        if (t.startsWith("intermediate_enemy")
+                || t.contains("intermediate")
+                || t.contains("middle")
+                || t.contains("normal")) {
+            return EncounterDifficultyTier.INTERMEDIATE;
+        }
+        return EncounterDifficultyTier.EASY;
+    }
+
+    private static boolean hasDifficultyToken(String normalizedTableId) {
+        return normalizedTableId.contains("easy")
+                || normalizedTableId.contains("intermediate")
+                || normalizedTableId.contains("middle")
+                || normalizedTableId.contains("normal")
+                || normalizedTableId.contains("hard");
     }
 }
