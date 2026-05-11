@@ -1,8 +1,10 @@
 package github.dluckycompany.clawkins;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
@@ -15,6 +17,7 @@ import com.badlogic.ashley.utils.ImmutableArray;
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input;
 import com.badlogic.gdx.ScreenAdapter;
+import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.OrthographicCamera;
 import com.badlogic.gdx.graphics.g2d.Batch;
@@ -49,6 +52,7 @@ import github.dluckycompany.clawkins.character.Clawkin;
 import github.dluckycompany.clawkins.character.LevelSystem;
 import github.dluckycompany.clawkins.component.Interactible;
 import github.dluckycompany.clawkins.component.MapTransitionZone;
+import github.dluckycompany.clawkins.component.Graphic;
 import github.dluckycompany.clawkins.component.Move;
 import github.dluckycompany.clawkins.component.Player;
 import github.dluckycompany.clawkins.component.PlayerAnimation;
@@ -71,6 +75,7 @@ import github.dluckycompany.clawkins.save.SaveStateManager;
 import github.dluckycompany.clawkins.system.AnimationSystem;
 import github.dluckycompany.clawkins.system.CameraSystem;
 import github.dluckycompany.clawkins.system.EnemySystem;
+import github.dluckycompany.clawkins.system.EnemyTrainerSpriteSystem;
 import github.dluckycompany.clawkins.system.InteractionSystem;
 import github.dluckycompany.clawkins.system.MapTransitionSystem;
 import github.dluckycompany.clawkins.system.MoveSystem;
@@ -170,12 +175,15 @@ public class GameScreen extends ScreenAdapter {
     private static final int SAVE_TOAST_FONT_SIZE = 30;
     private static final float SAVE_TOAST_X = 20f;
     private static final float SAVE_TOAST_Y = 575f;
-    private static final String SAVE_TOAST_TEXT = "SAVED";
+    private static final String SAVE_TOAST_MESSAGE_SAVED = "SAVED";
+    private static final String SAVE_TOAST_MESSAGE_CHECKPOINT = "CHECKPOINT";
     public static final int DEFAULT_BATTLE_XP_REWARD = 25;
     private static final String EVENT_BOSS_0 = "boss_0_event";
     private static final String EVENT_BOSS_0_DEFEATED = "boss_0_defeated";
     private static final String EVENT_BOSS_1 = "boss_1_event";
     private static final String EVENT_BOSS_1_DEFEATED = "boss_1_defeated";
+    /** After Boss 1, garden props + dialogue + walk-off sequence has finished. */
+    private static final String EVENT_BOSS_1_GARDEN_CUTSCENE_DONE = "boss_1_garden_cutscene_done";
     private static final String EVENT_BOSS_2 = "boss_2_event";
     private static final String EVENT_BOSS_2_DEFEATED = "boss_2_defeated";
     private static final String ENCOUNTER_BERT_JR_ID = "boss_0_encounter";
@@ -215,8 +223,19 @@ public class GameScreen extends ScreenAdapter {
     private static final String MANSION_PATH_BLOCK_OBJECT_ID = "mansion_path_block";
     private static final String BED_COTTAGE_OBJECT_ID = "bed_cottage";
     private static final String PROP_BERT_JR_OBJECT_ID = "bertjr_prop";
+    private static final String PROP_MANSION_SPARTACUS = "spartacus_prop";
+    private static final String PROP_MANSION_DUKEKHAI = "dukekhai_prop";
+    private static final String PROP_MANSION_SPARTACUS_1 = "spartacus_prop_1";
+    private static final String PROP_MANSION_DUKEKHAI_1 = "dukekhai_prop_1";
+    private static final String DIALOGUE_SPARTACUS_AFTER_BOSS = "dialogue/spartacus_Afterboss.json";
+    private static final float GARDEN_BOSS1_CUTSCENE_OFF_CAMERA_MARGIN = 0.85f;
     private static final Set<String> SAVE_POINT_OBJECT_IDS = Set.of(
             BED_COTTAGE_OBJECT_ID
+    );
+    /** Story checkpoint volumes (see mansion_garden.tmx {@code checkpoint_1}, cave_3 {@code checkpoint_2}). */
+    private static final Set<String> CHECKPOINT_OBJECT_IDS = Set.of(
+            "checkpoint_1",
+            "checkpoint_2"
     );
     /** Heal interactibles on nursery maps (see nurse_interior*.tmx ObjectId). */
     private static final List<String> NURSE_HEAL_OBJECT_IDS = List.of(
@@ -303,6 +322,7 @@ public class GameScreen extends ScreenAdapter {
     private boolean queuedFallenScreenAfterBattle;
     private boolean defeatSessionEffectsApplied;
     private float saveToastTimer;
+    private String saveToastMessage = SAVE_TOAST_MESSAGE_SAVED;
     private float interactionRetriggerBlockSeconds;
     private Entity bertJrPropEntity;
     private Vector2 bertJrPropTargetPosition;
@@ -310,6 +330,18 @@ public class GameScreen extends ScreenAdapter {
     private boolean bertJrPropReachedTarget;
     private boolean bertJrPreDialogueSequenceActive;
     private boolean bertJrFirstEncounterMusicStarted;
+
+    private enum MansionGardenBoss1CutscenePhase {
+        INACTIVE,
+        SPARTACUS_RUN,
+        DIALOGUE,
+        DUKE_WALK
+    }
+
+    private MansionGardenBoss1CutscenePhase mansionGardenBoss1CutscenePhase = MansionGardenBoss1CutscenePhase.INACTIVE;
+    private boolean pendingMansionGardenBoss1Cutscene;
+    private Entity mansionGardenCutsceneSpartacus1Entity;
+    private Entity mansionGardenCutsceneDuke1Entity;
     private final Map<String, BossMusicHooks> bossMusicHooksByEncounterId = new HashMap<>();
     private ActiveBossMusicState activeBossMusicState;
     
@@ -349,6 +381,7 @@ public class GameScreen extends ScreenAdapter {
         this.engine.addSystem(new AnimationSystem());
         this.engine.addSystem(new EnemySystem(audioService));
         this.engine.addSystem(new MoveSystem());
+        this.engine.addSystem(new EnemyTrainerSpriteSystem());
         this.engine.addSystem(new CameraSystem(camera));
         this.engine.addSystem(new RenderSystem(batch, viewport, camera));
 
@@ -573,6 +606,7 @@ public class GameScreen extends ScreenAdapter {
             TiledMap startMap = this.tiledService.loadMap(MapAsset.COTTAGE_SAMPLE);
             this.tiledService.setMap(startMap);
             refreshBertJrPropStateForCurrentMap();
+            refreshMansionGardenBossPropsState(true);
             this.lastAreaNameForSfx = resolveAreaName(MapAsset.COTTAGE_SAMPLE);
             this.lastAreaDisplayKey = buildAreaDisplayKey(MapAsset.COTTAGE_SAMPLE);
             // Prevent frame-1 transition triggers from moving the player off the authored spawn.
@@ -621,6 +655,7 @@ public class GameScreen extends ScreenAdapter {
             startMansionPathBlockForcedMove(context.playerEntity());
         });
         registerSavePointInteractions();
+        registerCheckpointInteractions();
         for (String nurseHealObjectId : NURSE_HEAL_OBJECT_IDS) {
             interactionSystem.registerSpecialInteraction(nurseHealObjectId, context -> openNurseStationMenu());
         }
@@ -773,6 +808,24 @@ public class GameScreen extends ScreenAdapter {
     private void registerSavePointInteractions() {
         for (String objectId : SAVE_POINT_OBJECT_IDS) {
             interactionSystem.registerSpecialInteraction(objectId, context -> openSavePromptFromInteractible());
+        }
+    }
+
+    private void registerCheckpointInteractions() {
+        for (String objectId : CHECKPOINT_OBJECT_IDS) {
+            interactionSystem.registerSkipDialogueForObjectId(objectId);
+            interactionSystem.registerSpecialInteraction(objectId, context -> writeStoryCheckpointFromCurrentGameState());
+        }
+    }
+
+    private void writeStoryCheckpointFromCurrentGameState() {
+        SaveStateManager saveStateManager = game.getSaveStateManager();
+        if (saveStateManager == null) {
+            return;
+        }
+        SaveState state = buildSaveState();
+        if (saveStateManager.writeCheckpointState(state)) {
+            showSaveToast(SAVE_TOAST_MESSAGE_CHECKPOINT);
         }
     }
 
@@ -931,6 +984,7 @@ public class GameScreen extends ScreenAdapter {
 
         tiledService.setMap(currentMap);
         refreshBertJrPropStateForCurrentMap();
+        refreshMansionGardenBossPropsState(true);
         mapTransitionSystem.setCooldown(0.2f);
 
         Entity restoredPlayer = findPlayerEntity();
@@ -1033,6 +1087,7 @@ public class GameScreen extends ScreenAdapter {
                 && !isBossFightPromptVisible() && !isSaveGamePromptVisible() && !isSaveActionPromptVisible()
                 && !isNurseStationPromptVisible()
                 && !isFallenPromptVisible()
+                && !isMansionGardenBoss1CutsceneActive()
                 && !isBertJrPreDialogueSequenceActive()
                 && !teamViewerVisible && !summaryVisible
                 && !cheatConsoleOverlay.isVisible()
@@ -1098,6 +1153,8 @@ public class GameScreen extends ScreenAdapter {
         
         syncAudioStates();
         syncSystemStates();
+        tryConsumePendingMansionGardenBoss1Cutscene();
+        updateMansionGardenBoss1Cutscene(delta);
 
         // This single call updates ALL systems in order:
         // MoveSystem → CameraSystem → RenderSystem
@@ -1317,6 +1374,16 @@ public class GameScreen extends ScreenAdapter {
             mapTransitionSystem.setProcessing(false);
             return;
         }
+        if (isMansionGardenBoss1CutsceneMovementLocked()) {
+            explorationSystemsEnabled = false;
+            engine.getSystem(PlayerInputSystem.class).setProcessing(false);
+            interactionSystem.setProcessing(false);
+            engine.getSystem(MoveSystem.class).setProcessing(false);
+            engine.getSystem(EncounterDetectionSystem.class).setProcessing(false);
+            engine.getSystem(RandomEncounterSystem.class).setProcessing(false);
+            mapTransitionSystem.setProcessing(false);
+            return;
+        }
         if (isSpecialMovementActive()) {
             explorationSystemsEnabled = false;
             engine.getSystem(PlayerInputSystem.class).setProcessing(false);
@@ -1388,6 +1455,15 @@ public class GameScreen extends ScreenAdapter {
         return activeForcedMove != null;
     }
 
+    private boolean isMansionGardenBoss1CutsceneMovementLocked() {
+        return mansionGardenBoss1CutscenePhase == MansionGardenBoss1CutscenePhase.SPARTACUS_RUN
+                || mansionGardenBoss1CutscenePhase == MansionGardenBoss1CutscenePhase.DUKE_WALK;
+    }
+
+    private boolean isMansionGardenBoss1CutsceneActive() {
+        return mansionGardenBoss1CutscenePhase != MansionGardenBoss1CutscenePhase.INACTIVE;
+    }
+
     private boolean isBossFightPromptVisible() {
         return activeBossFightPrompt != null;
     }
@@ -1409,7 +1485,7 @@ public class GameScreen extends ScreenAdapter {
     }
 
     private void startEndRoadForcedMove(Entity playerEntity) {
-        if (playerEntity == null || isSpecialMovementActive()) {
+        if (playerEntity == null || isSpecialMovementActive() || isMansionGardenBoss1CutsceneMovementLocked()) {
             return;
         }
         Move move = Move.MAPPER.get(playerEntity);
@@ -1421,7 +1497,7 @@ public class GameScreen extends ScreenAdapter {
     }
 
     private void startMansionPathBlockForcedMove(Entity playerEntity) {
-        if (playerEntity == null || isSpecialMovementActive()) {
+        if (playerEntity == null || isSpecialMovementActive() || isMansionGardenBoss1CutsceneMovementLocked()) {
             return;
         }
         Move move = Move.MAPPER.get(playerEntity);
@@ -1444,7 +1520,7 @@ public class GameScreen extends ScreenAdapter {
             float directionY,
             PlayerAnimation.Direction animationDirection,
             float durationSeconds) {
-        if (playerEntity == null || isSpecialMovementActive()) {
+        if (playerEntity == null || isSpecialMovementActive() || isMansionGardenBoss1CutsceneMovementLocked()) {
             return;
         }
         Move move = Move.MAPPER.get(playerEntity);
@@ -1774,6 +1850,11 @@ public class GameScreen extends ScreenAdapter {
     }
 
     private void showSaveToast() {
+        showSaveToast(SAVE_TOAST_MESSAGE_SAVED);
+    }
+
+    private void showSaveToast(String message) {
+        saveToastMessage = (message == null || message.isBlank()) ? SAVE_TOAST_MESSAGE_SAVED : message;
         saveToastTimer = SAVE_TOAST_DURATION_SECONDS;
         audioService.playSound(SoundEffect.CONFIRM);
     }
@@ -1828,6 +1909,10 @@ public class GameScreen extends ScreenAdapter {
                 } else if (ENCOUNTER_SPARTACUS_ID.equals(encounterId)) {
                     playerProgress.incrementWins(EVENT_BOSS_1);
                     playerProgress.markEventAccomplished(EVENT_BOSS_1_DEFEATED);
+                    queueMansionGardenBoss1CutsceneIfNeeded();
+                    // Apply immediately so pre-battle sprites vanish as soon as victory registers (session may
+                    // stay open for reward UI; tryConsume cutscene waits for session to end).
+                    refreshMansionGardenBossPropsState(false);
                 } else if (ENCOUNTER_CERBERUS_ID.equals(encounterId)) {
                     playerProgress.incrementWins(EVENT_BOSS_2);
                     playerProgress.markEventAccomplished(EVENT_BOSS_2_DEFEATED);
@@ -1871,6 +1956,8 @@ public class GameScreen extends ScreenAdapter {
                 activeFallenPrompt = new FallenPromptState(hasPreviousCheckpoint());
                 audioService.playSound(SoundEffect.FALLEN);
             }
+
+            refreshMansionGardenBossPropsState(true);
         }
 
         wasBattleSessionPresent = hasSession;
@@ -2031,6 +2118,7 @@ public class GameScreen extends ScreenAdapter {
         TiledMap newMap = tiledService.loadMap(targetAsset);
         tiledService.setMap(newMap);
         refreshBertJrPropStateForCurrentMap();
+        refreshMansionGardenBossPropsState(true);
         pendingAreaTitleAsset = targetAsset;
 
         Rectangle spawnBounds = findTransitionZoneBounds(targetTransitionId);
@@ -2493,6 +2581,7 @@ public class GameScreen extends ScreenAdapter {
         Gdx.app.log("GameScreen", "Setting map (this will spawn entities)");
         tiledService.setMap(loadedMap);
         refreshBertJrPropStateForCurrentMap();
+        refreshMansionGardenBossPropsState(true);
         
         int entityCountAfter = engine.getEntities().size();
         Gdx.app.log("GameScreen", "After setMap, entity count: " + entityCountAfter);
@@ -2796,8 +2885,14 @@ public class GameScreen extends ScreenAdapter {
             return MapAsset.COTTAGE_SAMPLE.name();
         }
         Object asset = map.getProperties().get("mapAsset");
-        if (asset instanceof MapAsset mapAsset) {
-            return mapAsset.name();
+        if (asset instanceof MapAsset mapAssetEnum) {
+            return mapAssetEnum.name();
+        }
+        if (asset instanceof String mapAssetStr && !mapAssetStr.isBlank()) {
+            MapAsset resolved = MapAsset.fromKey(mapAssetStr.trim());
+            if (resolved != null) {
+                return resolved.name();
+            }
         }
         return MapAsset.COTTAGE_SAMPLE.name();
     }
@@ -2839,7 +2934,8 @@ public class GameScreen extends ScreenAdapter {
         
         // Refresh Bert Jr. prop state for the new map
         refreshBertJrPropStateForCurrentMap();
-        
+        refreshMansionGardenBossPropsState(true);
+
         // Reset map transition cooldown to prevent immediate re-triggering
         mapTransitionSystem.setCooldown(0.4f);
         
@@ -3040,7 +3136,7 @@ public class GameScreen extends ScreenAdapter {
         float originalB = saveToastFont.getColor().b;
         float originalA = saveToastFont.getColor().a;
         saveToastFont.setColor(originalR, originalG, originalB, alpha);
-        saveToastFont.draw(batch, SAVE_TOAST_TEXT, SAVE_TOAST_X, SAVE_TOAST_Y);
+        saveToastFont.draw(batch, saveToastMessage, SAVE_TOAST_X, SAVE_TOAST_Y);
         saveToastFont.setColor(originalR, originalG, originalB, originalA);
         batch.end();
     }
@@ -3196,14 +3292,24 @@ public class GameScreen extends ScreenAdapter {
 
     private boolean hasPreviousCheckpoint() {
         SaveStateManager saveStateManager = game.getSaveStateManager();
-        return saveStateManager != null && saveStateManager.hasSaveStates();
+        return saveStateManager != null && saveStateManager.hasCheckpointState();
     }
 
-    /**
-     * Placeholder for reloading the last story checkpoint after a party wipe.
-     */
-    private void placeholderReturnToLastCheckpoint() {
-        // Integrate checkpoint restore flow here later.
+    private void returnToLastStoryCheckpoint() {
+        SaveStateManager saveStateManager = game.getSaveStateManager();
+        if (saveStateManager == null || !saveStateManager.hasCheckpointState()) {
+            return;
+        }
+        SaveState checkpoint = saveStateManager.loadCheckpointState();
+        if (checkpoint == null) {
+            return;
+        }
+        closeAllMenuUi();
+        if (battleService.hasBattleSession()) {
+            battleService.closeBattleSession();
+        }
+        applySaveState(checkpoint);
+        audioService.playSound(SoundEffect.CONFIRM);
     }
 
     private void handleFallenReturnToLastCheckpointChoice() {
@@ -3213,7 +3319,7 @@ public class GameScreen extends ScreenAdapter {
         }
         activeFallenPrompt = null;
         blockInteractionRetrigger();
-        placeholderReturnToLastCheckpoint();
+        returnToLastStoryCheckpoint();
     }
 
     private static final class BossFightPromptState {
@@ -3567,6 +3673,226 @@ public class GameScreen extends ScreenAdapter {
             }
         }
         return null;
+    }
+
+    private void queueMansionGardenBoss1CutsceneIfNeeded() {
+        if (!MapAsset.MANSION_GARDEN.name().equals(resolveCurrentMapKey())) {
+            return;
+        }
+        if (playerProgress.isEventAccomplished(EVENT_BOSS_1_GARDEN_CUTSCENE_DONE)) {
+            return;
+        }
+        pendingMansionGardenBoss1Cutscene = true;
+    }
+
+    private void tryConsumePendingMansionGardenBoss1Cutscene() {
+        if (!pendingMansionGardenBoss1Cutscene) {
+            return;
+        }
+        if (battleService.hasBattleSession()) {
+            return;
+        }
+        if (!MapAsset.MANSION_GARDEN.name().equals(resolveCurrentMapKey())) {
+            pendingMansionGardenBoss1Cutscene = false;
+            return;
+        }
+        if (!playerProgress.isEventAccomplished(EVENT_BOSS_1_DEFEATED)
+                || playerProgress.isEventAccomplished(EVENT_BOSS_1_GARDEN_CUTSCENE_DONE)) {
+            pendingMansionGardenBoss1Cutscene = false;
+            return;
+        }
+        if (mansionGardenBoss1CutscenePhase != MansionGardenBoss1CutscenePhase.INACTIVE) {
+            return;
+        }
+        pendingMansionGardenBoss1Cutscene = false;
+        beginMansionGardenBoss1Cutscene();
+    }
+
+    private void beginMansionGardenBoss1Cutscene() {
+        refreshMansionGardenBossPropsState(false);
+        freezePlayerInPlace(findPlayerEntity());
+        mansionGardenCutsceneSpartacus1Entity = findPropEntityByObjectId(PROP_MANSION_SPARTACUS_1);
+        mansionGardenCutsceneDuke1Entity = findPropEntityByObjectId(PROP_MANSION_DUKEKHAI_1);
+        mansionGardenBoss1CutscenePhase = MansionGardenBoss1CutscenePhase.SPARTACUS_RUN;
+    }
+
+    private void updateMansionGardenBoss1Cutscene(float delta) {
+        if (mansionGardenBoss1CutscenePhase == MansionGardenBoss1CutscenePhase.INACTIVE
+                || mansionGardenBoss1CutscenePhase == MansionGardenBoss1CutscenePhase.DIALOGUE) {
+            return;
+        }
+        OrthographicCamera camera = game.getCamera();
+        if (camera == null) {
+            return;
+        }
+        float speed = resolvePlayerBaseMoveSpeed() * 1.5f;
+        float dt = Math.max(0f, delta);
+        float camHalfW = camera.viewportWidth * 0.5f;
+        float camCx = camera.position.x;
+
+        if (mansionGardenBoss1CutscenePhase == MansionGardenBoss1CutscenePhase.SPARTACUS_RUN) {
+            Entity e = mansionGardenCutsceneSpartacus1Entity;
+            if (e == null) {
+                advanceMansionGardenBossCutsceneToAfterbossDialogue();
+                return;
+            }
+            Transform t = Transform.MAPPER.get(e);
+            if (t == null) {
+                mansionGardenCutsceneSpartacus1Entity = null;
+                advanceMansionGardenBossCutsceneToAfterbossDialogue();
+                return;
+            }
+            t.getPosition().x += speed * dt;
+            float right = t.getPosition().x + t.getSize().x;
+            if (right > camCx + camHalfW + GARDEN_BOSS1_CUTSCENE_OFF_CAMERA_MARGIN) {
+                engine.removeEntity(e);
+                mansionGardenCutsceneSpartacus1Entity = null;
+                advanceMansionGardenBossCutsceneToAfterbossDialogue();
+            }
+            return;
+        }
+
+        if (mansionGardenBoss1CutscenePhase == MansionGardenBoss1CutscenePhase.DUKE_WALK) {
+            Entity e = mansionGardenCutsceneDuke1Entity;
+            if (e == null) {
+                completeMansionGardenBoss1Cutscene();
+                return;
+            }
+            Transform t = Transform.MAPPER.get(e);
+            if (t == null) {
+                mansionGardenCutsceneDuke1Entity = null;
+                completeMansionGardenBoss1Cutscene();
+                return;
+            }
+            t.getPosition().x += speed * dt;
+            float right = t.getPosition().x + t.getSize().x;
+            if (right > camCx + camHalfW + GARDEN_BOSS1_CUTSCENE_OFF_CAMERA_MARGIN) {
+                engine.removeEntity(e);
+                mansionGardenCutsceneDuke1Entity = null;
+                completeMansionGardenBoss1Cutscene();
+            }
+        }
+    }
+
+    private void advanceMansionGardenBossCutsceneToAfterbossDialogue() {
+        mansionGardenBoss1CutscenePhase = MansionGardenBoss1CutscenePhase.DIALOGUE;
+        interactionSystem.showScriptedDialogueFromFile(
+                DIALOGUE_SPARTACUS_AFTER_BOSS,
+                Interactible.DialoguePosition.BOTTOM,
+                () -> {
+                    mansionGardenBoss1CutscenePhase = MansionGardenBoss1CutscenePhase.DUKE_WALK;
+                    mansionGardenCutsceneDuke1Entity = findPropEntityByObjectId(PROP_MANSION_DUKEKHAI_1);
+                });
+    }
+
+    private void completeMansionGardenBoss1Cutscene() {
+        mansionGardenBoss1CutscenePhase = MansionGardenBoss1CutscenePhase.INACTIVE;
+        mansionGardenCutsceneSpartacus1Entity = null;
+        mansionGardenCutsceneDuke1Entity = null;
+        playerProgress.markEventAccomplished(EVENT_BOSS_1_GARDEN_CUTSCENE_DONE);
+        refreshMansionGardenBossPropsState(true);
+        refreshProgressSnapshots();
+        audioService.playCurrentMapMusic();
+    }
+
+    private float resolvePlayerBaseMoveSpeed() {
+        Entity player = findPlayerEntity();
+        Move move = player == null ? null : Move.MAPPER.get(player);
+        if (move == null) {
+            return 3f;
+        }
+        return Math.max(0.0001f, move.getBaseSpeed());
+    }
+
+    /**
+     * Visibility for {@code mansion_garden} Spartacus / Duke Khai props before and after the post-boss cutscene.
+     *
+     * @param queueCutsceneWhenNeeded when true, defeated-but-not-finished maps request {@link #tryConsumePendingMansionGardenBoss1Cutscene()}
+     */
+    private void refreshMansionGardenBossPropsState(boolean queueCutsceneWhenNeeded) {
+        if (!MapAsset.MANSION_GARDEN.name().equals(resolveCurrentMapKey())) {
+            return;
+        }
+
+        boolean bossDefeated = playerProgress.isEventAccomplished(EVENT_BOSS_1_DEFEATED);
+        boolean cutsceneDone = playerProgress.isEventAccomplished(EVENT_BOSS_1_GARDEN_CUTSCENE_DONE);
+
+        if (!bossDefeated) {
+            setAllMansionGardenPropAlphaByObjectId(PROP_MANSION_SPARTACUS, 1f);
+            setAllMansionGardenPropAlphaByObjectId(PROP_MANSION_DUKEKHAI, 1f);
+            setAllMansionGardenPropAlphaByObjectId(PROP_MANSION_SPARTACUS_1, 0f);
+            setAllMansionGardenPropAlphaByObjectId(PROP_MANSION_DUKEKHAI_1, 0f);
+            return;
+        }
+
+        if (cutsceneDone) {
+            removeAllPropEntitiesByObjectId(PROP_MANSION_SPARTACUS);
+            removeAllPropEntitiesByObjectId(PROP_MANSION_DUKEKHAI);
+            removeAllPropEntitiesByObjectId(PROP_MANSION_SPARTACUS_1);
+            removeAllPropEntitiesByObjectId(PROP_MANSION_DUKEKHAI_1);
+            return;
+        }
+
+        removeAllPropEntitiesByObjectId(PROP_MANSION_SPARTACUS);
+        removeAllPropEntitiesByObjectId(PROP_MANSION_DUKEKHAI);
+        setAllMansionGardenPropAlphaByObjectId(PROP_MANSION_SPARTACUS_1, 1f);
+        setAllMansionGardenPropAlphaByObjectId(PROP_MANSION_DUKEKHAI_1, 1f);
+        if (queueCutsceneWhenNeeded) {
+            pendingMansionGardenBoss1Cutscene = true;
+        }
+    }
+
+    private void removeAllPropEntitiesByObjectId(String objectId) {
+        if (objectId == null || objectId.isBlank()) {
+            return;
+        }
+        String target = objectId.trim().toLowerCase(Locale.ROOT);
+        ImmutableArray<Entity> props = engine.getEntitiesFor(Family.all(Prop.class, Transform.class).get());
+        ArrayList<Entity> toRemove = new ArrayList<>();
+        for (int i = 0; i < props.size(); i++) {
+            Entity entity = props.get(i);
+            Prop prop = Prop.MAPPER.get(entity);
+            if (prop == null || prop.getObjectId() == null) {
+                continue;
+            }
+            if (target.equals(prop.getObjectId().trim().toLowerCase(Locale.ROOT))) {
+                toRemove.add(entity);
+            }
+        }
+        for (Entity e : toRemove) {
+            engine.removeEntity(e);
+        }
+    }
+
+    private void setAllMansionGardenPropAlphaByObjectId(String objectId, float alpha) {
+        if (objectId == null || objectId.isBlank()) {
+            return;
+        }
+        String target = objectId.trim().toLowerCase(Locale.ROOT);
+        ImmutableArray<Entity> props = engine.getEntitiesFor(Family.all(Prop.class, Transform.class).get());
+        for (int i = 0; i < props.size(); i++) {
+            Entity entity = props.get(i);
+            Prop prop = Prop.MAPPER.get(entity);
+            if (prop == null || prop.getObjectId() == null) {
+                continue;
+            }
+            if (target.equals(prop.getObjectId().trim().toLowerCase(Locale.ROOT))) {
+                setMansionGardenPropGraphicAlpha(entity, alpha);
+            }
+        }
+    }
+
+    private static void setMansionGardenPropGraphicAlpha(Entity entity, float alpha) {
+        if (entity == null) {
+            return;
+        }
+        Graphic graphic = Graphic.MAPPER.get(entity);
+        if (graphic == null) {
+            return;
+        }
+        float a = Math.max(0f, Math.min(1f, alpha));
+        Color c = graphic.getColor();
+        c.a = a;
     }
 
     /**

@@ -82,6 +82,8 @@ public class InteractionSystem extends EntitySystem {
     private final Map<String, Integer> persistedInteractionCountsByObjectId = new HashMap<>();
     private Consumer<SpecialInteractionContext> pendingSpecialInteraction;
     private SpecialInteractionContext pendingSpecialInteractionContext;
+    /** Runs after scripted dialogue (no interactible) fully closes. */
+    private Runnable pendingScriptedDialogueComplete;
     private final Set<Entity> activeTrippableTargets = Collections.newSetFromMap(new IdentityHashMap<>());
     private final Map<Entity, Float> trippableRearmTimers = new IdentityHashMap<>();
 
@@ -335,6 +337,42 @@ public class InteractionSystem extends EntitySystem {
         if (flow == null || flow.isEmpty()) {
             return;
         }
+        pendingScriptedDialogueComplete = null;
+        showDialogue(flow, position);
+    }
+
+    /**
+     * Loads dialogue from a JSON asset (same format as interactible {@code DialogueDirectory}) and shows it.
+     * {@code onComplete} runs after the player dismisses the final line (after {@link #hideDialogue()}).
+     */
+    public void showScriptedDialogueFromFile(
+            String path,
+            Interactible.DialoguePosition position,
+            Runnable onComplete) {
+        if (path == null || path.isBlank()) {
+            if (onComplete != null) {
+                onComplete.run();
+            }
+            return;
+        }
+        if (players == null || players.size() == 0) {
+            if (onComplete != null) {
+                onComplete.run();
+            }
+            return;
+        }
+        Entity playerEntity = players.first();
+        String playerName = resolvePlayerName(playerEntity);
+        Map<String, String> objectNamesById = buildObjectNameLookup();
+        DialogueContext context = new DialogueContext("Scene", "scripted", playerName, objectNamesById);
+        List<DialogueEntry> flow = loadDialogueFlowFromFile(path.trim(), context, 1);
+        if (flow.isEmpty()) {
+            if (onComplete != null) {
+                onComplete.run();
+            }
+            return;
+        }
+        pendingScriptedDialogueComplete = onComplete;
         showDialogue(flow, position);
     }
 
@@ -623,6 +661,7 @@ public class InteractionSystem extends EntitySystem {
         }
 
         queueSpecialInteractionAfterDialogue(specialInteraction, specialContext);
+        pendingScriptedDialogueComplete = null;
         showDialogue(resolvedFlow, interactible.getDialoguePosition());
     }
 
@@ -637,6 +676,8 @@ public class InteractionSystem extends EntitySystem {
     private void hideDialogue() {
         Consumer<SpecialInteractionContext> specialInteractionToRun = pendingSpecialInteraction;
         SpecialInteractionContext specialInteractionContextToRun = pendingSpecialInteractionContext;
+        Runnable scriptedComplete = pendingScriptedDialogueComplete;
+        pendingScriptedDialogueComplete = null;
 
         this.dialogueVisible = false;
         this.dialogueFlow = List.of();
@@ -652,6 +693,16 @@ public class InteractionSystem extends EntitySystem {
         pendingSpecialInteractionContext = null;
 
         runSpecialInteraction(specialInteractionToRun, specialInteractionContextToRun);
+        if (scriptedComplete != null) {
+            try {
+                scriptedComplete.run();
+            } catch (Exception ex) {
+                Gdx.app.error(
+                        InteractionSystem.class.getSimpleName(),
+                        "Scripted dialogue onComplete failed for path callback",
+                        ex);
+            }
+        }
     }
 
     private void tickTypewriter(float deltaTime) {
