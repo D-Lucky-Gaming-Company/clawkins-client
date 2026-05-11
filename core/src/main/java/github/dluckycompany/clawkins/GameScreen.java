@@ -647,13 +647,16 @@ public class GameScreen extends ScreenAdapter {
             interactionSystem.registerSpecialInteraction(nurseHealObjectId, context -> openNurseStationMenu());
         }
         
-        // Register merchant shop interactions (shop_01 and shop_02)
-        // Both shops use the same dialogue from merchants.json
+        // Register merchant shop interactions (shop_01, shop_02, and shop_03)
+        // All shops use the same dialogue from merchants.json
         // After dialogue completes, the merchant shop UI opens
         interactionSystem.registerSpecialInteraction("shop_01", context -> {
             openMerchantShop();
         });
         interactionSystem.registerSpecialInteraction("shop_02", context -> {
+            openMerchantShop();
+        });
+        interactionSystem.registerSpecialInteraction("shop_03", context -> {
             openMerchantShop();
         });
         
