@@ -144,7 +144,7 @@ public class BattleHud implements Disposable {
     // -----------------------------------------------------------------------
 
     private static final String PLAYER_PLACEHOLDER_PATH = "entities/clawkins/Clawkin_01_Ginger.png";
-    private static final String BOSS_PLACEHOLDER_PATH   = "entities/clawkins/Clawkin_04_Bert_Jr.png";
+    private static final String BOSS_PLACEHOLDER_PATH   = "entities/clawkins/Clawkin_14_Stray.png";
 
     // -----------------------------------------------------------------------
     // Button asset paths (individual PNG files)
@@ -609,7 +609,7 @@ public class BattleHud implements Disposable {
                 activeEnemyTex = null;
             }
             activeEnemyTex = new Texture(Gdx.files.internal(path));
-            applyTextureToBossImage(activeEnemyTex, isBertJrBossEncounter(encounterId));
+            applyTextureToBossImage(activeEnemyTex, false);  // Never flip boss images
             return;
         }
         restoreBossPlaceholderPortrait();
@@ -640,7 +640,7 @@ public class BattleHud implements Disposable {
         }
         if (bossImage != null && bossPlaceholderTex != null) {
             TextureRegion region = new TextureRegion(bossPlaceholderTex);
-            region.flip(true, false);
+            // No flip - use original orientation
             bossImage.setDrawable(new TextureRegionDrawable(region));
         }
     }
