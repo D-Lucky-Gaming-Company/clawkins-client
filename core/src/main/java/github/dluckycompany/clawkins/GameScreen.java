@@ -742,13 +742,16 @@ public class GameScreen extends ScreenAdapter {
             interactionSystem.registerSpecialInteraction(nurseHealObjectId, context -> openNurseStationMenu());
         }
         
-        // Register merchant shop interactions (shop_01 and shop_02)
-        // Both shops use the same dialogue from merchants.json
+        // Register merchant shop interactions (shop_01, shop_02, and shop_03)
+        // All shops use the same dialogue from merchants.json
         // After dialogue completes, the merchant shop UI opens
         interactionSystem.registerSpecialInteraction("shop_01", context -> {
             openMerchantShop();
         });
         interactionSystem.registerSpecialInteraction("shop_02", context -> {
+            openMerchantShop();
+        });
+        interactionSystem.registerSpecialInteraction("shop_03", context -> {
             openMerchantShop();
         });
         
@@ -3262,9 +3265,21 @@ public class GameScreen extends ScreenAdapter {
         merchantShopVisible = true;
         if (merchantShopUI != null) {
             inventoryStage.clear();
-            merchantShopUI.buildLayout();  // Build the UI layout like InventoryUI
+            merchantShopUI.buildLayout();
             // Set input processor for consistent coordinate unprojection with virtual viewport
             Gdx.input.setInputProcessor(inventoryStage);
+
+            // Wire keyboard navigation to the merchant shop UI
+            inventoryStage.addListener(new com.badlogic.gdx.scenes.scene2d.InputListener() {
+                @Override
+                public boolean keyDown(com.badlogic.gdx.scenes.scene2d.InputEvent event, int keycode) {
+                    if (merchantShopUI != null) {
+                        return merchantShopUI.handleNavigationKey(keycode);
+                    }
+                    return false;
+                }
+            });
+            inventoryStage.setKeyboardFocus(null); // ensure stage receives key events
         }
     }
 
