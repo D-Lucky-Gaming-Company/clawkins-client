@@ -3824,7 +3824,8 @@ public class GameScreen extends ScreenAdapter {
         cancelCerberusBossEncounterCameraIfActive();
         snapWorldCameraZoom(1f);
         audioService.clearMapMusicOverride();
-        audioService.playCurrentMapMusic();
+        // Do NOT play map music here — victory music is playing and should persist
+        // until the battle session fully ends (BATTLE_ENDED event handles map music restoration).
     }
 
     private boolean isCerberusConveyorWalkActive() {
