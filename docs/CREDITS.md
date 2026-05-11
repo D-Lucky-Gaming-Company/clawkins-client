@@ -1,4 +1,4 @@
-# Clawkin — Credits
+# Clawkin: Dawn of the Primal Credits
 
 ---
 
