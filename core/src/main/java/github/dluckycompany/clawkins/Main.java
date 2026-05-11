@@ -211,7 +211,7 @@ public class Main extends Game {
 
         super.render();
 
-        Gdx.graphics.setTitle("Clawkins: Dawn of the Primal - Draw Calls " + glProfiler.getDrawCalls());
+        // glProfiler.getDrawCalls() still tracked internally for logic — title removed
         // fpsLogger.log();
     }
 
