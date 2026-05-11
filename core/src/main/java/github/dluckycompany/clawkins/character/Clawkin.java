@@ -15,8 +15,8 @@ import github.dluckycompany.clawkins.item.StatBoostEffect;
 public class Clawkin {
     private final String id;
     private final String name;
-    private final String imagePath;
-    private final String iconImagePath;
+    private String imagePath;
+    private String iconImagePath;
     private int level;
 
     private int maxHp;
@@ -132,6 +132,12 @@ public class Clawkin {
         // Keep battle skill list aligned with level (SkillManager already uses SkillUnlockSystem + level).
         skills.clear();
         skills.addAll(SkillUnlockSystem.getAllSkillsUpToLevel(id, clamped));
+
+        // Swap portrait to evolved art when reaching evolution level
+        String evolvedPath = EvolutionAssetResolver.resolveEvolvedImagePath(id, clamped);
+        if (evolvedPath != null) {
+            this.imagePath = evolvedPath;
+        }
     }
 
     public int getMaxHp() {

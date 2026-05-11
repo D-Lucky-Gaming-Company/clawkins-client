@@ -8,6 +8,8 @@ import com.badlogic.ashley.core.Entity;
 import com.badlogic.ashley.core.Family;
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.graphics.Color;
+import com.badlogic.gdx.graphics.Texture;
+import com.badlogic.gdx.graphics.glutils.FileTextureData;
 import com.badlogic.gdx.graphics.g2d.TextureRegion;
 import com.badlogic.gdx.maps.MapObject;
 import com.badlogic.gdx.maps.MapProperties;
@@ -29,6 +31,7 @@ import github.dluckycompany.clawkins.character.Clawkin;
 import github.dluckycompany.clawkins.character.LevelSystem;
 import github.dluckycompany.clawkins.component.CameraFollow;
 import github.dluckycompany.clawkins.component.Enemy;
+import github.dluckycompany.clawkins.component.FieldTrainerWalkSprite;
 import github.dluckycompany.clawkins.component.Graphic;
 import github.dluckycompany.clawkins.component.Interactible;
 import github.dluckycompany.clawkins.component.Move;
@@ -297,7 +300,7 @@ public class TiledObjectConfigurator {
                 String encounterTableId = getStringProperty(tileMapObject, "encounterTableId", "default");
                 boolean oneShot = getBooleanProperty(tileMapObject, "oneShot", false);
                 int enemyHp = getIntProperty(tileMapObject, "enemyHp", 40);
-                int enemyAttack = getIntProperty(tileMapObject, "enemyAttack", 8);
+                int enemyAttack = getIntProperty(tileMapObject, "enemyAttack", 15);
                 int enemyDefense = getIntProperty(tileMapObject, "enemyDefense", 3);
                 int enemySpeed = getIntProperty(tileMapObject, "enemySpeed", 6);
                 int enemyLevel = getIntProperty(
@@ -352,6 +355,7 @@ public class TiledObjectConfigurator {
                         enemyImagePath
                 ));
                 Gdx.app.debug(TAG, "Configured as ENEMY: id=" + encounterId + " table=" + encounterTableId);
+                attachFieldTrainerWalkSpriteIfApplicable(tileMapObject, entity);
             }
             case INTERACTIBLE -> {
                 String objectName = getStringProperty(tileMapObject, "ObjectName", "Object");
@@ -439,6 +443,70 @@ public class TiledObjectConfigurator {
 
         scaling.x = tileMapObject.isFlipHorizontally() ? -scaleX : scaleX;
         scaling.y = tileMapObject.isFlipVertically() ? -scaleY : scaleY;
+    }
+
+    /**
+     * Field trainer sheets ({@code trainer*_field.tsx}) are 288×288 with 48×48 tiles
+     * (6×6), with three directional walk rows. Attaches {@link FieldTrainerWalkSprite}
+     * only when the texture layout matches so other enemies are unchanged.
+     *
+     * <p>Walk masters follow {@code trainer1_field.tsx} / {@code trainer2_field.tsx}
+     * (resolved from texture file name: {@code trainer1_sheet} vs {@code trainer2_sheet}).
+     */
+    private static void attachFieldTrainerWalkSpriteIfApplicable(
+            TiledMapTileMapObject tileMapObject, Entity entity) {
+        if (tileMapObject == null || entity == null) {
+            return;
+        }
+        TiledMapTile tile = tileMapObject.getTile();
+        if (tile == null) {
+            return;
+        }
+        TextureRegion source = tile.getTextureRegion();
+        if (source == null || source.getTexture() == null) {
+            return;
+        }
+        int tw = source.getRegionWidth();
+        int th = source.getRegionHeight();
+        Texture tex = source.getTexture();
+        int texW = tex.getWidth();
+        int texH = tex.getHeight();
+        if (tw <= 0 || th <= 0 || texW % tw != 0 || texH % th != 0) {
+            return;
+        }
+        int columns = texW / tw;
+        int rows = texH / th;
+        if (columns != FieldTrainerWalkSprite.WALK_FRAMES || rows < 3) {
+            return;
+        }
+        Graphic graphic = Graphic.MAPPER.get(entity);
+        if (graphic == null) {
+            return;
+        }
+        TextureRegion drawable = new TextureRegion(tex);
+        graphic.setRegion(drawable);
+        int[] masters = resolveTrainerFieldWalkMasterIds(tex);
+        entity.add(new FieldTrainerWalkSprite(
+                drawable, tw, th, columns, masters[0], masters[1], masters[2]));
+    }
+
+    /**
+     * Tiled animation master tile ids per {@code FieldTrainerWalkSprite} constants;
+     * trainer1 uses south id 5, trainer2 uses south id 0; both share side 6 and north 12.
+     */
+    private static int[] resolveTrainerFieldWalkMasterIds(Texture tex) {
+        int south = FieldTrainerWalkSprite.TRAINER2_SOUTH_MASTER_ID;
+        int side = FieldTrainerWalkSprite.TRAINER2_SIDE_MASTER_ID;
+        int north = FieldTrainerWalkSprite.TRAINER2_NORTH_MASTER_ID;
+        if (tex != null && tex.getTextureData() instanceof FileTextureData ftd) {
+            String name = ftd.getFileHandle().name().toLowerCase(Locale.ROOT);
+            if (name.contains("trainer1_sheet")) {
+                south = FieldTrainerWalkSprite.TRAINER1_SOUTH_MASTER_ID;
+                side = FieldTrainerWalkSprite.TRAINER1_SIDE_MASTER_ID;
+                north = FieldTrainerWalkSprite.TRAINER1_NORTH_MASTER_ID;
+            }
+        }
+        return new int[] {south, side, north};
     }
 
     private boolean configureShapeByType(MapObject mapObject, ObjectType objectType, Entity entity) {
@@ -894,7 +962,7 @@ public class TiledObjectConfigurator {
 
     private List<BattleSkill> parseClawkinSkills(MapProperties clawkinProps, String clawkinName) {
         List<BattleSkill> skills = new java.util.ArrayList<>();
-        for (int slot = 1; slot <= 3; slot++) {
+        for (int slot = 1; slot <= 4; slot++) {
             String skillPrefix = "skill" + slot;
             String skillName = getStringFromProps(clawkinProps, skillPrefix + "Name", "").trim();
             String effectType = getStringFromProps(clawkinProps, skillPrefix + "EffectType", "").trim();
@@ -975,7 +1043,7 @@ public class TiledObjectConfigurator {
 
     private List<BattleSkill> parseEnemySkills(TiledMapTileMapObject tileMapObject, String enemyName) {
         List<BattleSkill> skills = new java.util.ArrayList<>();
-        for (int slot = 1; slot <= 3; slot++) {
+        for (int slot = 1; slot <= 4; slot++) {
             String skillPrefix = "skill" + slot;
 
             String name = getStringProperty(
@@ -1018,9 +1086,9 @@ public class TiledObjectConfigurator {
         }
 
         if (skills.isEmpty()) {
-            skills.add(new BattleSkill("Bite", BattleSkill.EffectType.DAMAGE, 0, "attack[self]", 0, 0));
-            skills.add(new BattleSkill("Claw Swipe", BattleSkill.EffectType.DAMAGE, 0, "attack[self]", 0, 0));
-            skills.add(new BattleSkill("Rend", BattleSkill.EffectType.DAMAGE, 0, "attack[self]", 0, 0));
+            skills.add(new BattleSkill("Bite", BattleSkill.EffectType.DAMAGE, 12, "attack[self]", 0, 0));
+            skills.add(new BattleSkill("Claw Swipe", BattleSkill.EffectType.DAMAGE, 10, "attack[self]", 0, 0));
+            skills.add(new BattleSkill("Rend", BattleSkill.EffectType.DAMAGE, 14, "attack[self]", 0, 0));
         }
 
         return skills;

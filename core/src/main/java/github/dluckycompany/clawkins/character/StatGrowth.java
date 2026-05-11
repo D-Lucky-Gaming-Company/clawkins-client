@@ -111,12 +111,13 @@ public class StatGrowth {
      * Growth rate enum defining how quickly stats increase.
      */
     public enum GrowthRate {
-        VERY_SLOW(1.5f),   // +1.5 per level (e.g., Speed for tanks)
-        SLOW(2.0f),        // +2 per level
-        MODERATE(3.0f),    // +3 per level
-        FAST(4.0f),        // +4 per level
-        VERY_FAST(5.0f),   // +5 per level (e.g., HP for tanks)
-        EXTREME(7.0f);     // +7 per level (HP only)
+        VERY_SLOW(2f),   // +1.5 per level (e.g., Speed for tanks)
+        SLOW(5.0f),        // +2 per level
+        MODERATE(7.0f),    // +3 per level
+        FAST(10.0f),        // +4 per level
+        VERY_FAST(15.0f),   // +5 per level (e.g., HP for tanks)
+        EXTREME(20.0f),    // +7 per level (HP only)
+        SPECIAL(30.0f);     // +7 per level (HP only)
         
         private final float growthPerLevel;
         
@@ -145,12 +146,12 @@ public class StatGrowth {
         return new StatGrowth(
             "clawkin_sweepea",
             55,   // Base HP at level 5
-            35,   // Base ATK at level 5
+            20,   // Base ATK at level 5
             50,   // Base DEF at level 5
             20,   // Base SPEED at level 5
-            GrowthRate.EXTREME,      // HP: +7 per level (very tanky)
+            GrowthRate.SPECIAL,      // HP: +7 per level (very tanky)
             GrowthRate.MODERATE,     // ATK: +3 per level (moderate damage)
-            GrowthRate.MODERATE,     // DEF: +3 per level (durable but not unbreakable)
+            GrowthRate.FAST,     // DEF: +3 per level (durable but not unbreakable)
             GrowthRate.VERY_SLOW     // SPEED: +1.5 per level (slow)
         );
     }
@@ -170,13 +171,13 @@ public class StatGrowth {
     public static StatGrowth createGingerGrowth() {
         return new StatGrowth(
             "clawkin_ginger",
-            35,   // Base HP at level 5 (low durability)
-            45,   // Base ATK at level 5 (high offense)
-            25,   // Base DEF at level 5 (low defense)
-            60,   // Base SPEED at level 5 (very fast)
-            GrowthRate.MODERATE,     // HP: +3 per level (glass cannon)
+            50,   // Base HP at level 5 (low durability)
+            50,   // Base ATK at level 5 (high offense)
+            40,   // Base DEF at level 5 (low defense)
+            45,   // Base SPEED at level 5 (very fast)
+            GrowthRate.MODERATE,         // HP: +4 per level (glass cannon, slightly sturdier)
             GrowthRate.VERY_FAST,    // ATK: +5 per level (strong offense)
-            GrowthRate.SLOW,         // DEF: +2 per level (stays fragile)
+            GrowthRate.MODERATE,         // DEF: +2 per level (stays fragile)
             GrowthRate.FAST          // SPEED: +4 per level (maintains speed advantage)
         );
     }
@@ -190,13 +191,13 @@ public class StatGrowth {
     public static StatGrowth createDartGrowth() {
         return new StatGrowth(
             "clawkin_dart",
-            45,   // Base HP at level 5
+            35,   // Base HP at level 5
             45,   // Base ATK at level 5
             25,   // Base DEF at level 5
             40,   // Base SPEED at level 5
-            GrowthRate.SLOW,         // HP: +2 per level (slight survivability growth)
+            GrowthRate.FAST,     // HP: +3 per level (slightly better survivability)
             GrowthRate.VERY_FAST,    // ATK: +5 per level
-            GrowthRate.VERY_SLOW,    // DEF: +1.5 per level (still fragile)
+            GrowthRate.SLOW,    // DEF: +1.5 per level (still fragile)
             GrowthRate.FAST          // SPEED: +4 per level
         );
     }

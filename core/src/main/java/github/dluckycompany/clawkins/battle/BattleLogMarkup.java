@@ -6,6 +6,8 @@ package github.dluckycompany.clawkins.battle;
  */
 public final class BattleLogMarkup {
 
+    /** Saturated yellow — victory milestone headline. */
+    private static final String MARKUP_MILESTONE = "[#ffff00ff]";
     /** Yellow — names / skill titles. */
     private static final String MARKUP_NAME = "[#ffeb3bff]";
     /** Light red — damage numbers. */
@@ -22,6 +24,7 @@ public final class BattleLogMarkup {
 
     public static String openTag(BattleTextRole role) {
         return switch (role) {
+            case MILESTONE -> MARKUP_MILESTONE;
             case NAME -> MARKUP_NAME;
             case DAMAGE -> MARKUP_DAMAGE;
             case HEAL -> MARKUP_HEAL;
