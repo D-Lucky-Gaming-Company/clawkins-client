@@ -27,6 +27,8 @@ public class CameraSystem extends IteratingSystem {
     private float mapH;
     /** Multiplier on {@link #smoothingFactor} (1 = default follow speed). */
     private float smoothingSpeedMultiplier = 1f;
+    /** Added to follow target X before map clamp (world units); negative nudges framing left. */
+    private float followTargetBiasWorldX;
 
     public CameraSystem(Camera camera) {
         super(Family.all(CameraFollow.class, Transform.class).get());
@@ -40,6 +42,10 @@ public class CameraSystem extends IteratingSystem {
      */
     public void setSmoothingSpeedMultiplier(float multiplier) {
         this.smoothingSpeedMultiplier = Math.max(0.01f, multiplier);
+    }
+
+    public void setFollowTargetBiasWorldX(float biasWorldX) {
+        this.followTargetBiasWorldX = biasWorldX;
     }
 
     /**
@@ -77,7 +83,7 @@ public class CameraSystem extends IteratingSystem {
     }
 
     private void calcTargetPosition(Vector2 entityPosition) {
-        float targetX = entityPosition.x;
+        float targetX = entityPosition.x + followTargetBiasWorldX;
         float camHalfW = camera.viewportWidth * 0.5f;
         if (mapW > camHalfW) {
             float min = Math.min(camHalfW, mapW - camHalfW);
@@ -101,6 +107,7 @@ public class CameraSystem extends IteratingSystem {
      */
     public void setMap(TiledMap tiledMap) {
         smoothingSpeedMultiplier = 1f;
+        followTargetBiasWorldX = 0f;
         int width = tiledMap.getProperties().get("width", 0, Integer.class);
         int tileW = tiledMap.getProperties().get("tilewidth", 0, Integer.class);
         int height = tiledMap.getProperties().get("height", 0, Integer.class);
