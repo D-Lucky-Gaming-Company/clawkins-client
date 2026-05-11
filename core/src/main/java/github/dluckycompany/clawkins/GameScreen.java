@@ -170,7 +170,6 @@ public class GameScreen extends ScreenAdapter {
     private static final float SAVE_TOAST_X = 20f;
     private static final float SAVE_TOAST_Y = 575f;
     private static final String SAVE_TOAST_TEXT = "SAVED";
-    private static final String CHECKPOINT_TOAST_TEXT = "CHECKPOINT";
     public static final int DEFAULT_BATTLE_XP_REWARD = 25;
     private static final String EVENT_BOSS_0 = "boss_0_event";
     private static final String EVENT_BOSS_0_DEFEATED = "boss_0_defeated";
@@ -215,17 +214,8 @@ public class GameScreen extends ScreenAdapter {
     private static final String MANSION_PATH_BLOCK_OBJECT_ID = "mansion_path_block";
     private static final String BED_COTTAGE_OBJECT_ID = "bed_cottage";
     private static final String PROP_BERT_JR_OBJECT_ID = "bertjr_prop";
-    /** Spartacus boss scene prop on mansion garden ({@code ObjectId} on map object). */
-    private static final String PROP_DUKEKHAI_OBJECT_ID = "dukekhai_prop";
     private static final Set<String> SAVE_POINT_OBJECT_IDS = Set.of(
             BED_COTTAGE_OBJECT_ID
-    );
-    /** Map interactibles ({@code ObjectId}) that silently write {@link SaveStateManager#writeCheckpointState}. */
-    private static final Set<String> CHECKPOINT_OBJECT_IDS = Set.of(
-            "checkpoint_0",
-            "checkpoint_1",
-            "checkpoint_2",
-            "checkpoint_3"
     );
     /** Heal interactibles on nursery maps (see nurse_interior*.tmx ObjectId). */
     private static final List<String> NURSE_HEAL_OBJECT_IDS = List.of(
@@ -233,7 +223,6 @@ public class GameScreen extends ScreenAdapter {
     );
     private static final float BERT_JR_PROP_INITIAL_X_OFFSET = 6f;
     private static final float BERT_JR_PROP_WALK_IN_SPEED = 1.2f;
-    private static final float DUKEKHAI_PROP_INITIAL_X_OFFSET = 6f;
 
     private final Main game;
     private final Engine engine;
@@ -310,9 +299,6 @@ public class GameScreen extends ScreenAdapter {
     private boolean queuedFallenScreenAfterBattle;
     private boolean defeatSessionEffectsApplied;
     private float saveToastTimer;
-    private String saveToastLine = SAVE_TOAST_TEXT;
-    /** After one successful checkpoint write, further checkpoint touches on this map do nothing until the next map load. */
-    private boolean checkpointAutosaveConsumedThisMap;
     private float interactionRetriggerBlockSeconds;
     private Entity bertJrPropEntity;
     private Vector2 bertJrPropTargetPosition;
@@ -320,12 +306,6 @@ public class GameScreen extends ScreenAdapter {
     private boolean bertJrPropReachedTarget;
     private boolean bertJrPreDialogueSequenceActive;
     private boolean bertJrFirstEncounterMusicStarted;
-    private Entity dukekhaiPropEntity;
-    private Vector2 dukekhaiPropTargetPosition;
-    private boolean dukekhaiPropWalkingIn;
-    private boolean dukekhaiPropReachedTarget;
-    private boolean dukekhaiPreDialogueSequenceActive;
-    private boolean spartacusFirstEncounterMusicStarted;
     private final Map<String, BossMusicHooks> bossMusicHooksByEncounterId = new HashMap<>();
     private ActiveBossMusicState activeBossMusicState;
     
@@ -405,8 +385,6 @@ public class GameScreen extends ScreenAdapter {
         this.areaTitleTimer = 0f;
         this.pendingAreaTitleAsset = null;
         this.saveToastTimer = 0f;
-        this.saveToastLine = SAVE_TOAST_TEXT;
-        this.checkpointAutosaveConsumedThisMap = false;
         this.lastAreaNameForSfx = null;
         this.lastAreaDisplayKey = null;
         this.sideMenuOverlay = new MainSideMenuOverlay(inventoryStage, battleOverlay.getSkin(), uiFont, audioService);
@@ -425,11 +403,6 @@ public class GameScreen extends ScreenAdapter {
         this.bertJrPropReachedTarget = false;
         this.bertJrPreDialogueSequenceActive = false;
         this.bertJrFirstEncounterMusicStarted = false;
-        this.dukekhaiPropTargetPosition = new Vector2();
-        this.dukekhaiPropWalkingIn = false;
-        this.dukekhaiPropReachedTarget = false;
-        this.dukekhaiPreDialogueSequenceActive = false;
-        this.spartacusFirstEncounterMusicStarted = false;
 
         // Tiled map services
         this.tiledService = new TiledService(assetService);
@@ -568,7 +541,6 @@ public class GameScreen extends ScreenAdapter {
         
         registerBossMusicHooks();
         registerSpecialInteractions();
-        registerCheckpointInteractions();
         
         // Log player profile information
         if (playerProfile != null) {
@@ -587,9 +559,7 @@ public class GameScreen extends ScreenAdapter {
             // This triggers: object parsing → entity spawning → map change notification to systems.
             TiledMap startMap = this.tiledService.loadMap(MapAsset.COTTAGE_SAMPLE);
             this.tiledService.setMap(startMap);
-            resetCheckpointAutosaveForNewMapLoad();
             refreshBertJrPropStateForCurrentMap();
-            refreshDukekhaiPropStateForCurrentMap();
             this.lastAreaNameForSfx = resolveAreaName(MapAsset.COTTAGE_SAMPLE);
             this.lastAreaDisplayKey = buildAreaDisplayKey(MapAsset.COTTAGE_SAMPLE);
             // Prevent frame-1 transition triggers from moving the player off the authored spawn.
@@ -668,7 +638,7 @@ public class GameScreen extends ScreenAdapter {
                                 150,
                                 25,
                                 35,
-                                45,
+                                35,
                                 createBertJrTutorialSkills(),
                                 "Bert Jr., The House Bandit",
                                 "entities/clawkins/Clawkin_04_Bert_Jr.png"
@@ -683,17 +653,8 @@ public class GameScreen extends ScreenAdapter {
             );
         });
 
-        interactionSystem.registerPreDialogueCheck(TRIGGER_BOSS_1_ID, context -> {
-            if (context.interactionCount() == 1 && !dukekhaiPropReachedTarget) {
-                startDukekhaiPreDialogueSequence(context.playerEntity());
-                return false;
-            }
-            if (context.interactionCount() == 1 && !spartacusFirstEncounterMusicStarted) {
-                audioService.playMusic(MusicTrack.BOSS_DUKE_DIA_FIRST_ENCOUNTER, false);
-                spartacusFirstEncounterMusicStarted = true;
-            }
-            return !playerProgress.isEventAccomplished(EVENT_BOSS_1_DEFEATED);
-        });
+        interactionSystem.registerPreDialogueCheck(TRIGGER_BOSS_1_ID, context ->
+                !playerProgress.isEventAccomplished(EVENT_BOSS_1_DEFEATED));
         interactionSystem.registerSpecialInteraction(TRIGGER_BOSS_1_ID, context -> {
             if (battleService.hasBattleSession() || playerProgress.isEventAccomplished(EVENT_BOSS_1_DEFEATED)) {
                 return;
@@ -797,39 +758,6 @@ public class GameScreen extends ScreenAdapter {
         for (String objectId : SAVE_POINT_OBJECT_IDS) {
             interactionSystem.registerSpecialInteraction(objectId, context -> openSavePromptFromInteractible());
         }
-    }
-
-    private void registerCheckpointInteractions() {
-        for (String objectId : CHECKPOINT_OBJECT_IDS) {
-            interactionSystem.registerSkipDialogueForObjectId(objectId);
-            interactionSystem.registerSpecialInteraction(objectId, context -> autosaveCheckpointFromInteractible());
-        }
-    }
-
-    private void autosaveCheckpointFromInteractible() {
-        if (checkpointAutosaveConsumedThisMap) {
-            return;
-        }
-        if (isBossFightPromptVisible() || isSaveGamePromptVisible() || isSaveActionPromptVisible()
-                || isFallenPromptVisible() || isNurseStationPromptVisible()) {
-            return;
-        }
-        if (battleService.hasBattleSession()) {
-            return;
-        }
-        SaveStateManager saveStateManager = game.getSaveStateManager();
-        if (saveStateManager == null) {
-            return;
-        }
-        SaveState state = buildSaveState();
-        if (saveStateManager.writeCheckpointState(state)) {
-            checkpointAutosaveConsumedThisMap = true;
-            showSaveLineToast(CHECKPOINT_TOAST_TEXT);
-        }
-    }
-
-    private void resetCheckpointAutosaveForNewMapLoad() {
-        checkpointAutosaveConsumedThisMap = false;
     }
 
     private void openSavePromptFromInteractible() {
@@ -986,9 +914,7 @@ public class GameScreen extends ScreenAdapter {
         }
 
         tiledService.setMap(currentMap);
-        resetCheckpointAutosaveForNewMapLoad();
         refreshBertJrPropStateForCurrentMap();
-        refreshDukekhaiPropStateForCurrentMap();
         mapTransitionSystem.setCooldown(0.2f);
 
         Entity restoredPlayer = findPlayerEntity();
@@ -1086,7 +1012,7 @@ public class GameScreen extends ScreenAdapter {
                 && !isBossFightPromptVisible() && !isSaveGamePromptVisible() && !isSaveActionPromptVisible()
                 && !isNurseStationPromptVisible()
                 && !isFallenPromptVisible()
-                && !isBossPropEntranceSequenceActive()
+                && !isBertJrPreDialogueSequenceActive()
                 && !teamViewerVisible && !summaryVisible
                 && !cheatConsoleOverlay.isVisible()) {
             MainSideMenuOverlay.Action menuAction = sideMenuOverlay.handleInput();
@@ -1147,7 +1073,6 @@ public class GameScreen extends ScreenAdapter {
         battleService.update(delta);
         updateForcedMove(delta);
         updateBertJrPropEntrance(delta);
-        updateDukekhaiPropEntrance(delta);
         syncAudioStates();
         syncSystemStates();
 
@@ -1340,7 +1265,7 @@ public class GameScreen extends ScreenAdapter {
     }
 
     private void syncSystemStates() {
-        if (isBossPropEntranceSequenceActive()) {
+        if (isBertJrPreDialogueSequenceActive()) {
             explorationSystemsEnabled = false;
             engine.getSystem(PlayerInputSystem.class).setProcessing(false);
             interactionSystem.setProcessing(true);
@@ -1437,9 +1362,8 @@ public class GameScreen extends ScreenAdapter {
         return activeNurseStationPrompt != null;
     }
 
-    /** True while a boss intro prop (Bert Jr. or Spartacus) is walking in before dialogue. */
-    private boolean isBossPropEntranceSequenceActive() {
-        return bertJrPreDialogueSequenceActive || dukekhaiPreDialogueSequenceActive;
+    private boolean isBertJrPreDialogueSequenceActive() {
+        return bertJrPreDialogueSequenceActive;
     }
 
     private void startEndRoadForcedMove(Entity playerEntity) {
@@ -1808,11 +1732,6 @@ public class GameScreen extends ScreenAdapter {
     }
 
     private void showSaveToast() {
-        showSaveLineToast(SAVE_TOAST_TEXT);
-    }
-
-    private void showSaveLineToast(String line) {
-        saveToastLine = (line == null || line.isBlank()) ? SAVE_TOAST_TEXT : line;
         saveToastTimer = SAVE_TOAST_DURATION_SECONDS;
         audioService.playSound(SoundEffect.CONFIRM);
     }
@@ -1867,7 +1786,6 @@ public class GameScreen extends ScreenAdapter {
                 } else if (ENCOUNTER_SPARTACUS_ID.equals(encounterId)) {
                     playerProgress.incrementWins(EVENT_BOSS_1);
                     playerProgress.markEventAccomplished(EVENT_BOSS_1_DEFEATED);
-                    hideDukekhaiProp();
                 } else if (ENCOUNTER_CERBERUS_ID.equals(encounterId)) {
                     playerProgress.incrementWins(EVENT_BOSS_2);
                     playerProgress.markEventAccomplished(EVENT_BOSS_2_DEFEATED);
@@ -2070,9 +1988,7 @@ public class GameScreen extends ScreenAdapter {
 
         TiledMap newMap = tiledService.loadMap(targetAsset);
         tiledService.setMap(newMap);
-        resetCheckpointAutosaveForNewMapLoad();
         refreshBertJrPropStateForCurrentMap();
-        refreshDukekhaiPropStateForCurrentMap();
         pendingAreaTitleAsset = targetAsset;
 
         Rectangle spawnBounds = findTransitionZoneBounds(targetTransitionId);
@@ -2534,9 +2450,7 @@ public class GameScreen extends ScreenAdapter {
         
         Gdx.app.log("GameScreen", "Setting map (this will spawn entities)");
         tiledService.setMap(loadedMap);
-        resetCheckpointAutosaveForNewMapLoad();
         refreshBertJrPropStateForCurrentMap();
-        refreshDukekhaiPropStateForCurrentMap();
         
         int entityCountAfter = engine.getEntities().size();
         Gdx.app.log("GameScreen", "After setMap, entity count: " + entityCountAfter);
@@ -2837,11 +2751,9 @@ public class GameScreen extends ScreenAdapter {
         // Load and set the new map (this spawns all entities including NPCs, enemies, etc.)
         TiledMap loadedMap = tiledService.loadMap(targetAsset);
         tiledService.setMap(loadedMap);
-        resetCheckpointAutosaveForNewMapLoad();
-
+        
         // Refresh Bert Jr. prop state for the new map
         refreshBertJrPropStateForCurrentMap();
-        refreshDukekhaiPropStateForCurrentMap();
         
         // Reset map transition cooldown to prevent immediate re-triggering
         mapTransitionSystem.setCooldown(0.4f);
@@ -3043,7 +2955,7 @@ public class GameScreen extends ScreenAdapter {
         float originalB = saveToastFont.getColor().b;
         float originalA = saveToastFont.getColor().a;
         saveToastFont.setColor(originalR, originalG, originalB, alpha);
-        saveToastFont.draw(batch, saveToastLine, SAVE_TOAST_X, SAVE_TOAST_Y);
+        saveToastFont.draw(batch, SAVE_TOAST_TEXT, SAVE_TOAST_X, SAVE_TOAST_Y);
         saveToastFont.setColor(originalR, originalG, originalB, originalA);
         batch.end();
     }
@@ -3199,23 +3111,14 @@ public class GameScreen extends ScreenAdapter {
 
     private boolean hasPreviousCheckpoint() {
         SaveStateManager saveStateManager = game.getSaveStateManager();
-        return saveStateManager != null && saveStateManager.hasCheckpointState();
+        return saveStateManager != null && saveStateManager.hasSaveStates();
     }
 
     /**
-     * Reloads the last silent checkpoint written by checkpoint interactibles (not manual saves).
+     * Placeholder for reloading the last story checkpoint after a party wipe.
      */
     private void placeholderReturnToLastCheckpoint() {
-        SaveStateManager saveStateManager = game.getSaveStateManager();
-        if (saveStateManager == null) {
-            return;
-        }
-        SaveState checkpoint = saveStateManager.loadCheckpointState();
-        if (checkpoint == null) {
-            Gdx.app.error("GameScreen", "Checkpoint file missing or unreadable");
-            return;
-        }
-        applySaveState(checkpoint);
+        // Integrate checkpoint restore flow here later.
     }
 
     private void handleFallenReturnToLastCheckpointChoice() {
@@ -3561,117 +3464,6 @@ public class GameScreen extends ScreenAdapter {
         bertJrPropReachedTarget = true;
         bertJrPreDialogueSequenceActive = false;
         bertJrPropTargetPosition.setZero();
-    }
-
-    private void refreshDukekhaiPropStateForCurrentMap() {
-        dukekhaiPropEntity = findPropEntityByObjectId(PROP_DUKEKHAI_OBJECT_ID);
-        dukekhaiPropWalkingIn = false;
-        dukekhaiPropReachedTarget = false;
-        dukekhaiPreDialogueSequenceActive = false;
-        dukekhaiPropTargetPosition.setZero();
-        int spartacusAttempts = playerProgress.getEventStats(EVENT_BOSS_1).getAttemptCount();
-        spartacusFirstEncounterMusicStarted = spartacusAttempts > 0;
-
-        if (dukekhaiPropEntity == null) {
-            return;
-        }
-
-        if (playerProgress.isEventAccomplished(EVENT_BOSS_1_DEFEATED)) {
-            hideDukekhaiProp();
-            return;
-        }
-
-        Transform transform = Transform.MAPPER.get(dukekhaiPropEntity);
-        if (transform == null) {
-            dukekhaiPropEntity = null;
-            return;
-        }
-
-        dukekhaiPropTargetPosition.set(transform.getPosition());
-        if (spartacusAttempts <= 0) {
-            transform.getPosition().x = dukekhaiPropTargetPosition.x + DUKEKHAI_PROP_INITIAL_X_OFFSET;
-            transform.getPosition().y = dukekhaiPropTargetPosition.y;
-            dukekhaiPropReachedTarget = false;
-            return;
-        }
-        dukekhaiPropReachedTarget = true;
-    }
-
-    private void startDukekhaiPropEntranceIfNeeded(int interactionCount) {
-        if (interactionCount != 1 || playerProgress.isEventAccomplished(EVENT_BOSS_1_DEFEATED)) {
-            return;
-        }
-        if (dukekhaiPropEntity == null) {
-            dukekhaiPropEntity = findPropEntityByObjectId(PROP_DUKEKHAI_OBJECT_ID);
-        }
-        if (dukekhaiPropEntity == null || dukekhaiPropReachedTarget) {
-            return;
-        }
-        if (dukekhaiPropTargetPosition.isZero()) {
-            Transform transform = Transform.MAPPER.get(dukekhaiPropEntity);
-            if (transform == null) {
-                return;
-            }
-            float currentX = transform.getPosition().x;
-            float currentY = transform.getPosition().y;
-            dukekhaiPropTargetPosition.set(currentX - DUKEKHAI_PROP_INITIAL_X_OFFSET, currentY);
-        }
-        dukekhaiPropWalkingIn = true;
-    }
-
-    private void startDukekhaiPreDialogueSequence(Entity playerEntity) {
-        if (dukekhaiPreDialogueSequenceActive || dukekhaiPropReachedTarget) {
-            return;
-        }
-        dukekhaiPreDialogueSequenceActive = true;
-        freezePlayerInPlace(playerEntity);
-        startDukekhaiPropEntranceIfNeeded(1);
-    }
-
-    private void updateDukekhaiPropEntrance(float delta) {
-        if (!dukekhaiPropWalkingIn || dukekhaiPropEntity == null) {
-            return;
-        }
-        Transform transform = Transform.MAPPER.get(dukekhaiPropEntity);
-        if (transform == null) {
-            dukekhaiPropWalkingIn = false;
-            dukekhaiPropEntity = null;
-            return;
-        }
-        float dt = Math.max(0f, delta);
-        float walkSpeed = BERT_JR_PROP_WALK_IN_SPEED;
-        Entity playerEntity = findPlayerEntity();
-        if (playerEntity != null) {
-            Move move = Move.MAPPER.get(playerEntity);
-            if (move != null) {
-                walkSpeed = move.getBaseSpeed();
-            }
-        }
-        float targetX = dukekhaiPropTargetPosition.x;
-        float currentX = transform.getPosition().x;
-        float nextX = Math.max(targetX, currentX - walkSpeed * dt);
-        transform.getPosition().x = nextX;
-        transform.getPosition().y = dukekhaiPropTargetPosition.y;
-        if (nextX <= targetX + 0.001f) {
-            transform.getPosition().x = targetX;
-            dukekhaiPropReachedTarget = true;
-            dukekhaiPropWalkingIn = false;
-            if (dukekhaiPreDialogueSequenceActive) {
-                dukekhaiPreDialogueSequenceActive = false;
-                interactionSystem.triggerInteractionByObjectId(TRIGGER_BOSS_1_ID);
-            }
-        }
-    }
-
-    private void hideDukekhaiProp() {
-        if (dukekhaiPropEntity != null) {
-            engine.removeEntity(dukekhaiPropEntity);
-        }
-        dukekhaiPropEntity = null;
-        dukekhaiPropWalkingIn = false;
-        dukekhaiPropReachedTarget = true;
-        dukekhaiPreDialogueSequenceActive = false;
-        dukekhaiPropTargetPosition.setZero();
     }
 
     private Entity findPropEntityByObjectId(String objectId) {

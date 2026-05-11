@@ -609,7 +609,7 @@ public class BattleHud implements Disposable {
                 activeEnemyTex = null;
             }
             activeEnemyTex = new Texture(Gdx.files.internal(path));
-            applyTextureToBossImage(activeEnemyTex, isBertJrBossEncounter(encounterId));
+            applyTextureToBossImage(activeEnemyTex, false);  // Never flip boss images
             return;
         }
         restoreBossPlaceholderPortrait();
@@ -640,7 +640,7 @@ public class BattleHud implements Disposable {
         }
         if (bossImage != null && bossPlaceholderTex != null) {
             TextureRegion region = new TextureRegion(bossPlaceholderTex);
-            region.flip(true, false);
+            // No flip - use original orientation
             bossImage.setDrawable(new TextureRegionDrawable(region));
         }
     }
@@ -660,9 +660,9 @@ public class BattleHud implements Disposable {
      * Horizontal mirror for the boss HUD portrait only on the Bert Jr. fight
      * ({@code boss_0_encounter}, same id as {@link github.dluckycompany.clawkins.GameScreen}).
      */
-    // private static boolean isBertJrBossEncounter(String encounterId) {
-    //     return encounterId != null && "boss_0_encounter".equalsIgnoreCase(encounterId.trim());
-    // }
+    private static boolean isBertJrBossEncounter(String encounterId) {
+        return encounterId != null && "boss_0_encounter".equalsIgnoreCase(encounterId.trim());
+    }
 
     /** Same resolution order as ClawkinCard portrait loading. */
     private static String[] resolvePlayerPortraitCandidates(Clawkin clawkin) {
