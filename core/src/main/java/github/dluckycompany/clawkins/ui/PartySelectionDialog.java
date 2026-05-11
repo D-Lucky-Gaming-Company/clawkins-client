@@ -18,6 +18,7 @@ import com.badlogic.gdx.utils.Align;
 
 import github.dluckycompany.clawkins.audio.AudioService;
 import github.dluckycompany.clawkins.audio.SoundEffect;
+import github.dluckycompany.clawkins.battle.PlayerBattleState;
 import github.dluckycompany.clawkins.character.Clawkin;
 import github.dluckycompany.clawkins.input.InputConventions;
 import github.dluckycompany.clawkins.item.Inventory;
@@ -247,12 +248,15 @@ public class PartySelectionDialog extends Dialog {
             if (audioService != null) {
                 audioService.playSound(SoundEffect.FAILURE_1);
             }
-            showStatusDialog(
-                "Use Not Allowed",
-                battleContext
-                        ? item.getName() + " cannot be used in combat."
-                        : item.getName() + " cannot be used outside combat."
-            );
+            String detail;
+            if (PlayerBattleState.isEntirePartyFelled(party)) {
+                detail = "While your whole team is down, only revive items can be used.";
+            } else if (battleContext) {
+                detail = item.getName() + " cannot be used in combat.";
+            } else {
+                detail = item.getName() + " cannot be used outside combat.";
+            }
+            showStatusDialog("Use Not Allowed", detail);
             return;
         }
 
@@ -267,10 +271,15 @@ public class PartySelectionDialog extends Dialog {
                 if (audioService != null) {
                     audioService.playSound(SoundEffect.FAILURE_1);
                 }
-                showStatusDialog(
-                    "Use Not Allowed",
-                    target.getName() + " is already at full HP."
-                );
+                String msg;
+                if (item.getType() == Item.ItemType.REVIVE) {
+                    msg = target.getName() + " is not fainted.";
+                } else if (item.getType() == Item.ItemType.POTION && !target.isAlive()) {
+                    msg = "Healing items can't be used on fainted Clawkins. Use a revive item.";
+                } else {
+                    msg = target.getName() + " is already at full HP.";
+                }
+                showStatusDialog("Use Not Allowed", msg);
                 return;  // Don't close dialog, allow user to select someone else
             }
 
@@ -350,22 +359,16 @@ public class PartySelectionDialog extends Dialog {
             return false;
         }
 
-        // Example logic: Healing items can only be used if target is damaged
+        // Healing items: living targets only, and not at full HP. Revive: KO only. Stat boost: when allowed by context.
         return switch (item.getType()) {
-            case POTION -> target.getCurrentHp() < target.getMaxHp();  // Can only heal if HP < Max HP
-            case REVIVE -> target.getCurrentHp() == 0;                // Can only revive if target is KO'd
-            case STAT_BOOSTER -> true;                                 // Always usable
+            case POTION -> target.isAlive() && target.getCurrentHp() < target.getMaxHp();
+            case REVIVE -> target.getCurrentHp() == 0;
+            case STAT_BOOSTER -> true;
         };
     }
 
     private boolean isUseAllowedInCurrentContext() {
-        if (item == null) {
-            return false;
-        }
-        if (battleContext) {
-            return item.isUsableInBattle();
-        }
-        return item.getType() == Item.ItemType.POTION;
+        return PlayerBattleState.isInventoryItemUseAllowed(item, battleContext, party);
     }
 
     /**
