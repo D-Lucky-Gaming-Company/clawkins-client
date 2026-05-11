@@ -869,6 +869,42 @@ public class BattleHud implements Disposable {
             playerUnit,
             "[3] "
         );
+
+        // Update slot 4 (Item button) — hidden until Skill 4 unlocks at Level 20
+        SkillSlot slot4 = skillManager.getSkillSlot(3);
+        if (slot4 == null) {
+            // No Skill 4 defined for this Clawkin — keep button hidden
+            setSkill4Visible(false);
+        } else if (slot4.isLocked(skillManager.getCurrentLevel())) {
+            // Skill 4 exists but level requirement not met — hide completely
+            setSkill4Visible(false);
+        } else {
+            // Level 20+ reached — show and enable Skill 4
+            setSkill4Visible(true);
+            updateSkillButton(
+                itemBtn,
+                itemLbl,
+                slot4,
+                skillManager.getCurrentLevel(),
+                playerUnit,
+                "[4] "
+            );
+        }
+    }
+
+    /**
+     * Shows or hides the Skill 4 button and its label.
+     * Skill 4 is hidden below Level 20 and revealed once unlocked.
+     */
+    private void setSkill4Visible(boolean visible) {
+        if (itemBtn != null) {
+            itemBtn.setVisible(visible);
+            itemBtn.setDisabled(!visible);
+            itemBtn.setTouchable(visible ? Touchable.enabled : Touchable.disabled);
+        }
+        if (itemLbl != null) {
+            itemLbl.setVisible(visible);
+        }
     }
     
     /**
@@ -1159,8 +1195,7 @@ public class BattleHud implements Disposable {
         specialLbl = new Label("[3] 4 Turns", labelStyle);
         itemLbl = new Label("[4] Special Skill", labelStyle);
 
-        playerHpTable = new Table();
-        bossHpTable = new Table();
+        playerHpTable = new Table();        bossHpTable = new Table();
         playerExpTable = new Table();
 
         playerHpCorner = new Table();
@@ -1188,6 +1223,9 @@ public class BattleHud implements Disposable {
         buildClawkinContainer();
         applyResponsiveLayout();
         positionPlaceholders();
+
+        // Skill 4 (item button) is hidden by default — revealed at Level 20 via updateSkillLabels
+        setSkill4Visible(false);
 
         stage.addActor(bg);
         stage.addActor(clawkinWrapper);  // Container + icons
