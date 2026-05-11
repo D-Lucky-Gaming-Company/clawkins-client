@@ -200,7 +200,9 @@ public class PlayerBattleState {
         if (battleContext) {
             return item.isUsableInBattle();
         }
-        return item.getType() == Item.ItemType.POTION;
+        // Outside battle: allow potions and special items (e.g., level boost)
+        return item.getType() == Item.ItemType.POTION
+            || item.getType() == Item.ItemType.SPECIAL;
     }
 
     // ============ Active Clawkin ============

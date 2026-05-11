@@ -1260,6 +1260,7 @@ public class MerchantShopUI {
             case POTION -> HEALTH_ITEM_TINT;
             case STAT_BOOSTER -> STAT_BOOST_ITEM_TINT;
             case REVIVE -> STAT_BOOST_ITEM_TINT;
+            case SPECIAL -> PANEL_LEFT_BG;
         };
     }
 

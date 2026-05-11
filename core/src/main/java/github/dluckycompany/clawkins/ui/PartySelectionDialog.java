@@ -51,6 +51,7 @@ public class PartySelectionDialog extends Dialog {
     // Post-transaction callback to refresh inventory UI
     private Runnable onItemApplied;
     private Runnable onClosed;
+    private java.util.function.Consumer<Integer> onLevelBoosted;
     private Dialog activeStatusDialog;
     private Runnable activeStatusOnClose;
 
@@ -276,6 +277,10 @@ public class PartySelectionDialog extends Dialog {
                     msg = target.getName() + " is not fainted.";
                 } else if (item.getType() == Item.ItemType.POTION && !target.isAlive()) {
                     msg = "Healing items can't be used on fainted Clawkins. Use a revive item.";
+                } else if (item.getType() == Item.ItemType.SPECIAL 
+                        && item.getEffect() instanceof github.dluckycompany.clawkins.item.LevelBoostEffect) {
+                    msg = target.getName() + " is already at max level (" 
+                        + github.dluckycompany.clawkins.character.LevelSystem.MAX_LEVEL + ").";
                 } else {
                     msg = target.getName() + " is already at full HP.";
                 }
@@ -285,6 +290,7 @@ public class PartySelectionDialog extends Dialog {
 
             // Record previous HP for feedback
             int previousHp = target.getCurrentHp();
+            int previousLevel = target.getLevel();
 
             // ============ PHASE 2: APPLICATION ============
             // Apply the item's effect to the target
@@ -301,9 +307,11 @@ public class PartySelectionDialog extends Dialog {
                 return;  // Don't close dialog, allow user to select someone else
             }
 
-            // Record new HP after effect
+            // Record new HP and level after effect
             int newHp = target.getCurrentHp();
+            int newLevel = target.getLevel();
             int hpRestored = newHp - previousHp;
+            int levelGained = newLevel - previousLevel;
 
             // ============ PHASE 3: CONSUMPTION ============
             // Only decrement inventory if the effect was actually applied
@@ -316,15 +324,30 @@ public class PartySelectionDialog extends Dialog {
 
             // ============ PHASE 4: FEEDBACK ============
             // Log the successful transaction
-            String feedback = String.format(
-                "[Item Use] %s used %s on %s: %d → %d HP (+%d)",
-                "Player",
-                item.getName(),
-                target.getName(),
-                previousHp,
-                newHp,
-                hpRestored
-            );
+            String feedback;
+            if (levelGained > 0) {
+                // Level boost feedback
+                feedback = String.format(
+                    "[Item Use] %s used %s on %s: Level %d → %d (+%d)",
+                    "Player",
+                    item.getName(),
+                    target.getName(),
+                    previousLevel,
+                    newLevel,
+                    levelGained
+                );
+            } else {
+                // HP restoration feedback
+                feedback = String.format(
+                    "[Item Use] %s used %s on %s: %d → %d HP (+%d)",
+                    "Player",
+                    item.getName(),
+                    target.getName(),
+                    previousHp,
+                    newHp,
+                    hpRestored
+                );
+            }
             Gdx.app.log("PartySelectionDialog", feedback);
             if (audioService != null) {
                 audioService.playSound(SoundEffect.BATTLE_HEAL);
@@ -335,6 +358,10 @@ public class PartySelectionDialog extends Dialog {
             // This removes the item from the list and updates display
             if (onItemApplied != null) {
                 onItemApplied.run();
+            }
+            // If this was a level boost, notify so shared XP can be updated
+            if (levelGained > 0 && onLevelBoosted != null) {
+                onLevelBoosted.accept(levelGained);
             }
             // Close the dialog
             closeDialog();
@@ -350,6 +377,7 @@ public class PartySelectionDialog extends Dialog {
      * Checks item-specific constraints:
      * - Healing items: Target must have HP < Max HP
      * - Status items: Target must not already have the status
+     * - Special items: Check specific effect requirements
      * 
      * @param target The target to validate
      * @return true if the item can be used, false otherwise
@@ -360,10 +388,20 @@ public class PartySelectionDialog extends Dialog {
         }
 
         // Healing items: living targets only, and not at full HP. Revive: KO only. Stat boost: when allowed by context.
+        // Special items: Check specific effect requirements (e.g., level boost requires not at max level)
         return switch (item.getType()) {
             case POTION -> target.isAlive() && target.getCurrentHp() < target.getMaxHp();
             case REVIVE -> target.getCurrentHp() == 0;
             case STAT_BOOSTER -> true;
+            case SPECIAL -> {
+                // Check if this is a level boost effect
+                if (item.getEffect() instanceof github.dluckycompany.clawkins.item.LevelBoostEffect) {
+                    // Can use if not at max level
+                    yield target.getLevel() < github.dluckycompany.clawkins.character.LevelSystem.MAX_LEVEL;
+                }
+                // Default: allow use for other special items
+                yield true;
+            }
         };
     }
 
@@ -385,6 +423,14 @@ public class PartySelectionDialog extends Dialog {
 
     public void setOnClosed(Runnable callback) {
         this.onClosed = callback;
+    }
+
+    /**
+     * Set callback invoked after a level-boost item is successfully applied.
+     * The integer argument is the number of levels gained.
+     */
+    public void setOnLevelBoosted(java.util.function.Consumer<Integer> callback) {
+        this.onLevelBoosted = callback;
     }
 
     public boolean handleNavigationKey(int keycode) {
