@@ -185,6 +185,10 @@ public class BattleHud implements Disposable {
     /** Encounter-specific background texture loaded dynamically; disposed by this class. */
     private Texture encounterBgTex;
 
+    /** Black overlay drawn on top of background for darkening effect. */
+    private Image bgOverlay;
+    private Texture bgOverlayTex;
+
     // Owned placeholder textures and actors (dispose in dispose())
     private Texture playerPlaceholderTex;
     private Texture bossPlaceholderTex;
@@ -387,6 +391,18 @@ public class BattleHud implements Disposable {
         }
         if (bg != null) {
             bg.setDrawable(new TextureRegionDrawable(new TextureRegion(battleBg)));
+        }
+        setBackgroundOverlayOpacity(0f);
+    }
+
+    /**
+     * Sets the opacity of the black foreground overlay drawn on top of the background.
+     *
+     * @param opacity 0.0 = fully transparent (no darkening), 1.0 = fully black
+     */
+    public void setBackgroundOverlayOpacity(float opacity) {
+        if (bgOverlay != null) {
+            bgOverlay.setColor(0f, 0f, 0f, Math.max(0f, Math.min(1f, opacity)));
         }
     }
 
@@ -921,17 +937,17 @@ public class BattleHud implements Disposable {
             "[3] "
         );
 
-        // Update slot 4 (Item button) — hidden until Skill 4 unlocks at Level 20
+        // Update slot 4 (Item button) — dimmed until Skill 4 unlocks at Level 20
         SkillSlot slot4 = skillManager.getSkillSlot(3);
         if (slot4 == null) {
-            // No Skill 4 defined for this Clawkin — keep button hidden
-            setSkill4Visible(false);
+            // No Skill 4 defined for this Clawkin — show dimmed placeholder
+            setSkill4Locked("Lv. 20");
         } else if (slot4.isLocked(skillManager.getCurrentLevel())) {
-            // Skill 4 exists but level requirement not met — hide completely
-            setSkill4Visible(false);
+            // Skill 4 exists but level requirement not met — show dimmed with unlock text
+            setSkill4Locked(slot4.getLockDisplayText(skillManager.getCurrentLevel()));
         } else {
-            // Level 20+ reached — show and enable Skill 4
-            setSkill4Visible(true);
+            // Level 20+ reached — fully enable Skill 4
+            setSkill4Unlocked();
             updateSkillButton(
                 itemBtn,
                 itemLbl,
@@ -944,17 +960,35 @@ public class BattleHud implements Disposable {
     }
 
     /**
-     * Shows or hides the Skill 4 button and its label.
-     * Skill 4 is hidden below Level 20 and revealed once unlocked.
+     * Shows Skill 4 button in a locked/dimmed state (reduced opacity, disabled).
      */
-    private void setSkill4Visible(boolean visible) {
+    private void setSkill4Locked(String lockText) {
         if (itemBtn != null) {
-            itemBtn.setVisible(visible);
-            itemBtn.setDisabled(!visible);
-            itemBtn.setTouchable(visible ? Touchable.enabled : Touchable.disabled);
+            itemBtn.setVisible(true);
+            itemBtn.setDisabled(true);
+            itemBtn.setTouchable(Touchable.disabled);
+            itemBtn.setColor(1f, 1f, 1f, 0.35f);
         }
         if (itemLbl != null) {
-            itemLbl.setVisible(visible);
+            itemLbl.setVisible(true);
+            itemLbl.setText("[4] " + (lockText != null ? lockText : "Locked"));
+            itemLbl.setColor(1f, 1f, 1f, 0.35f);
+        }
+    }
+
+    /**
+     * Shows Skill 4 button in a fully unlocked/enabled state.
+     */
+    private void setSkill4Unlocked() {
+        if (itemBtn != null) {
+            itemBtn.setVisible(true);
+            itemBtn.setDisabled(false);
+            itemBtn.setTouchable(Touchable.enabled);
+            itemBtn.setColor(Color.WHITE);
+        }
+        if (itemLbl != null) {
+            itemLbl.setVisible(true);
+            itemLbl.setColor(Color.WHITE);
         }
     }
     
@@ -1168,6 +1202,7 @@ public class BattleHud implements Disposable {
         if (activeClawkinTex != null) activeClawkinTex.dispose();
         if (activeEnemyTex != null) activeEnemyTex.dispose();
         if (encounterBgTex != null) encounterBgTex.dispose();
+        if (bgOverlayTex != null) bgOverlayTex.dispose();
         // battleBg is owned by AssetService â€” do NOT dispose it here
     }
 
@@ -1276,10 +1311,23 @@ public class BattleHud implements Disposable {
         applyResponsiveLayout();
         positionPlaceholders();
 
-        // Skill 4 (item button) is hidden by default — revealed at Level 20 via updateSkillLabels
-        setSkill4Visible(false);
+        // Skill 4 (item button) starts in locked/dimmed state — fully enabled at Level 20 via updateSkillLabels
+        setSkill4Locked("Lv. 20");
 
         stage.addActor(bg);
+
+        // Black foreground overlay (sits on top of background, behind all other actors)
+        Pixmap overlayPixmap = new Pixmap(1, 1, Pixmap.Format.RGBA8888);
+        overlayPixmap.setColor(0f, 0f, 0f, 1f);
+        overlayPixmap.fill();
+        bgOverlayTex = new Texture(overlayPixmap);
+        overlayPixmap.dispose();
+        bgOverlay = new Image(new TextureRegionDrawable(new TextureRegion(bgOverlayTex)));
+        bgOverlay.setFillParent(true);
+        bgOverlay.setColor(0f, 0f, 0f, 0f); // Start fully transparent
+        bgOverlay.setTouchable(Touchable.disabled);
+        stage.addActor(bgOverlay);
+
         stage.addActor(clawkinWrapper);  // Container + icons
         stage.addActor(selectionHighlight);  // Highlight as separate actor for absolute positioning
         stage.addActor(playerHpCorner);

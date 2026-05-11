@@ -469,6 +469,9 @@ public class BattleOverlay implements Disposable {
             } else {
                 battleHud.resetBattleBackground();
             }
+            // Apply black foreground overlay if defined for this encounter
+            float overlayOpacity = BattleBackgroundResolver.getOverlayOpacity(encounterId);
+            battleHud.setBackgroundOverlayOpacity(overlayOpacity);
         }
 
         showBattleHud();
