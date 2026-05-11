@@ -85,6 +85,18 @@ public class ItemFactory {
         "57_icecream"  // Ice cream for quick energy/speed
     );
 
+    // Special items
+    public static final Item MACARAMBONI = new Item(
+        "macaramboni",
+        "Macaramboni",
+        "A delicious pasta dish that boosts a Clawkin's level by 1.",
+        Item.ItemType.SPECIAL,
+        new LevelBoostEffect(1),
+        500,
+        true,
+        "68_macncheese_dish"  // Mac and cheese dish for level boost
+    );
+
     private ItemFactory() {
         // Utility class, no instantiation
     }
@@ -104,6 +116,7 @@ public class ItemFactory {
             case "attack_boost" -> ATTACK_BOOST;
             case "defense_boost" -> DEFENSE_BOOST;
             case "speed_boost" -> SPEED_BOOST;
+            case "macaramboni" -> MACARAMBONI;
             default -> null;
         };
     }

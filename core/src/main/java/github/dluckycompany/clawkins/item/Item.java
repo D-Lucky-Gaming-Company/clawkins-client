@@ -10,7 +10,8 @@ public class Item {
     public enum ItemType {
         POTION,      // Healing item
         REVIVE,      // Revive item
-        STAT_BOOSTER // Stat boosting item
+        STAT_BOOSTER, // Stat boosting item
+        SPECIAL      // Special items (e.g., level boost, rare items)
     }
 
     private final String id;
@@ -61,6 +62,16 @@ public class Item {
 
     public String getImageName() {
         return imageName;
+    }
+
+    /**
+     * Get the item's effect instance.
+     * Used for checking effect types (e.g., instanceof LevelBoostEffect).
+     * 
+     * @return the ItemEffect instance, or null if no effect
+     */
+    public ItemEffect getEffect() {
+        return effect;
     }
 
     // ============ Effect Application ============
