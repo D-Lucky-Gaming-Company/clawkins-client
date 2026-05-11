@@ -250,8 +250,8 @@ public class BattleOverlay implements Disposable {
         // Button3 -> Utility / Heal effect
         battleHud.setOnSpecial(() -> submitPlayerSkillAndOpenDialogue(battleService, 3));
 
-        // Button4 -> Reserved evolved skill slot (not implemented yet)
-        battleHud.setOnItem(this::showEvolvedSkillUnavailable);
+        // Button4 -> Evolved skill (Skill 4, unlocks at Level 20)
+        battleHud.setOnItem(() -> submitPlayerSkillAndOpenDialogue(battleService, 4));
 
         // Inventory button -> Open inventory screen
         battleHud.setOnInventory(() -> openInventoryScreen());
@@ -457,6 +457,20 @@ public class BattleOverlay implements Disposable {
         transitionPending = false;
         resetDialogueFlow();
         resetVictoryDialogueState();
+
+        // Set encounter-specific battle background
+        if (battleHud != null && battleService != null) {
+            BattleStateMachine machine = battleService.getBattleStateMachine();
+            BattleContext ctx = machine != null ? machine.getContext() : null;
+            String encounterId = ctx != null ? ctx.getEncounterId() : null;
+            String bgPath = BattleBackgroundResolver.resolve(encounterId);
+            if (BattleBackgroundResolver.hasCustomBackground(encounterId)) {
+                battleHud.setBattleBackground(bgPath);
+            } else {
+                battleHud.resetBattleBackground();
+            }
+        }
+
         showBattleHud();
         
         // Set wild battle flag (for now, assume all battles are wild)
@@ -1205,22 +1219,9 @@ public class BattleOverlay implements Disposable {
     }
 
     private void showSkillConfirmation(BattleService battleService) {
-        if (battleHud != null && battleHud.getSelectedSkillIndex() == 3) {
-            showEvolvedSkillUnavailable();
-            return;
-        }
         skillConfirmationOptionIndex = 0;
         String text = buildSkillConfirmationText(battleService);
         openDialogueInstant(null, text, List.of(), DialogueFlowPhase.SKILL_CONFIRMATION);
-    }
-
-    private void showEvolvedSkillUnavailable() {
-        openDialogueInstant(
-                null,
-                "Evolved skill is not implemented yet.\n\n[Z/Space/X] Close",
-                List.of(),
-                DialogueFlowPhase.NONE
-        );
     }
 
     private void showSkillStats(BattleService battleService) {
