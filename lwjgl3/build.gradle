@@ -155,8 +155,8 @@ construo {
     }
     register("winX64", Target.Windows) {
       architecture.set(Target.Architecture.X86_64)
-      // Optional: icon for Windows, as a PNG
-      icon.set(project.file("icons/logo.png"))
+      // Game icon for the Windows executable
+      icon.set(project.file("icons/GameIcon.png"))
       jdkUrl.set("https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.10%2B7/OpenJDK21U-jdk_x64_windows_hotspot_21.0.10_7.zip")
       // Uncomment the next line to show a console when the game runs, to print messages.
       //useConsole.set(true)
