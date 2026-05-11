@@ -349,6 +349,19 @@ public class InteractionSystem extends EntitySystem {
             String path,
             Interactible.DialoguePosition position,
             Runnable onComplete) {
+        showScriptedDialogueFromFile(path, position, 1, onComplete);
+    }
+
+    /**
+     * Same as {@link #showScriptedDialogueFromFile(String, Interactible.DialoguePosition, Runnable)} but uses
+     * {@code interactionCount} when selecting an entry from a JSON {@code Interactions} array (matches interactible
+     * flow indexing).
+     */
+    public void showScriptedDialogueFromFile(
+            String path,
+            Interactible.DialoguePosition position,
+            int interactionCount,
+            Runnable onComplete) {
         if (path == null || path.isBlank()) {
             if (onComplete != null) {
                 onComplete.run();
@@ -365,7 +378,8 @@ public class InteractionSystem extends EntitySystem {
         String playerName = resolvePlayerName(playerEntity);
         Map<String, String> objectNamesById = buildObjectNameLookup();
         DialogueContext context = new DialogueContext("Scene", "scripted", playerName, objectNamesById);
-        List<DialogueEntry> flow = loadDialogueFlowFromFile(path.trim(), context, 1);
+        int safeCount = Math.max(1, interactionCount);
+        List<DialogueEntry> flow = loadDialogueFlowFromFile(path.trim(), context, safeCount);
         if (flow.isEmpty()) {
             if (onComplete != null) {
                 onComplete.run();

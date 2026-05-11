@@ -2,9 +2,11 @@ package github.dluckycompany.clawkins.battle;
 
 import com.badlogic.gdx.Gdx;
 import github.dluckycompany.clawkins.character.Clawkin;
+import github.dluckycompany.clawkins.character.LevelSystem;
 import github.dluckycompany.clawkins.encounter.EncounterEvent;
 import github.dluckycompany.clawkins.encounter.EncounterEventBus;
 import github.dluckycompany.clawkins.encounter.EncounterEventType;
+import github.dluckycompany.clawkins.encounter.WildClawkinEncounterGenerator;
 
 import java.util.List;
 
@@ -46,6 +48,7 @@ public class BattleService {
     }
 
     private void startBattle(EncounterEvent event) {
+        EncounterEvent resolved = WildClawkinEncounterGenerator.rollIfWildTable(event, resolvePlayerLevelForWildEncounters());
         playerBattleState.ensureInitialized(
                 DEFAULT_PLAYER_HP,
                 DEFAULT_PLAYER_ATTACK,
@@ -53,8 +56,8 @@ public class BattleService {
                 DEFAULT_PLAYER_SPEED
         );
 
-        String enemyId = event.getEncounterId();
-        String enemyLabel = event.getEnemyName();
+        String enemyId = resolved.getEncounterId();
+        String enemyLabel = resolved.getEnemyName();
         if (enemyLabel == null || enemyLabel.isBlank()) {
             enemyLabel = enemyId;
         }
@@ -63,15 +66,15 @@ public class BattleService {
         Clawkin activeForLabel = playerBattleState.getActiveClawkin();
         String allyLabel = clawkinHudName(activeForLabel, activeUnit);
         BattleContext context = new BattleContext(
-                event.getEncounterId(),
-                event.getEncounterTableId(),
+                resolved.getEncounterId(),
+                resolved.getEncounterTableId(),
             List.of(activeUnit),
-                List.of(new BattleUnit(enemyId, event.getEnemyHp(), event.getEnemyAttack(), event.getEnemyDefense(), event.getEnemySpeed())),
+                List.of(new BattleUnit(enemyId, resolved.getEnemyHp(), resolved.getEnemyAttack(), resolved.getEnemyDefense(), resolved.getEnemySpeed())),
             activeSkills,
-            event.getEnemySkills(),
-                event.getEnemyLevel(),
+                resolved.getEnemySkills(),
+                resolved.getEnemyLevel(),
                 enemyLabel,
-                event.getEnemyImagePath(),
+                resolved.getEnemyImagePath(),
                 allyLabel
         );
 
@@ -113,6 +116,14 @@ public class BattleService {
         if (!playerBattleState.hasAnyAliveClawkin()) {
             battleStateMachine.finishAsDefeat();
         }
+    }
+
+    private int resolvePlayerLevelForWildEncounters() {
+        Clawkin active = playerBattleState.getActiveClawkin();
+        if (active != null) {
+            return Math.max(LevelSystem.MIN_LEVEL, Math.min(LevelSystem.MAX_LEVEL, active.getLevel()));
+        }
+        return 5;
     }
 
     /**

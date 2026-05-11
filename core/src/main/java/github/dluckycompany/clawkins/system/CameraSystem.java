@@ -22,8 +22,11 @@ public class CameraSystem extends IteratingSystem {
     private final Camera camera;
     private final float smoothingFactor;
     private final Vector2 targetPosition;
+    private final Vector2 lastClampedFollowTarget = new Vector2();
     private float mapW;
     private float mapH;
+    /** Multiplier on {@link #smoothingFactor} (1 = default follow speed). */
+    private float smoothingSpeedMultiplier = 1f;
 
     public CameraSystem(Camera camera) {
         super(Family.all(CameraFollow.class, Transform.class).get());
@@ -32,12 +35,30 @@ public class CameraSystem extends IteratingSystem {
         this.targetPosition = new Vector2();
     }
 
+    /**
+     * Scales how quickly the camera eases toward the follow target (e.g. {@code 0.25f} for quarter speed).
+     */
+    public void setSmoothingSpeedMultiplier(float multiplier) {
+        this.smoothingSpeedMultiplier = Math.max(0.01f, multiplier);
+    }
+
+    /**
+     * True when the camera is within {@code worldEpsilon} of the clamped follow target from the last update.
+     */
+    public boolean isCameraNearFollowTarget(float worldEpsilon) {
+        float dx = camera.position.x - lastClampedFollowTarget.x;
+        float dy = camera.position.y - lastClampedFollowTarget.y;
+        float e = Math.max(0.0001f, worldEpsilon);
+        return dx * dx + dy * dy <= e * e;
+    }
+
     @Override
     protected void processEntity(Entity entity, float deltaTime) {
         Transform transform = Transform.MAPPER.get(entity);
         calcTargetPosition(transform.getPosition());
+        lastClampedFollowTarget.set(targetPosition);
 
-        float progress = smoothingFactor * deltaTime;
+        float progress = smoothingFactor * smoothingSpeedMultiplier * deltaTime;
         float smoothedX = MathUtils.lerp(camera.position.x, targetPosition.x, progress);
         float smoothedY = MathUtils.lerp(camera.position.y, targetPosition.y, progress);
         camera.position.set(smoothedX, smoothedY, camera.position.z);
@@ -79,6 +100,7 @@ public class CameraSystem extends IteratingSystem {
      * Call this when the map changes so the camera knows the map boundaries.
      */
     public void setMap(TiledMap tiledMap) {
+        smoothingSpeedMultiplier = 1f;
         int width = tiledMap.getProperties().get("width", 0, Integer.class);
         int tileW = tiledMap.getProperties().get("tilewidth", 0, Integer.class);
         int height = tiledMap.getProperties().get("height", 0, Integer.class);
