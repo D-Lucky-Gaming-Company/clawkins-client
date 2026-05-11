@@ -312,23 +312,23 @@ public class EndingCreditsScreen extends ScreenAdapter {
             switch (entry.type) {
                 case HEADING_1 -> {
                     fontH1.setColor(Color.valueOf("#F4D03F"));
-                    fontH1.draw(batch, entry.text, entry.x, drawY + entry.height);
+                    fontH1.draw(batch, sanitizeForFont(entry.text), entry.x, drawY + entry.height);
                 }
                 case HEADING_2 -> {
                     fontH2.setColor(Color.valueOf("#E8C97A"));
-                    fontH2.draw(batch, entry.text, entry.x, drawY + entry.height);
+                    fontH2.draw(batch, sanitizeForFont(entry.text), entry.x, drawY + entry.height);
                 }
                 case HEADING_3 -> {
                     fontH3.setColor(Color.valueOf("#D6CBB8"));
-                    fontH3.draw(batch, entry.text, entry.x, drawY + entry.height);
+                    fontH3.draw(batch, sanitizeForFont(entry.text), entry.x, drawY + entry.height);
                 }
                 case BULLET -> {
                     fontBody.setColor(Color.valueOf("#C8BFA8"));
-                    fontBody.draw(batch, "\u2022 " + entry.text, entry.x, drawY + entry.height);
+                    fontBody.draw(batch, "* " + sanitizeForFont(entry.text), entry.x, drawY + entry.height);
                 }
                 case BODY -> {
                     fontBody.setColor(Color.valueOf("#B8AF9A"));
-                    fontBody.draw(batch, entry.text, entry.x, drawY + entry.height);
+                    fontBody.draw(batch, sanitizeForFont(entry.text), entry.x, drawY + entry.height);
                 }
                 case SPACER -> { /* nothing */ }
             }
@@ -355,7 +355,7 @@ public class EndingCreditsScreen extends ScreenAdapter {
 
         // Subtitle
         fontH3.setColor(0.85f, 0.78f, 0.65f, theEndAlpha);
-        String sub = "Thank you for playing Clawkin";
+        String sub = "Thank you for playing Clawkins - Dawn of the Primal";
         com.badlogic.gdx.graphics.g2d.GlyphLayout subLayout = new com.badlogic.gdx.graphics.g2d.GlyphLayout(fontH3, sub);
         float subX = (VIRTUAL_W - subLayout.width) / 2f;
         float subY = VIRTUAL_H / 2f - 20f;
@@ -392,13 +392,13 @@ public class EndingCreditsScreen extends ScreenAdapter {
         // Layout constants
         final float marginX   = 80f;
 
-        // Spacing per line type (pixels below the line)
-        final float spacingH1   = 14f;
-        final float spacingH2   = 10f;
-        final float spacingH3   = 8f;
-        final float spacingBody = 6f;
-        final float spacingBullet = 6f;
-        final float spacerH     = 18f;
+        // Spacing per line type (pixels below the line) — generous for readability
+        final float spacingH1     = 22f;
+        final float spacingH2     = 16f;
+        final float spacingH3     = 12f;
+        final float spacingBody   = 8f;
+        final float spacingBullet = 8f;
+        final float spacerH       = 30f;  // section gap between major blocks
 
         // Build from bottom up: accumulate Y as we go
         float cursorY = CREDITS_PADDING_BOTTOM;
@@ -440,9 +440,12 @@ public class EndingCreditsScreen extends ScreenAdapter {
                 }
                 case BODY -> {
                     float h = fontBody.getLineHeight();
-                    reversed.add(new CreditsLineEntry(LineType.BODY, line.text,
-                            (VIRTUAL_W - measureWidth(fontBody, line.text)) / 2f,
-                            cursorY, h));
+                    float textW = measureWidth(fontBody, line.text);
+                    // Center short lines; left-align long ones to prevent overflow
+                    float x = textW < (VIRTUAL_W - marginX * 2)
+                            ? (VIRTUAL_W - textW) / 2f
+                            : marginX;
+                    reversed.add(new CreditsLineEntry(LineType.BODY, line.text, x, cursorY, h));
                     cursorY += h + spacingBody;
                 }
                 case SPACER -> {
@@ -465,7 +468,7 @@ public class EndingCreditsScreen extends ScreenAdapter {
     }
 
     private float measureWidth(BitmapFont font, String text) {
-        com.badlogic.gdx.graphics.g2d.GlyphLayout gl = new com.badlogic.gdx.graphics.g2d.GlyphLayout(font, text);
+        com.badlogic.gdx.graphics.g2d.GlyphLayout gl = new com.badlogic.gdx.graphics.g2d.GlyphLayout(font, sanitizeForFont(text));
         return gl.width;
     }
 
@@ -496,6 +499,13 @@ public class EndingCreditsScreen extends ScreenAdapter {
         FreeTypeFontGenerator gen = new FreeTypeFontGenerator(
                 Gdx.files.internal(FONT_PATH));
 
+        // Explicit character set — only include what the font actually supports.
+        // This prevents .notdef boxes for missing glyphs.
+        String chars = FreeTypeFontGenerator.DEFAULT_CHARS
+                + "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+                + "0123456789 .,!?-_:;'\"()[]{}@#$%^&*+=/<>\\|~`"
+                + "AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz";
+
         FreeTypeFontGenerator.FreeTypeFontParameter p;
 
         // H1 — large title
@@ -503,6 +513,7 @@ public class EndingCreditsScreen extends ScreenAdapter {
         p.size = 52;
         p.borderWidth = 2f;
         p.borderColor = Color.BLACK;
+        p.characters = chars;
         fontH1 = gen.generateFont(p);
 
         // H2 — section heading
@@ -510,6 +521,7 @@ public class EndingCreditsScreen extends ScreenAdapter {
         p.size = 36;
         p.borderWidth = 1.5f;
         p.borderColor = Color.BLACK;
+        p.characters = chars;
         fontH2 = gen.generateFont(p);
 
         // H3 — sub-heading
@@ -517,6 +529,7 @@ public class EndingCreditsScreen extends ScreenAdapter {
         p.size = 26;
         p.borderWidth = 1f;
         p.borderColor = Color.BLACK;
+        p.characters = chars;
         fontH3 = gen.generateFont(p);
 
         // Body
@@ -524,6 +537,7 @@ public class EndingCreditsScreen extends ScreenAdapter {
         p.size = 20;
         p.borderWidth = 1f;
         p.borderColor = Color.BLACK;
+        p.characters = chars;
         fontBody = gen.generateFont(p);
 
         // "THE END" — very large
@@ -531,9 +545,41 @@ public class EndingCreditsScreen extends ScreenAdapter {
         p.size = 80;
         p.borderWidth = 3f;
         p.borderColor = Color.BLACK;
+        p.characters = chars;
         fontTheEnd = gen.generateFont(p);
 
         gen.dispose();
+    }
+
+    /**
+     * Replace characters that the pixel font doesn't support with safe ASCII equivalents.
+     * Prevents the "box with X" .notdef glyph from appearing.
+     */
+    private static String sanitizeForFont(String text) {
+        if (text == null) return "";
+        return text
+            .replace('\u2014', '-')   // em-dash → hyphen
+            .replace('\u2013', '-')   // en-dash → hyphen
+            .replace('\u2022', '*')   // bullet • → *
+            .replace('\u2018', '\'')  // left single quote → '
+            .replace('\u2019', '\'')  // right single quote → '
+            .replace('\u201C', '"')   // left double quote → "
+            .replace('\u201D', '"')   // right double quote → "
+            .replace('\u2026', '.')   // ellipsis → .
+            .replace('\u00A0', ' ')   // non-breaking space → space
+            .replace('\u00E9', 'e')   // é → e
+            .replace('\u00E8', 'e')   // è → e
+            .replace('\u00EA', 'e')   // ê → e
+            .replace('\u00EB', 'e')   // ë → e
+            .replace('\u00E0', 'a')   // à → a
+            .replace('\u00E1', 'a')   // á → a
+            .replace('\u00E2', 'a')   // â → a
+            .replace('\u00F3', 'o')   // ó → o
+            .replace('\u00F4', 'o')   // ô → o
+            .replace('\u00FA', 'u')   // ú → u
+            .replace('\u00FC', 'u')   // ü → u
+            .replace('\u00F1', 'n')   // ñ → n
+            .replaceAll("[^\\x20-\\x7E]", ""); // strip anything else outside printable ASCII
     }
 
     private void buildBlackPixel() {
