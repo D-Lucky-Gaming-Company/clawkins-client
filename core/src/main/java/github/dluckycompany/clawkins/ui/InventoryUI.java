@@ -25,6 +25,7 @@ import com.badlogic.gdx.utils.Align;
 
 import github.dluckycompany.clawkins.audio.AudioService;
 import github.dluckycompany.clawkins.audio.SoundEffect;
+import github.dluckycompany.clawkins.battle.PlayerBattleState;
 import github.dluckycompany.clawkins.character.Clawkin;
 import github.dluckycompany.clawkins.input.InputConventions;
 import github.dluckycompany.clawkins.item.Inventory;
@@ -990,18 +991,15 @@ public class InventoryUI {
     }
 
     private boolean isUseAllowedInCurrentContext(Item item) {
-        if (item == null) {
-            return false;
-        }
-        if (battleContext) {
-            return item.isUsableInBattle();
-        }
-        return item.getType() == Item.ItemType.POTION;
+        return PlayerBattleState.isInventoryItemUseAllowed(item, battleContext, party);
     }
 
     private String buildUseDeniedMessage(Item item) {
         if (item == null) {
             return "This item cannot be used right now.";
+        }
+        if (PlayerBattleState.isEntirePartyFelled(party)) {
+            return "While your whole team is down, only revive items can be used.";
         }
         if (battleContext) {
             return item.getName() + " cannot be used in combat.";

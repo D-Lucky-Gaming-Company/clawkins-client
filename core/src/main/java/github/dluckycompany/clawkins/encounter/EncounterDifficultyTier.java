@@ -8,15 +8,15 @@ public enum EncounterDifficultyTier {
     /** No random encounters on this map. */
     NONE(0f),
     /** Very infrequent — field routes and similar. */
-    EASY(0.01f),
+    EASY(0.20f),
     /** Placeholder tier for future maps. */
-    MIDDLE(0.07f),
+    MIDDLE(0.25f),
     /** Placeholder tier for future maps. */
-    NORMAL(0.15f),
+    NORMAL(0.25f),
     /** Placeholder tier for future maps. */
-    INTERMEDIATE(0.20f),
+    INTERMEDIATE(0.30f),
     /** Placeholder tier for future maps. */
-    HARD(0.25f);
+    HARD(0.35f);
 
     private final float encounterChance;
 

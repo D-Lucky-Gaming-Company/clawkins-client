@@ -109,6 +109,17 @@ public class SkillManager {
         
         return true;
     }
+
+    /**
+     * True when the slot has an unlocked skill that cannot be used solely because it is on cooldown.
+     */
+    public boolean isSkillBlockedOnlyByCooldown(int slotIndex, BattleUnit playerUnit) {
+        SkillSlot slot = getSkillSlot(slotIndex);
+        if (slot == null || slot.getSkill() == null || slot.isLocked(currentLevel)) {
+            return false;
+        }
+        return playerUnit != null && playerUnit.isSkillOnCooldown(slot.getSkill().getName());
+    }
     
     /**
      * Gets a validation message for why a skill cannot be used.
