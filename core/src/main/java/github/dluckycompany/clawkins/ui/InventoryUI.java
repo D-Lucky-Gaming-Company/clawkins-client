@@ -93,6 +93,8 @@ public class InventoryUI {
     // Callbacks
     private Runnable onItemDropped;
     private Runnable onBackPressed;
+    /** Called after a LevelBoostEffect is successfully applied. Receives the number of levels gained. */
+    private java.util.function.Consumer<Integer> onLevelBoosted;
     
     // Button drawables (loaded from assets/ui/buttons/)
     private TextureRegionDrawable backDrawable;
@@ -909,6 +911,7 @@ public class InventoryUI {
             selectedItemRow = null;
         });
 
+        dialog.setOnLevelBoosted(onLevelBoosted);
         dialog.setOnClosed(() -> activePartyDialog = null);
         activePartyDialog = dialog;
         dialog.show(stage, null);
@@ -1019,6 +1022,7 @@ public class InventoryUI {
             case POTION -> HEALTH_ITEM_TINT;
             case STAT_BOOSTER -> STAT_BOOST_ITEM_TINT;
             case REVIVE -> STAT_BOOST_ITEM_TINT;
+            case SPECIAL -> PANEL_LEFT_BG;
         };
     }
 
@@ -1158,6 +1162,14 @@ public class InventoryUI {
      */
     public void setOnItemDropped(Runnable callback) {
         this.onItemDropped = callback;
+    }
+
+    /**
+     * Set callback invoked after a level-boost item is successfully used.
+     * The integer argument is the number of levels gained.
+     */
+    public void setOnLevelBoosted(java.util.function.Consumer<Integer> callback) {
+        this.onLevelBoosted = callback;
     }
 
     /**

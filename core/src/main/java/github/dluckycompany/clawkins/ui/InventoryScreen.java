@@ -98,6 +98,13 @@ public class InventoryScreen implements Screen {
         // Wire up back button to return to game screen
         inventoryUI.setOnBackPressed(() -> returnToGameScreen());
 
+        // Wire up level-boost callback so Macaramboni updates shared XP in PlayerProgress
+        inventoryUI.setOnLevelBoosted(levelsGained -> {
+            if (previousGameScreen != null) {
+                previousGameScreen.applySharedLevelBoost(levelsGained);
+            }
+        });
+
         // Store previous input processor for restoration in hide()
         previousInputProcessor = Gdx.input.getInputProcessor();
         

@@ -25,6 +25,8 @@ public class CheatCodeManager {
     private Runnable onTeleportRequested;
     private float gameSpeedMultiplier = 1f;
     private String pendingTeleportMapKey = null;
+    private github.dluckycompany.clawkins.progress.PlayerProgress playerProgress;
+    private Runnable onSharedLevelChanged;
     
     public interface CheatCommand {
         CheatResult execute();
@@ -163,6 +165,21 @@ public class CheatCodeManager {
      */
     public void setOnTeleportRequested(Runnable callback) {
         this.onTeleportRequested = callback;
+    }
+
+    /**
+     * Set the PlayerProgress reference so level-related cheats can update shared XP.
+     */
+    public void setPlayerProgress(github.dluckycompany.clawkins.progress.PlayerProgress progress) {
+        this.playerProgress = progress;
+    }
+
+    /**
+     * Set callback invoked after a level cheat changes the shared level.
+     * GameScreen should wire this to applySharedLevelSet / applySharedLevelBoost.
+     */
+    public void setOnSharedLevelChanged(Runnable callback) {
+        this.onSharedLevelChanged = callback;
     }
     
     /**
@@ -321,6 +338,8 @@ public class CheatCodeManager {
             sb.append("poor - Remove all money\n");
             sb.append("heal - Heal all party members\n");
             sb.append("items - Add test items\n");
+            sb.append("maxlevel - Max out all Clawkin levels\n");
+            sb.append("macaramboni - Add 5x Macaramboni (level boost items)\n");
             sb.append("whereami - Show current location\n");
             sb.append("speed - Toggle 2x game speed\n");
             sb.append("tp <map> - Teleport to map (e.g., tp cottage)\n");
@@ -366,6 +385,51 @@ public class CheatCodeManager {
             
             Gdx.app.log("CheatConsole", sb.toString());
             return CheatResult.success("Check console for map list");
+        });
+        
+        // Maxlevel cheat - max out all Clawkin levels
+        registerCheat("maxlevel", () -> {
+            try {
+                int maxLevel = github.dluckycompany.clawkins.character.LevelSystem.MAX_LEVEL;
+
+                // Update shared XP to the EXP floor of max level
+                if (playerProgress != null) {
+                    int expForMaxLevel = github.dluckycompany.clawkins.character.LevelSystem.getExpRequiredForLevel(maxLevel);
+                    playerProgress.setExperiencePoints(expForMaxLevel);
+                }
+
+                // Notify GameScreen to re-sync party stats and refresh all HUD displays
+                if (onSharedLevelChanged != null) {
+                    onSharedLevelChanged.run();
+                } else {
+                    // Fallback: sync Clawkins directly if callback not wired
+                    for (Clawkin clawkin : playerBattleState.getParty()) {
+                        clawkin.syncStatsToSharedExperienceLevel(maxLevel);
+                    }
+                }
+
+                Gdx.app.log("CheatCodeManager", "Maxlevel cheat: shared XP set to level " + maxLevel);
+                return CheatResult.success("All Clawkins maxed to level " + maxLevel + "!");
+            } catch (Exception e) {
+                Gdx.app.error("CheatCodeManager", "Maxlevel cheat failed", e);
+                return CheatResult.failure("Failed to max levels: " + e.getMessage());
+            }
+        });
+        
+        // Macaramboni cheat - adds Macaramboni items
+        registerCheat("macaramboni", () -> {
+            try {
+                // Add 5 Macaramboni items
+                playerBattleState.getInventory().addItem(ItemFactory.MACARAMBONI, 5);
+                
+                int quantity = playerBattleState.getInventory().getQuantity(ItemFactory.MACARAMBONI);
+                
+                Gdx.app.log("CheatCodeManager", "Macaramboni cheat: Added 5 Macaramboni (total: " + quantity + ")");
+                return CheatResult.success("Added 5x Macaramboni! Total: " + quantity);
+            } catch (Exception e) {
+                Gdx.app.error("CheatCodeManager", "Macaramboni cheat failed", e);
+                return CheatResult.failure("Failed to add Macaramboni: " + e.getMessage());
+            }
         });
         
         registerTeleportCheats();
