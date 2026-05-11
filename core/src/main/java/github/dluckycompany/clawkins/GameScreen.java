@@ -58,6 +58,7 @@ import github.dluckycompany.clawkins.encounter.EncounterDetectionSystem;
 import github.dluckycompany.clawkins.encounter.EncounterEvent;
 import github.dluckycompany.clawkins.encounter.EncounterEventBus;
 import github.dluckycompany.clawkins.encounter.EncounterEventType;
+import github.dluckycompany.clawkins.encounter.RandomEncounterGenerator;
 import github.dluckycompany.clawkins.input.InputConventions;
 import github.dluckycompany.clawkins.item.Item;
 import github.dluckycompany.clawkins.item.ItemFactory;
@@ -72,10 +73,9 @@ import github.dluckycompany.clawkins.system.CameraSystem;
 import github.dluckycompany.clawkins.system.EnemySystem;
 import github.dluckycompany.clawkins.system.InteractionSystem;
 import github.dluckycompany.clawkins.system.MapTransitionSystem;
-import github.dluckycompany.clawkins.encounter.RandomEncounterGenerator;
 import github.dluckycompany.clawkins.system.MoveSystem;
-import github.dluckycompany.clawkins.system.RandomEncounterSystem;
 import github.dluckycompany.clawkins.system.PlayerInputSystem;
+import github.dluckycompany.clawkins.system.RandomEncounterSystem;
 import github.dluckycompany.clawkins.system.RenderSystem;
 import github.dluckycompany.clawkins.tiled.TiledObjectConfigurator;
 import github.dluckycompany.clawkins.tiled.TiledService;
@@ -462,6 +462,14 @@ public class GameScreen extends ScreenAdapter {
         this.cheatCodeManager.setOnTeleportRequested(() -> {
             Gdx.app.log("GameScreen", "Teleport requested via cheat");
             // The actual teleport will be processed in the render loop
+        });
+
+        // Give CheatCodeManager access to PlayerProgress for level cheats
+        this.cheatCodeManager.setPlayerProgress(playerProgress);
+
+        // When a level cheat fires, re-sync everything through the proper path
+        this.cheatCodeManager.setOnSharedLevelChanged(() -> {
+            applySharedLevelSet(LevelSystem.calculateLevelFromExp(playerProgress.getExperiencePoints()));
         });
         
         // Register the "end" cheat to trigger the ending credits screen
@@ -1114,7 +1122,7 @@ public class GameScreen extends ScreenAdapter {
         boolean isBattleActive = battleService.hasBattleSession();
 
         if (!isBattleActive && teamViewerVisible && teamViewerScreen != null) {
-            renderDimmingOverlay();
+            renderPhysicalBlackout();
             renderUIWithViewport(inventoryStage, uiDelta);
         } else if (!isBattleActive && (sideMenuOverlay.isSettingsVisible() || sideMenuOverlay.isSidebarVisible())) {
             renderDimmingOverlay();
@@ -1184,6 +1192,16 @@ public class GameScreen extends ScreenAdapter {
         // End rendering
         shapeRenderer.end();
         Gdx.gl.glDisable(GL20.GL_BLEND);
+    }
+
+    /**
+     * Clears the entire physical framebuffer to black, including FitViewport letterbox bars.
+     * Use this before rendering full-screen UI overlays (team viewer, summary) so the map
+     * does not bleed through the sides on widescreen or non-16:9 displays.
+     */
+    private void renderPhysicalBlackout() {
+        Gdx.gl.glClearColor(0f, 0f, 0f, 1f);
+        Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
     }
 
     /**
@@ -2687,6 +2705,49 @@ public class GameScreen extends ScreenAdapter {
             }
             clawkin.syncStatsToSharedExperienceLevel(sharedLevel);
         }
+    }
+
+    /**
+     * Boosts the shared experience level by the given number of levels.
+     * Updates PlayerProgress.experiencePoints to the EXP floor of the new level,
+     * then re-syncs all party Clawkins and refreshes all HUD/TeamViewer displays.
+     *
+     * This is the correct entry point for any level-boost operation (items, cheats)
+     * so that the BattleHud XP bar and TeamViewer all stay in sync.
+     *
+     * @param levelsToAdd number of levels to add (clamped to MAX_LEVEL)
+     */
+    public void applySharedLevelBoost(int levelsToAdd) {
+        if (levelsToAdd <= 0 || playerProgress == null) {
+            return;
+        }
+        int currentLevel = LevelSystem.calculateLevelFromExp(playerProgress.getExperiencePoints());
+        int newLevel = Math.min(LevelSystem.MAX_LEVEL, currentLevel + levelsToAdd);
+        if (newLevel <= currentLevel) {
+            return;
+        }
+        // Set XP to the floor of the new level so the bar starts at 0% for that level
+        int newExp = LevelSystem.getExpRequiredForLevel(newLevel);
+        playerProgress.setExperiencePoints(newExp);
+        refreshProgressSnapshots();
+        Gdx.app.log("GameScreen", "applySharedLevelBoost: level " + currentLevel + " -> " + newLevel + " (XP set to " + newExp + ")");
+    }
+
+    /**
+     * Boosts the shared experience to the given absolute level.
+     * Used by the maxlevel cheat.
+     *
+     * @param targetLevel the level to set (clamped to MAX_LEVEL)
+     */
+    public void applySharedLevelSet(int targetLevel) {
+        if (playerProgress == null) {
+            return;
+        }
+        int clamped = Math.max(LevelSystem.MIN_LEVEL, Math.min(LevelSystem.MAX_LEVEL, targetLevel));
+        int newExp = LevelSystem.getExpRequiredForLevel(clamped);
+        playerProgress.setExperiencePoints(newExp);
+        refreshProgressSnapshots();
+        Gdx.app.log("GameScreen", "applySharedLevelSet: level set to " + clamped + " (XP set to " + newExp + ")");
     }
 
     /**
