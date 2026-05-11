@@ -630,7 +630,7 @@ public class BattleOverlay implements Disposable {
 
         battleService.submitPlayerSkill(skillSlot);
         String lastLog = machine.getLastLog();
-        boolean cooldownRejected = lastLog != null && lastLog.toLowerCase().contains("cooldown");
+        boolean cooldownRejected = machine.consumeLastPlayerSkillCooldownReject();
         if (cooldownRejected) {
             if (game != null && game.getAudioService() != null) {
                 game.getAudioService().playSound(SoundEffect.FAILURE_1);

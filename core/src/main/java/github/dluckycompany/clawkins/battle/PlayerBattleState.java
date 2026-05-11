@@ -5,6 +5,7 @@ import java.util.List;
 
 import github.dluckycompany.clawkins.character.Clawkin;
 import github.dluckycompany.clawkins.item.Inventory;
+import github.dluckycompany.clawkins.item.Item;
 import github.dluckycompany.clawkins.item.Wallet;
 
 /**
@@ -161,6 +162,45 @@ public class PlayerBattleState {
 
     public boolean hasAnyAliveClawkin() {
         return !getAlivePartyMembers().isEmpty();
+    }
+
+    /**
+     * True when the party has at least one member and every member is KO'd (0 HP).
+     */
+    public static boolean isEntirePartyFelled(List<Clawkin> party) {
+        if (party == null || party.isEmpty()) {
+            return false;
+        }
+        for (Clawkin c : party) {
+            if (c != null && c.isAlive()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public boolean isEntirePartyFelled() {
+        return isEntirePartyFelled(party);
+    }
+
+    /**
+     * Inventory / party-target item use when the whole party is down: only revive items,
+     * still respecting per-item battle usability when {@code battleContext} is true.
+     */
+    public static boolean isInventoryItemUseAllowed(Item item, boolean battleContext, List<Clawkin> party) {
+        if (item == null) {
+            return false;
+        }
+        if (isEntirePartyFelled(party)) {
+            if (item.getType() != Item.ItemType.REVIVE) {
+                return false;
+            }
+            return !battleContext || item.isUsableInBattle();
+        }
+        if (battleContext) {
+            return item.isUsableInBattle();
+        }
+        return item.getType() == Item.ItemType.POTION;
     }
 
     // ============ Active Clawkin ============

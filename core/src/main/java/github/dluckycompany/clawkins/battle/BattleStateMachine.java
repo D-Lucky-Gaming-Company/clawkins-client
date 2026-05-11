@@ -12,6 +12,15 @@ import java.util.concurrent.ThreadLocalRandom;
 public class BattleStateMachine {
     private static final String TAG = BattleStateMachine.class.getSimpleName();
 
+    /**
+     * Max fraction of defender DEF ignored by the attacker's speed (armor penetration cap).
+     */
+    private static final double ARMOR_PENETRATION_P_MAX = 0.25d;
+    /**
+     * Scale constant for penetration curve: {@code p = min(p_max, S / (S + K))}.
+     */
+    private static final double ARMOR_PENETRATION_K = 50d;
+
     private enum EnemyAiTier {
         MINOR,
         BOSS_1,
@@ -24,6 +33,8 @@ public class BattleStateMachine {
     private BattleContext context;
     private String lastLog = "";
     private List<BattleTextSpan> lastLogSpans = List.of();
+    /** Set when the player tried to use a skill that is on cooldown (for UI/audio feedback). */
+    private boolean lastPlayerSkillCooldownReject = false;
     
     // Round tracking for EXP rewards
     private int currentRound = 0;
@@ -31,10 +42,22 @@ public class BattleStateMachine {
 
     public void begin(BattleContext context) {
         this.context = context;
-        this.phase = BattlePhase.PLAYER_COMMAND;
         this.currentRound = 0;
         this.roundExpAccumulated = 0;
-        setLastLogPlain("Encounter started.");
+
+        BattleUnit ally = firstAlly();
+        BattleUnit enemy = firstEnemy();
+        if (ally != null && enemy != null && ally.getHp() > 0 && enemy.getHp() > 0) {
+            boolean allyFirst = allyActsBeforeEnemy(ally, enemy);
+            this.phase = allyFirst ? BattlePhase.PLAYER_COMMAND : BattlePhase.ENEMY_COMMAND;
+            String allyName = allyLogName(ally);
+            String enemyName = enemyLogName(enemy);
+            String who = allyFirst ? allyName : enemyName;
+            setLastLogPlain("Encounter started.\n" + who + " moves first.");
+        } else {
+            this.phase = BattlePhase.PLAYER_COMMAND;
+            setLastLogPlain("Encounter started.");
+        }
     }
 
     public BattlePhase getPhase() {
@@ -68,6 +91,7 @@ public class BattleStateMachine {
         if (!canAcceptPlayerAction()) {
             return;
         }
+        lastPlayerSkillCooldownReject = false;
         if (action.getType() == BattleActionType.ESCAPE) {
             finishAsEscape();
             setLastLogPlain("You escaped.");
@@ -104,6 +128,9 @@ public class BattleStateMachine {
             if (!skillManager.canUseSkill(slotIndex, player)) {
                 String validationMsg = skillManager.getSkillValidationMessage(slotIndex, player);
                 setLastLogPlain(validationMsg);
+                if (skillManager.isSkillBlockedOnlyByCooldown(slotIndex, player)) {
+                    lastPlayerSkillCooldownReject = true;
+                }
                 return; // Don't consume turn if skill cannot be used
             }
         }
@@ -112,6 +139,7 @@ public class BattleStateMachine {
         if (skill != null && player.isSkillOnCooldown(skillName)) {
             int cooldownRemaining = player.getSkillCooldown(skillName);
             setLastLogPlain(skillName + " is on cooldown (" + cooldownRemaining + " turns remaining).");
+            lastPlayerSkillCooldownReject = true;
             return; // Don't consume turn if skill is on cooldown
         }
 
@@ -184,7 +212,7 @@ public class BattleStateMachine {
                 Gdx.app.log(TAG, "Player attack buff applied -> boost=" + boost + ", turns=" + turns + ", attackNow=" + player.getAttack());
             } else {
                 int offense = resolveMagnitude(player, enemy, skill, "attack[self]");
-                int damage = Math.max(1, offense - enemy.getDefense());
+                int damage = physicalDamageFromHit(offense, enemy, player);
                 enemy.setHp(Math.max(0, enemy.getHp() - damage));
                 LogBuilder lb = new LogBuilder()
                         .appendName(playerName)
@@ -196,7 +224,8 @@ public class BattleStateMachine {
                         .appendName(enemyName)
                         .appendPlain(".");
                 setLastLog(lb.text(), lb.spans());
-                Gdx.app.log(TAG, "Player attack-as-damage applied -> offense=" + offense + ", enemyDefense=" + enemy.getDefense() + ", damage=" + damage);
+                Gdx.app.log(TAG, "Player attack-as-damage applied -> offense=" + offense + ", enemyDefense=" + enemy.getDefense()
+                        + ", effDefense=" + effectiveDefenseVsAttacker(enemy, player) + ", damage=" + damage);
             }
         } else if (skill != null && skill.getEffectType() == BattleSkill.EffectType.DEFENSE) {
             int boost = Math.max(1, resolveMagnitude(player, enemy, skill, "defense[self]") / 4);
@@ -324,7 +353,7 @@ public class BattleStateMachine {
                     Gdx.app.log(TAG, "Enemy attack buff applied -> boost=" + boost + ", turns=" + turns + ", attackNow=" + enemy.getAttack());
                 } else {
                     int offense = resolveMagnitude(enemy, player, enemySkill, "attack[self]");
-                    int damage = Math.max(1, offense - player.getDefense());
+                    int damage = physicalDamageFromHit(offense, player, enemy);
                     if (!tryResolveDartParry(player, enemy, enemyName, enemySkillName, offense, damage)) {
                         player.setHp(Math.max(0, player.getHp() - damage));
                         LogBuilder lb = new LogBuilder()
@@ -335,7 +364,8 @@ public class BattleStateMachine {
                                 .appendDamage(damage)
                                 .appendPlain(" to you.");
                         setLastLog(lb.text(), lb.spans());
-                        Gdx.app.log(TAG, "Enemy attack-as-damage applied -> offense=" + offense + ", playerDefense=" + player.getDefense() + ", damage=" + damage);
+                        Gdx.app.log(TAG, "Enemy attack-as-damage applied -> offense=" + offense + ", playerDefense=" + player.getDefense()
+                                + ", effDefense=" + effectiveDefenseVsAttacker(player, enemy) + ", damage=" + damage);
                     }
                 }
             } else if (enemySkill != null && enemySkill.getEffectType() == BattleSkill.EffectType.DEFENSE) {
@@ -353,7 +383,7 @@ public class BattleStateMachine {
                 Gdx.app.log(TAG, "Enemy defense buff applied -> boost=" + boost + ", turns=" + turns + ", defenseNow=" + enemy.getDefense());
             } else {
                 int offense = resolveMagnitude(enemy, player, enemySkill, "attack[self]");
-                int damage = Math.max(1, offense - player.getDefense());
+                int damage = physicalDamageFromHit(offense, player, enemy);
                 if (!tryResolveDartParry(player, enemy, enemyName, enemySkillName, offense, damage)) {
                     player.setHp(Math.max(0, player.getHp() - damage));
                     LogBuilder lb = new LogBuilder()
@@ -364,7 +394,8 @@ public class BattleStateMachine {
                             .appendDamage(damage)
                             .appendPlain(" to you.");
                     setLastLog(lb.text(), lb.spans());
-                    Gdx.app.log(TAG, "Enemy damage applied -> offense=" + offense + ", playerDefense=" + player.getDefense() + ", damage=" + damage);
+                    Gdx.app.log(TAG, "Enemy damage applied -> offense=" + offense + ", playerDefense=" + player.getDefense()
+                            + ", effDefense=" + effectiveDefenseVsAttacker(player, enemy) + ", damage=" + damage);
                 }
             }
 
@@ -474,6 +505,7 @@ public class BattleStateMachine {
         context = null;
         lastLog = "";
         lastLogSpans = List.of();
+        lastPlayerSkillCooldownReject = false;
         currentRound = 0;
         roundExpAccumulated = 0;
     }
@@ -503,6 +535,15 @@ public class BattleStateMachine {
 
     public List<BattleTextSpan> getLastLogSpans() {
         return List.copyOf(lastLogSpans);
+    }
+
+    /**
+     * Whether the last {@link #submitPlayerAction} rejected an attack due to skill cooldown, and clears the flag.
+     */
+    public boolean consumeLastPlayerSkillCooldownReject() {
+        boolean v = lastPlayerSkillCooldownReject;
+        lastPlayerSkillCooldownReject = false;
+        return v;
     }
 
     private void setLastLogPlain(String text) {
@@ -783,7 +824,7 @@ public class BattleStateMachine {
 
     private int estimateEnemyDamage(BattleSkill skill, BattleUnit enemy, BattleUnit player) {
         int offense = resolveMagnitude(enemy, player, skill, "attack[self]");
-        return Math.max(1, offense - player.getDefense());
+        return physicalDamageFromHit(offense, player, enemy);
     }
 
     private int estimateEnemyHeal(BattleSkill skill, BattleUnit enemy, BattleUnit player) {
@@ -903,6 +944,54 @@ public class BattleStateMachine {
         return enemySkills.get(randomIndex);
     }
 
+    /**
+     * Whether the ally should act before the enemy on the first turn of battle.
+     * Higher speed wins; ties break on higher attack, then higher defense, then ally (player) first.
+     */
+    private static boolean allyActsBeforeEnemy(BattleUnit ally, BattleUnit enemy) {
+        if (enemy == null) {
+            return true;
+        }
+        if (ally == null) {
+            return false;
+        }
+        int c = Integer.compare(enemy.getSpeed(), ally.getSpeed());
+        if (c != 0) {
+            return c < 0;
+        }
+        c = Integer.compare(enemy.getAttack(), ally.getAttack());
+        if (c != 0) {
+            return c < 0;
+        }
+        c = Integer.compare(enemy.getDefense(), ally.getDefense());
+        if (c != 0) {
+            return c < 0;
+        }
+        return true;
+    }
+
+    /**
+     * Defender's defense after the attacker's speed applies capped percent armor penetration:
+     * {@code D_eff = floor(D * (1 - min(p_max, S / (S + K))))}.
+     */
+    private static int effectiveDefenseVsAttacker(BattleUnit defender, BattleUnit attacker) {
+        if (defender == null) {
+            return 0;
+        }
+        int raw = defender.getDefense();
+        if (attacker == null) {
+            return Math.max(0, raw);
+        }
+        int s = Math.max(1, attacker.getSpeed());
+        double p = Math.min(ARMOR_PENETRATION_P_MAX, s / (s + ARMOR_PENETRATION_K));
+        return Math.max(0, (int) Math.floor(raw * (1.0d - p)));
+    }
+
+    private static int physicalDamageFromHit(int offense, BattleUnit defender, BattleUnit attacker) {
+        int def = effectiveDefenseVsAttacker(defender, attacker);
+        return Math.max(1, offense - def);
+    }
+
     private static int resolveMagnitude(BattleUnit self, BattleUnit enemy, BattleSkill skill, String fallbackScale) {
         if (self == null) {
             return 1;
@@ -938,7 +1027,9 @@ public class BattleStateMachine {
         boolean parrySucceeded = ThreadLocalRandom.current().nextDouble() < successChance;
 
         if (!parrySucceeded) {
-            int chipDamage = Math.max(1, Math.round(incomingOffense * 0.25f) - player.getDefense());
+            int chipBase = Math.round(incomingOffense * 0.25f);
+            int chipDefense = effectiveDefenseVsAttacker(player, enemy);
+            int chipDamage = Math.max(1, chipBase - chipDefense);
             player.setHp(Math.max(0, player.getHp() - chipDamage));
             String parrySkillName = player.getActiveParrySkillName();
             if (parrySkillName != null && !parrySkillName.isBlank()) {

@@ -19,6 +19,8 @@ import com.badlogic.gdx.Gdx;
 public class SaveStateManager {
     private static final DateTimeFormatter TIMESTAMP_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final DateTimeFormatter FILE_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss");
+    /** Fixed slot for story checkpoints; excluded from manual save slot listing. */
+    private static final String CHECKPOINT_FILE_NAME = "last_checkpoint.txt";
 
     private final Path saveDir;
 
@@ -33,6 +35,34 @@ public class SaveStateManager {
 
     public boolean hasSaveStates() {
         return !listSaveStates().isEmpty();
+    }
+
+    public boolean hasCheckpointState() {
+        ensureSaveDirectory();
+        return Files.isRegularFile(saveDir.resolve(CHECKPOINT_FILE_NAME));
+    }
+
+    public SaveState loadCheckpointState() {
+        ensureSaveDirectory();
+        return loadSaveStateFromPath(saveDir.resolve(CHECKPOINT_FILE_NAME));
+    }
+
+    /**
+     * Writes the last story checkpoint without creating or modifying manual save slots.
+     */
+    public boolean writeCheckpointState(SaveState state) {
+        if (state == null) {
+            return false;
+        }
+        ensureSaveDirectory();
+        state.setFileName(CHECKPOINT_FILE_NAME);
+        if (state.getCreatedAt() == null || state.getCreatedAt().isBlank()) {
+            state.setCreatedAt(LocalDateTime.now().format(TIMESTAMP_FORMAT));
+        }
+        if (state.getDisplayName() == null || state.getDisplayName().isBlank()) {
+            state.setDisplayName("Checkpoint");
+        }
+        return writeState(saveDir.resolve(CHECKPOINT_FILE_NAME), state);
     }
 
     public SaveState createSaveState(SaveState state) {
@@ -60,6 +90,7 @@ public class SaveStateManager {
         List<SaveState> saves = new ArrayList<>();
         try (var stream = Files.list(saveDir)) {
             stream.filter(path -> path.getFileName().toString().toLowerCase().endsWith(".txt"))
+                .filter(path -> !CHECKPOINT_FILE_NAME.equalsIgnoreCase(path.getFileName().toString()))
                 .forEach(path -> {
                     SaveState state = loadSaveStateFromPath(path);
                     if (state != null) {
