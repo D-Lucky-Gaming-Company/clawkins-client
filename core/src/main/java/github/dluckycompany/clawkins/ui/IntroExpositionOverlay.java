@@ -19,12 +19,18 @@ import java.util.List;
  * Displays text centered on a black background, covering the ENTIRE physical screen.
  * This overlay renders to screen coordinates, not viewport coordinates, ensuring
  * it covers all visible areas including pillarboxing/letterboxing.
+ * Text appears with fade-in/fade-out transitions instead of typewriter effect.
  */
 public class IntroExpositionOverlay implements Disposable {
 
-    private static final float TYPEWRITER_CHARS_PER_SECOND = 45f;
     private static final int EXPOSITION_FONT_SIZE = 28;
     private static final float TEXT_PADDING_PERCENT = 0.1f; // 10% padding on each side
+    private static final float TEXT_FADE_IN_DURATION = 0.8f;
+    private static final float TEXT_HOLD_DURATION = 3.0f;
+    private static final float TEXT_FADE_OUT_DURATION = 0.8f;
+    private static final float FINAL_FADE_OUT_DURATION = 1.0f;
+    private static final float FINAL_FADE_HOLD_DURATION = 0.3f;
+    private static final float FINAL_FADE_IN_DURATION = 0.8f;
 
     private final BitmapFont expositionFont;
     private final ShapeRenderer shapeRenderer;
@@ -33,17 +39,19 @@ public class IntroExpositionOverlay implements Disposable {
 
     private List<String> expositionLines = List.of();
     private int currentLineIndex = 0;
-    private String currentFullText = "";
-    private String currentVisibleText = "";
-    private int visibleChars = 0;
-    private float typewriterCarry = 0f;
+    private String currentText = "";
     private boolean active = false;
-    private boolean fadeOutActive = false;
-    private float fadeAlpha = 1f;
-    private float fadeTimer = 0f;
-    private static final float FADE_OUT_DURATION = 1.0f;
-    private static final float FADE_HOLD_DURATION = 0.3f;
-    private static final float FADE_IN_DURATION = 0.8f;
+    
+    // Text fade state
+    private enum TextFadePhase { FADE_IN, HOLD, FADE_OUT }
+    private TextFadePhase textFadePhase = TextFadePhase.FADE_IN;
+    private float textFadeTimer = 0f;
+    private float textAlpha = 0f;
+    
+    // Final transition state
+    private boolean finalTransitionActive = false;
+    private float finalTransitionTimer = 0f;
+    private float backgroundAlpha = 1f;
 
     private Runnable onComplete;
 
@@ -76,9 +84,9 @@ public class IntroExpositionOverlay implements Disposable {
         this.currentLineIndex = 0;
         this.onComplete = onComplete;
         this.active = true;
-        this.fadeOutActive = false;
-        this.fadeAlpha = 1f;
-        this.fadeTimer = 0f;
+        this.finalTransitionActive = false;
+        this.backgroundAlpha = 1f;
+        this.finalTransitionTimer = 0f;
         setActiveLine(0);
     }
 
@@ -87,33 +95,78 @@ public class IntroExpositionOverlay implements Disposable {
             return;
         }
 
-        if (fadeOutActive) {
-            updateFadeTransition(delta);
+        if (finalTransitionActive) {
+            updateFinalTransition(delta);
             return;
         }
 
-        tickTypewriter(delta);
+        updateTextFade(delta);
 
-        if (!InputConventions.isInteractJustPressed()) {
-            return;
+        // Check for input to skip current fade or advance
+        if (InputConventions.isInteractJustPressed()) {
+            handleInput();
         }
+    }
 
-        Gdx.app.log("IntroExpositionOverlay", "Interact pressed! Fully revealed: " + isLineFullyRevealed());
+    private void updateTextFade(float delta) {
+        textFadeTimer += delta;
 
-        if (!isLineFullyRevealed()) {
-            revealLineImmediately();
-            Gdx.app.log("IntroExpositionOverlay", "Revealed line immediately");
-            return;
+        switch (textFadePhase) {
+            case FADE_IN:
+                textAlpha = Math.min(1f, textFadeTimer / TEXT_FADE_IN_DURATION);
+                if (textFadeTimer >= TEXT_FADE_IN_DURATION) {
+                    textFadePhase = TextFadePhase.HOLD;
+                    textFadeTimer = 0f;
+                    textAlpha = 1f;
+                }
+                break;
+
+            case HOLD:
+                textAlpha = 1f;
+                if (textFadeTimer >= TEXT_HOLD_DURATION) {
+                    textFadePhase = TextFadePhase.FADE_OUT;
+                    textFadeTimer = 0f;
+                }
+                break;
+
+            case FADE_OUT:
+                textAlpha = Math.max(0f, 1f - (textFadeTimer / TEXT_FADE_OUT_DURATION));
+                if (textFadeTimer >= TEXT_FADE_OUT_DURATION) {
+                    // Fade out complete, advance to next line
+                    if (!advanceToNextLine()) {
+                        // No more lines, start final transition
+                        startFinalTransition();
+                    }
+                }
+                break;
         }
+    }
 
-        if (advanceToNextLine()) {
-            Gdx.app.log("IntroExpositionOverlay", "Advanced to next line: " + currentLineIndex);
-            return;
+    private void handleInput() {
+        switch (textFadePhase) {
+            case FADE_IN:
+                // Skip fade-in, go directly to hold
+                textFadePhase = TextFadePhase.HOLD;
+                textFadeTimer = 0f;
+                textAlpha = 1f;
+                Gdx.app.log("IntroExpositionOverlay", "Skipped fade-in");
+                break;
+
+            case HOLD:
+                // Skip hold, go directly to fade-out
+                textFadePhase = TextFadePhase.FADE_OUT;
+                textFadeTimer = 0f;
+                Gdx.app.log("IntroExpositionOverlay", "Skipped hold, starting fade-out");
+                break;
+
+            case FADE_OUT:
+                // Skip fade-out, advance immediately
+                if (!advanceToNextLine()) {
+                    startFinalTransition();
+                }
+                Gdx.app.log("IntroExpositionOverlay", "Skipped fade-out, advancing");
+                break;
         }
-
-        // All lines shown, start fade transition
-        Gdx.app.log("IntroExpositionOverlay", "Starting fade transition");
-        startFadeTransition();
     }
 
     /**
@@ -145,15 +198,14 @@ public class IntroExpositionOverlay implements Disposable {
         // Draw fullscreen black background covering ENTIRE screen
         shapeRenderer.setProjectionMatrix(screenProjection);
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
-        shapeRenderer.setColor(new Color(0f, 0f, 0f, fadeAlpha));
+        shapeRenderer.setColor(new Color(0f, 0f, 0f, backgroundAlpha));
         shapeRenderer.rect(0f, 0f, screenWidth, screenHeight);
         shapeRenderer.end();
 
-        // Draw centered text
+        // Draw centered text with fade
         batch.setProjectionMatrix(screenProjection);
         batch.begin();
 
-        float textAlpha = fadeOutActive ? Math.max(0f, (fadeAlpha - 0.3f) / 0.7f) : 1f;
         expositionFont.setColor(new Color(1f, 1f, 1f, textAlpha));
 
         // Calculate text area with padding
@@ -161,7 +213,7 @@ public class IntroExpositionOverlay implements Disposable {
         float innerWidth = screenWidth - (textPaddingX * 2f);
 
         // Layout text
-        glyphLayout.setText(expositionFont, currentVisibleText, Color.WHITE, innerWidth, 
+        glyphLayout.setText(expositionFont, currentText, Color.WHITE, innerWidth, 
                 com.badlogic.gdx.utils.Align.center, true);
 
         // Center text on screen
@@ -184,36 +236,10 @@ public class IntroExpositionOverlay implements Disposable {
         }
 
         this.currentLineIndex = index;
-        this.currentFullText = expositionLines.get(index);
-        this.currentVisibleText = "";
-        this.visibleChars = 0;
-        this.typewriterCarry = 0f;
-    }
-
-    private void tickTypewriter(float delta) {
-        if (isLineFullyRevealed()) {
-            return;
-        }
-
-        float charProgress = TYPEWRITER_CHARS_PER_SECOND * Math.max(0f, delta) + typewriterCarry;
-        int charsToReveal = (int) charProgress;
-        typewriterCarry = charProgress - charsToReveal;
-
-        if (charsToReveal <= 0) {
-            return;
-        }
-
-        visibleChars = Math.min(currentFullText.length(), visibleChars + charsToReveal);
-        currentVisibleText = currentFullText.substring(0, visibleChars);
-    }
-
-    private boolean isLineFullyRevealed() {
-        return visibleChars >= currentFullText.length();
-    }
-
-    private void revealLineImmediately() {
-        visibleChars = currentFullText.length();
-        currentVisibleText = currentFullText;
+        this.currentText = expositionLines.get(index);
+        this.textFadePhase = TextFadePhase.FADE_IN;
+        this.textFadeTimer = 0f;
+        this.textAlpha = 0f;
     }
 
     private boolean advanceToNextLine() {
@@ -225,29 +251,31 @@ public class IntroExpositionOverlay implements Disposable {
         return true;
     }
 
-    private void startFadeTransition() {
-        fadeOutActive = true;
-        fadeTimer = 0f;
-        fadeAlpha = 1f;
+    private void startFinalTransition() {
+        finalTransitionActive = true;
+        finalTransitionTimer = 0f;
+        backgroundAlpha = 1f;
+        textAlpha = 0f; // Hide text during final transition
+        Gdx.app.log("IntroExpositionOverlay", "Starting final transition");
     }
 
-    private void updateFadeTransition(float delta) {
-        fadeTimer += delta;
+    private void updateFinalTransition(float delta) {
+        finalTransitionTimer += delta;
 
-        if (fadeTimer < FADE_OUT_DURATION) {
-            // Fade to black
-            fadeAlpha = 1f;
-        } else if (fadeTimer < FADE_OUT_DURATION + FADE_HOLD_DURATION) {
+        if (finalTransitionTimer < FINAL_FADE_OUT_DURATION) {
+            // Keep black screen
+            backgroundAlpha = 1f;
+        } else if (finalTransitionTimer < FINAL_FADE_OUT_DURATION + FINAL_FADE_HOLD_DURATION) {
             // Hold black
-            fadeAlpha = 1f;
-        } else if (fadeTimer < FADE_OUT_DURATION + FADE_HOLD_DURATION + FADE_IN_DURATION) {
+            backgroundAlpha = 1f;
+        } else if (finalTransitionTimer < FINAL_FADE_OUT_DURATION + FINAL_FADE_HOLD_DURATION + FINAL_FADE_IN_DURATION) {
             // Fade back to gameplay
-            float fadeInProgress = (fadeTimer - FADE_OUT_DURATION - FADE_HOLD_DURATION) / FADE_IN_DURATION;
-            fadeAlpha = 1f - fadeInProgress;
+            float fadeInProgress = (finalTransitionTimer - FINAL_FADE_OUT_DURATION - FINAL_FADE_HOLD_DURATION) / FINAL_FADE_IN_DURATION;
+            backgroundAlpha = 1f - fadeInProgress;
         } else {
             // Transition complete
             active = false;
-            fadeOutActive = false;
+            finalTransitionActive = false;
             if (onComplete != null) {
                 onComplete.run();
             }
