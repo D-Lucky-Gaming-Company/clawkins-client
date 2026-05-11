@@ -82,6 +82,7 @@ import github.dluckycompany.clawkins.tiled.TiledService;
 import github.dluckycompany.clawkins.ui.DialogueBoxRenderer;
 import github.dluckycompany.clawkins.ui.DialogueOverlay;
 import github.dluckycompany.clawkins.ui.HudWallet;
+import github.dluckycompany.clawkins.ui.IntroExpositionOverlay;
 import github.dluckycompany.clawkins.ui.InventoryScreen;
 import github.dluckycompany.clawkins.ui.MainMenuScreen;
 import github.dluckycompany.clawkins.ui.MainSideMenuOverlay;
@@ -236,10 +237,13 @@ public class GameScreen extends ScreenAdapter {
     private final BattleOverlay battleOverlay;
     private final InteractionSystem interactionSystem;
     private final DialogueOverlay dialogueOverlay;
+    private final IntroExpositionOverlay introExpositionOverlay;
     private final AudioService audioService;
     private boolean explorationSystemsEnabled;
     private boolean wasBattleSessionPresent;
     private boolean wasBattlePlaying;
+    private boolean introExpositionComplete = false;
+    private boolean tutorialDialogueTriggered = false;
     
     // Inventory system - Virtual coordinate system (800x600)
     private final Stage inventoryStage;
@@ -368,6 +372,7 @@ public class GameScreen extends ScreenAdapter {
         this.mapTransitionFade = new BattleTransition();
         this.mapTransitionSwapDone = false;
         this.dialogueOverlay = new DialogueOverlay(dialogueBoxRenderer, true);
+        this.introExpositionOverlay = new IntroExpositionOverlay();
         this.explorationSystemsEnabled = true;
         this.wasBattleSessionPresent = false;
         this.wasBattlePlaying = false;
@@ -572,6 +577,9 @@ public class GameScreen extends ScreenAdapter {
             }
             audioService.setMap(startMap);
             audioService.onEvent(AudioEventType.MAP_CHANGED);
+            
+            // Start intro exposition sequence for new games
+            startIntroExposition();
         }
     }
 
@@ -950,6 +958,11 @@ public class GameScreen extends ScreenAdapter {
     @Override
     public void render(float delta) {
         float uiDelta = Math.min(1 / 30f, delta);
+        
+        // Update intro exposition overlay FIRST with original delta (before pausing)
+        if (introExpositionOverlay.isActive()) {
+            introExpositionOverlay.update(Math.min(1 / 30f, delta));
+        }
 
         // Keep pause state derived from live UI state so movement reliably resumes
         // after exiting CLAWKINS/SETTINGS and closing the sidebar.
@@ -992,7 +1005,7 @@ public class GameScreen extends ScreenAdapter {
         }
 
         // Don't update game state when paused (inventory or other overlays using isPaused flag)
-        if (isPaused || cheatConsoleOverlay.isVisible()) {
+        if (isPaused || cheatConsoleOverlay.isVisible() || introExpositionOverlay.isActive()) {
             delta = 0f; // Skip time advancement
         }
         
@@ -1014,7 +1027,8 @@ public class GameScreen extends ScreenAdapter {
                 && !isFallenPromptVisible()
                 && !isBertJrPreDialogueSequenceActive()
                 && !teamViewerVisible && !summaryVisible
-                && !cheatConsoleOverlay.isVisible()) {
+                && !cheatConsoleOverlay.isVisible()
+                && !introExpositionOverlay.isActive()) {
             MainSideMenuOverlay.Action menuAction = sideMenuOverlay.handleInput();
             switch (menuAction) {
                 case OPEN_CLAWKINS -> openTeamViewerSubmenu();
@@ -1073,6 +1087,7 @@ public class GameScreen extends ScreenAdapter {
         battleService.update(delta);
         updateForcedMove(delta);
         updateBertJrPropEntrance(delta);
+        
         syncAudioStates();
         syncSystemStates();
 
@@ -1115,6 +1130,12 @@ public class GameScreen extends ScreenAdapter {
         renderAreaTitle(uiDelta);
         renderSaveToast();
         renderFallenPrompt();
+        
+        // Render intro exposition overlay (fullscreen, on top of everything)
+        // This renders to physical screen coordinates, not viewport coordinates
+        if (introExpositionOverlay.isActive()) {
+            introExpositionOverlay.render(batch);
+        }
         
         // Render cheat console overlay (always on top, independent stage)
         if (cheatConsoleOverlay.isVisible()) {
@@ -1238,6 +1259,9 @@ public class GameScreen extends ScreenAdapter {
         mapTransitionFade.dispose();
         battleOverlay.dispose();
         dialogueOverlay.dispose();
+        if (introExpositionOverlay != null) {
+            introExpositionOverlay.dispose();
+        }
         if (inventoryStage != null) {
             inventoryStage.dispose();
         }
@@ -3501,5 +3525,52 @@ public class GameScreen extends ScreenAdapter {
     public PlayerProfile getPlayerProfile() {
         return playerProfile;
     }
-}
 
+    /**
+     * Starts the intro exposition sequence with cinematic presentation.
+     * This is triggered on new game start (not when loading from save).
+     */
+    private void startIntroExposition() {
+        List<String> expositionLines = List.of(
+                "The world is full of strange happenings.",
+                "One of these is the bond between humans and creatures known as Clawkins.",
+                "Animals that possess otherworldly abilities, changing the fundamental rules of nature.",
+                "Their numbers great and vast, humans and Clawkins coexist to build a world of balance and order.",
+                "Or so one would think.",
+                "The greed of humanity knows no bounds, their hands stretched maliciously for a new world order.",
+                "One that could break the balance, or fulfil the peace."
+        );
+
+        introExpositionOverlay.start(expositionLines, this::onIntroExpositionComplete);
+    }
+
+    /**
+     * Called when the intro exposition finishes.
+     * Triggers the tutorial dialogue using the normal dialogue system.
+     */
+    private void onIntroExpositionComplete() {
+        introExpositionComplete = true;
+        // Trigger tutorial dialogue on next frame
+        Gdx.app.postRunnable(this::triggerTutorialDialogue);
+    }
+
+    /**
+     * Triggers the tutorial dialogue using the interaction system.
+     * This uses the normal dialogue box (not fullscreen).
+     */
+    private void triggerTutorialDialogue() {
+        if (tutorialDialogueTriggered) {
+            return;
+        }
+        tutorialDialogueTriggered = true;
+
+        // Create tutorial dialogue entries
+        List<InteractionSystem.DialogueEntry> tutorialFlow = List.of(
+                new InteractionSystem.DialogueEntry("", "It seems like we've run out of food."),
+                new InteractionSystem.DialogueEntry("", "We have to head to town to refill.")
+        );
+
+        // Manually trigger dialogue through the interaction system
+        interactionSystem.showTutorialDialogue(tutorialFlow, Interactible.DialoguePosition.BOTTOM);
+    }
+}
