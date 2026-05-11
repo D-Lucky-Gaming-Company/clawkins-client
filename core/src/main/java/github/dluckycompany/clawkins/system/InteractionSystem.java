@@ -324,6 +324,20 @@ public class InteractionSystem extends EntitySystem {
         }
     }
 
+    /**
+     * Programmatically show dialogue without requiring an interactible entity.
+     * Used for scripted sequences like tutorials.
+     *
+     * @param flow     List of dialogue entries to display
+     * @param position Position of the dialogue box (TOP or BOTTOM)
+     */
+    public void showTutorialDialogue(List<DialogueEntry> flow, Interactible.DialoguePosition position) {
+        if (flow == null || flow.isEmpty()) {
+            return;
+        }
+        showDialogue(flow, position);
+    }
+
     private Entity findFacingTarget() {
         if (players == null || players.size() == 0 || interactibles == null || interactibles.size() == 0) {
             return null;
@@ -1036,7 +1050,7 @@ public class InteractionSystem extends EntitySystem {
         }
     }
 
-    private record DialogueEntry(String name, String text) {
+    public record DialogueEntry(String name, String text) {
     }
 
     @SuppressWarnings("all")
