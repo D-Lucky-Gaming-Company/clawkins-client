@@ -90,9 +90,9 @@ public class ItemUseAction {
             return false;
         }
 
-        // For healing items: check if target is not at full HP
+        // For healing items: target must be alive and not at full HP
         if (item.getType() == github.dluckycompany.clawkins.item.Item.ItemType.POTION) {
-            return selectedTarget.getCurrentHp() < selectedTarget.getMaxHp();
+            return selectedTarget.isAlive() && selectedTarget.getCurrentHp() < selectedTarget.getMaxHp();
         }
 
         // For revive items: check if target is fainted

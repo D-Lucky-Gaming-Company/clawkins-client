@@ -3,6 +3,7 @@ package github.dluckycompany.clawkins.system;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -76,6 +77,8 @@ public class InteractionSystem extends EntitySystem {
     private final Map<String, Predicate<SpecialInteractionContext>> preDialogueCheckByGroupId = new HashMap<>();
     private final Map<String, Consumer<SpecialInteractionContext>> specialInteractionByObjectId = new HashMap<>();
     private final Map<String, Consumer<SpecialInteractionContext>> specialInteractionByGroupId = new HashMap<>();
+    /** ObjectIds that run special handlers immediately with no dialogue box (normalized keys). */
+    private final Set<String> skipDialogueObjectIds = new HashSet<>();
     private final Map<String, Integer> persistedInteractionCountsByObjectId = new HashMap<>();
     private Consumer<SpecialInteractionContext> pendingSpecialInteraction;
     private SpecialInteractionContext pendingSpecialInteractionContext;
@@ -195,6 +198,17 @@ public class InteractionSystem extends EntitySystem {
             return;
         }
         specialInteractionByObjectId.put(normalizedObjectId, specialInteraction);
+    }
+
+    /**
+     * For this ObjectId, skip the dialogue overlay and run the registered special interaction immediately.
+     */
+    public void registerSkipDialogueForObjectId(String objectId) {
+        String normalizedObjectId = normalizeObjectId(objectId);
+        if (normalizedObjectId.isEmpty()) {
+            return;
+        }
+        skipDialogueObjectIds.add(normalizedObjectId);
     }
 
     public void registerPreDialogueCheck(String objectId, Predicate<SpecialInteractionContext> preDialogueCheck) {
@@ -584,7 +598,10 @@ public class InteractionSystem extends EntitySystem {
 
         String dialogueSource = resolveDialogueSource(interactible);
         List<DialogueEntry> resolvedFlow = resolveDialogueFlow(interactible, playerName, dialogueSource);
-        
+        if (skipDialogueObjectIds.contains(normalizeObjectId(interactible.getObjectId()))) {
+            resolvedFlow = List.of();
+        }
+
         // All interactions follow the same pattern: dialogue first, then special interaction
         if (resolvedFlow.isEmpty()) {
             runSpecialInteraction(specialInteraction, specialContext);

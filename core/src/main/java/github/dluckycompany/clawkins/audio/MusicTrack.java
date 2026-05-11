@@ -18,6 +18,8 @@ public enum MusicTrack {
     BOSS_SPARTACUS,
     BOSS_SANTIRAL,
     BOSS_BERTJR_DIA_FIRST_ENCOUNTER,
+    /** Duke Khai / Spartacus first encounter dialogue (before battle). */
+    BOSS_DUKE_DIA_FIRST_ENCOUNTER,
     /** Ending credits music. Maps to audio/music/credits.mp3 if present. */
     CREDITS
 }

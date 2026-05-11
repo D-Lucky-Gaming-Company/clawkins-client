@@ -128,6 +128,10 @@ public class Clawkin {
 
         int adjustedHp = currentHp + hpGain;
         currentHp = Math.max(0, Math.min(maxHp, adjustedHp));
+
+        // Keep battle skill list aligned with level (SkillManager already uses SkillUnlockSystem + level).
+        skills.clear();
+        skills.addAll(SkillUnlockSystem.getAllSkillsUpToLevel(id, clamped));
     }
 
     public int getMaxHp() {
