@@ -428,7 +428,9 @@ public class BattleHud implements Disposable {
     public void render() {
         if (!visible) return;
         
-        // Draw black bars to cover areas outside the 4:3 viewport
+        // Draw black bars to cover areas outside the 4:3 viewport.
+        // Must set GL viewport to full screen first so we can draw outside the FitViewport area.
+        Gdx.gl.glViewport(0, 0, Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
         renderBlackBars();
         
         // Apply viewport and render the stage
@@ -451,38 +453,47 @@ public class BattleHud implements Disposable {
         int viewportY = stage.getViewport().getScreenY();
         int viewportWidth = stage.getViewport().getScreenWidth();
         int viewportHeight = stage.getViewport().getScreenHeight();
-        
-        // Enable blending for proper rendering
-        Gdx.gl.glEnable(com.badlogic.gdx.graphics.GL20.GL_BLEND);
-        Gdx.gl.glBlendFunc(com.badlogic.gdx.graphics.GL20.GL_SRC_ALPHA, com.badlogic.gdx.graphics.GL20.GL_ONE_MINUS_SRC_ALPHA);
-        
-        // Use ShapeRenderer to draw black rectangles
-        com.badlogic.gdx.graphics.glutils.ShapeRenderer shapeRenderer = new com.badlogic.gdx.graphics.glutils.ShapeRenderer();
-        shapeRenderer.begin(com.badlogic.gdx.graphics.glutils.ShapeRenderer.ShapeType.Filled);
-        shapeRenderer.setColor(0, 0, 0, 1); // Black
+
+        // Only draw bars if there's actually a gap
+        boolean hasGap = viewportX > 0
+                || viewportY > 0
+                || (viewportX + viewportWidth) < screenWidth
+                || (viewportY + viewportHeight) < screenHeight;
+        if (!hasGap) {
+            return;
+        }
+
+        // Use a screen-space projection matrix
+        com.badlogic.gdx.math.Matrix4 screenProj = new com.badlogic.gdx.math.Matrix4();
+        screenProj.setToOrtho2D(0, 0, screenWidth, screenHeight);
+
+        com.badlogic.gdx.graphics.glutils.ShapeRenderer sr = new com.badlogic.gdx.graphics.glutils.ShapeRenderer();
+        sr.setProjectionMatrix(screenProj);
+        sr.begin(com.badlogic.gdx.graphics.glutils.ShapeRenderer.ShapeType.Filled);
+        sr.setColor(0, 0, 0, 1);
         
         // Left bar
         if (viewportX > 0) {
-            shapeRenderer.rect(0, 0, viewportX, screenHeight);
+            sr.rect(0, 0, viewportX, screenHeight);
         }
         
         // Right bar
         if (viewportX + viewportWidth < screenWidth) {
-            shapeRenderer.rect(viewportX + viewportWidth, 0, screenWidth - (viewportX + viewportWidth), screenHeight);
+            sr.rect(viewportX + viewportWidth, 0, screenWidth - (viewportX + viewportWidth), screenHeight);
         }
         
         // Top bar
         if (viewportY + viewportHeight < screenHeight) {
-            shapeRenderer.rect(0, viewportY + viewportHeight, screenWidth, screenHeight - (viewportY + viewportHeight));
+            sr.rect(0, viewportY + viewportHeight, screenWidth, screenHeight - (viewportY + viewportHeight));
         }
         
         // Bottom bar
         if (viewportY > 0) {
-            shapeRenderer.rect(0, 0, screenWidth, viewportY);
+            sr.rect(0, 0, screenWidth, viewportY);
         }
         
-        shapeRenderer.end();
-        shapeRenderer.dispose();
+        sr.end();
+        sr.dispose();
     }
 
     /** Resize the Stage viewport â€” call from {@code Screen.resize()}. */
