@@ -31,6 +31,8 @@ public class AudioService implements Disposable {
 
     private MusicTrack currentTrack;
     private Music currentMusic;
+    /** When set, {@link #playCurrentMapMusic()} plays this instead of the map's {@code musicTrack} property. */
+    private MusicTrack mapMusicOverride;
     private float masterVolume = 1f;
     private float musicVolume = 0.6f;
     private float soundVolume = 0.8f;
@@ -96,10 +98,29 @@ public class AudioService implements Disposable {
         }
         currentMusic = null;
         currentTrack = null;
+        mapMusicOverride = null;
     }
 
     public void setMap(TiledMap tiledMap) {
         this.currentMap = tiledMap;
+        this.mapMusicOverride = null;
+    }
+
+    /**
+     * Forces exploration-style map playback to use {@code track} (looping) until {@link #clearMapMusicOverride()}
+     * or the next {@link #setMap(com.badlogic.gdx.maps.tiled.TiledMap)}.
+     */
+    public void setMapMusicOverride(MusicTrack track) {
+        if (track == null) {
+            clearMapMusicOverride();
+            return;
+        }
+        this.mapMusicOverride = track;
+        playMusic(track, true);
+    }
+
+    public void clearMapMusicOverride() {
+        this.mapMusicOverride = null;
     }
 
     public void playCurrentMapMusic() {
@@ -121,6 +142,10 @@ public class AudioService implements Disposable {
     }
 
     private void playCurrentMapMusic(boolean fallbackToExplorationWhenMissing) {
+        if (mapMusicOverride != null) {
+            playMusic(mapMusicOverride, true);
+            return;
+        }
         if (currentMap == null) {
             if (fallbackToExplorationWhenMissing) {
                 playMusic(MusicTrack.EXPLORATION, true);

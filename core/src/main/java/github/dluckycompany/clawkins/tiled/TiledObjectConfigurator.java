@@ -300,7 +300,7 @@ public class TiledObjectConfigurator {
                 String encounterTableId = getStringProperty(tileMapObject, "encounterTableId", "default");
                 boolean oneShot = getBooleanProperty(tileMapObject, "oneShot", false);
                 int enemyHp = getIntProperty(tileMapObject, "enemyHp", 40);
-                int enemyAttack = getIntProperty(tileMapObject, "enemyAttack", 8);
+                int enemyAttack = getIntProperty(tileMapObject, "enemyAttack", 15);
                 int enemyDefense = getIntProperty(tileMapObject, "enemyDefense", 3);
                 int enemySpeed = getIntProperty(tileMapObject, "enemySpeed", 6);
                 int enemyLevel = getIntProperty(
@@ -1086,9 +1086,9 @@ public class TiledObjectConfigurator {
         }
 
         if (skills.isEmpty()) {
-            skills.add(new BattleSkill("Bite", BattleSkill.EffectType.DAMAGE, 0, "attack[self]", 0, 0));
-            skills.add(new BattleSkill("Claw Swipe", BattleSkill.EffectType.DAMAGE, 0, "attack[self]", 0, 0));
-            skills.add(new BattleSkill("Rend", BattleSkill.EffectType.DAMAGE, 0, "attack[self]", 0, 0));
+            skills.add(new BattleSkill("Bite", BattleSkill.EffectType.DAMAGE, 12, "attack[self]", 0, 0));
+            skills.add(new BattleSkill("Claw Swipe", BattleSkill.EffectType.DAMAGE, 10, "attack[self]", 0, 0));
+            skills.add(new BattleSkill("Rend", BattleSkill.EffectType.DAMAGE, 14, "attack[self]", 0, 0));
         }
 
         return skills;
