@@ -144,7 +144,7 @@ public class BattleHud implements Disposable {
     // -----------------------------------------------------------------------
 
     private static final String PLAYER_PLACEHOLDER_PATH = "entities/clawkins/Clawkin_01_Ginger.png";
-    private static final String BOSS_PLACEHOLDER_PATH   = "entities/clawkins/Clawkin_04_Bert_Jr.png";
+    private static final String BOSS_PLACEHOLDER_PATH   = "entities/clawkins/Clawkin_14_Stray.png";
 
     // -----------------------------------------------------------------------
     // Button asset paths (individual PNG files)
@@ -660,9 +660,9 @@ public class BattleHud implements Disposable {
      * Horizontal mirror for the boss HUD portrait only on the Bert Jr. fight
      * ({@code boss_0_encounter}, same id as {@link github.dluckycompany.clawkins.GameScreen}).
      */
-    private static boolean isBertJrBossEncounter(String encounterId) {
-        return encounterId != null && "boss_0_encounter".equalsIgnoreCase(encounterId.trim());
-    }
+    // private static boolean isBertJrBossEncounter(String encounterId) {
+    //     return encounterId != null && "boss_0_encounter".equalsIgnoreCase(encounterId.trim());
+    // }
 
     /** Same resolution order as ClawkinCard portrait loading. */
     private static String[] resolvePlayerPortraitCandidates(Clawkin clawkin) {
