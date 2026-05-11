@@ -962,7 +962,7 @@ public class TiledObjectConfigurator {
 
     private List<BattleSkill> parseClawkinSkills(MapProperties clawkinProps, String clawkinName) {
         List<BattleSkill> skills = new java.util.ArrayList<>();
-        for (int slot = 1; slot <= 3; slot++) {
+        for (int slot = 1; slot <= 4; slot++) {
             String skillPrefix = "skill" + slot;
             String skillName = getStringFromProps(clawkinProps, skillPrefix + "Name", "").trim();
             String effectType = getStringFromProps(clawkinProps, skillPrefix + "EffectType", "").trim();
@@ -1043,7 +1043,7 @@ public class TiledObjectConfigurator {
 
     private List<BattleSkill> parseEnemySkills(TiledMapTileMapObject tileMapObject, String enemyName) {
         List<BattleSkill> skills = new java.util.ArrayList<>();
-        for (int slot = 1; slot <= 3; slot++) {
+        for (int slot = 1; slot <= 4; slot++) {
             String skillPrefix = "skill" + slot;
 
             String name = getStringProperty(
