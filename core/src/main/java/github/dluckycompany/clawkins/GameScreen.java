@@ -1213,12 +1213,6 @@ public class GameScreen extends ScreenAdapter {
                 performMapTransition(activeTransitionMap, activeTransitionId);
                 mapTransitionSwapDone = true;
             }
-            if (mapTransitionSwapDone) {
-                Entity transitionPlayer = findPlayerEntity();
-                if (transitionPlayer != null) {
-                    centerCameraOnPlayer(transitionPlayer);
-                }
-            }
         } else if (mapTransitionSwapDone) {
             if (pendingAreaTitleAsset != null) {
                 showAreaTitle(pendingAreaTitleAsset);
@@ -2016,7 +2010,7 @@ public class GameScreen extends ScreenAdapter {
             return;
         }
 
-        cancelCerberusBossEncounterCameraIfActive();
+        cancelCerberusBossEncounterCameraIfActive(false);
         this.activeTransitionMap = targetMapKey;
         this.activeTransitionId = targetTransitionId;
         this.mapTransitionSwapDone = false;
@@ -4126,12 +4120,16 @@ public class GameScreen extends ScreenAdapter {
     }
 
     private void cancelCerberusBossEncounterCameraIfActive() {
+        cancelCerberusBossEncounterCameraIfActive(true);
+    }
+
+    private void cancelCerberusBossEncounterCameraIfActive(boolean snapToPlayer) {
         cerberusBossPredialogueCameraActive = false;
         cerberusBossPredialogueFailSafeRemaining = 0f;
         cerberusBossCameraLinedUpForDialogue = false;
         cerberusBossPostDialogueCameraReturnPending = false;
         cerberusBossPostDialogueReturnFailSafeRemaining = 0f;
-        restoreCerberusBossEncounterCameraToPlayer(true);
+        restoreCerberusBossEncounterCameraToPlayer(snapToPlayer);
     }
 
     private void refreshCerberusPropForCurrentMap() {
