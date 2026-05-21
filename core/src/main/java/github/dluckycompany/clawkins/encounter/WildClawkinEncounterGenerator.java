@@ -16,6 +16,7 @@ import java.util.concurrent.ThreadLocalRandom;
  * fields (encounter id, display name, portrait, table id) are preserved from the map event.
  */
 public final class WildClawkinEncounterGenerator {
+    private static final RandomEncounterGenerator RANDOM_ENCOUNTER_GENERATOR = new RandomEncounterGenerator();
 
     private static final StatGrowth[] WILD_PROFILES = {
             StatGrowth.createGingerGrowth(),
@@ -71,11 +72,13 @@ public final class WildClawkinEncounterGenerator {
             return authored;
         }
         EncounterDifficultyTier tier = WildEncounterTableIds.tierForWildTable(authored.getEncounterTableId());
+        EncounterEvent randomRoll = RANDOM_ENCOUNTER_GENERATOR.composeEncounter(tier, Math.max(1, playerLevel));
         ThreadLocalRandom r = ThreadLocalRandom.current();
         StatGrowth growth = WILD_PROFILES[r.nextInt(WILD_PROFILES.length)];
 
-        int rawLevel = RandomEncounterGenerator.rollEnemyLevelForTier(tier, Math.max(1, playerLevel));
-        int enemyLevel = Math.max(LevelSystem.MIN_LEVEL, Math.min(LevelSystem.MAX_LEVEL, rawLevel));
+        int enemyLevel = Math.max(
+                LevelSystem.MIN_LEVEL,
+                Math.min(LevelSystem.MAX_LEVEL, randomRoll.getEnemyLevel()));
 
         int hp = growth.calculateHpAtLevel(enemyLevel);
         int atk = growth.calculateAttackAtLevel(enemyLevel);
@@ -98,7 +101,7 @@ public final class WildClawkinEncounterGenerator {
         def = Math.max(1, def);
         spd = Math.max(2, spd);
 
-        List<BattleSkill> skills = RandomEncounterGenerator.skillsForTier(tier, enemyLevel);
+        List<BattleSkill> skills = randomRoll.getEnemySkills();
 
         return new EncounterEvent(
                 authored.getType(),
@@ -110,7 +113,7 @@ public final class WildClawkinEncounterGenerator {
                 def,
                 spd,
                 skills,
-                authored.getEnemyName(),
+                randomRoll.getEnemyName(),
                 authored.getEnemyImagePath()
         );
     }

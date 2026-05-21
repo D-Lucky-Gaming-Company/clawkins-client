@@ -167,10 +167,6 @@ public class BattleStateMachine {
             setLastLog(lb.text(), lb.spans());
             Gdx.app.log(TAG, "Player heal applied -> amount=" + heal + ", hpNow=" + player.getHp() + "/" + player.getMaxHp());
             
-            // Set cooldown
-            if (skill.getTurnCooldown() > 0) {
-                player.setSkillCooldown(skillName, skill.getTurnCooldown());
-            }
         } else if (skill != null && skill.getEffectType() == BattleSkill.EffectType.BLEED) {
             // Claw & Chomp: deals damage and inflicts Bleed
             int damage = skill.getEffectBaseStat(); // Flat 25 damage
@@ -194,10 +190,6 @@ public class BattleStateMachine {
             setLastLog(lb.text(), lb.spans());
             Gdx.app.log(TAG, "Player Bleed applied -> damage=" + damage + ", bleedDamage=" + bleedDamage + "/turn for " + skill.getEffectDurationTurns() + " turns");
             
-            // Set cooldown
-            if (skill.getTurnCooldown() > 0) {
-                player.setSkillCooldown(skillName, skill.getTurnCooldown());
-            }
         } else if (skill != null && skill.getEffectType() == BattleSkill.EffectType.ATTACK) {
             if (skill.getEffectDurationTurns() > 0) {
                 int boost = Math.max(1, resolveMagnitude(player, enemy, skill, "attack[self]") / 4);
@@ -243,9 +235,6 @@ public class BattleStateMachine {
         } else if (skill != null && skill.getEffectType() == BattleSkill.EffectType.PARRY) {
             int turns = Math.max(1, skill.getEffectDurationTurns());
             player.activateParry(skillName, turns);
-            if (skill.getTurnCooldown() > 0) {
-                player.setSkillCooldown(skillName, skill.getTurnCooldown());
-            }
             LogBuilder lb = new LogBuilder()
                     .appendName(playerName)
                     .appendPlain(" uses ")
@@ -268,6 +257,10 @@ public class BattleStateMachine {
                     .appendPlain(".");
             setLastLog(lb.text(), lb.spans());
             Gdx.app.log(TAG, "Player damage applied -> damage=" + damage);
+        }
+
+        if (skill != null && skill.getTurnCooldown() > 0) {
+            player.setSkillCooldown(skillName, skill.getTurnCooldown());
         }
 
         // Tick enemy cooldowns and boosts

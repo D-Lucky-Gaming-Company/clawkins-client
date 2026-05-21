@@ -354,10 +354,10 @@ public class BattleOverlay implements Disposable {
                 return;
             }
             updateTypewriter(delta);
-            // Check for keyboard interaction OR cancel
-            // For mouse clicks, only advance if NOT clicking on a UI element
-            boolean keyboardInteraction = Gdx.input.isKeyJustPressed(Keys.Z) || Gdx.input.isKeyJustPressed(Keys.SPACE);
-            boolean cancelPressed = Gdx.input.isKeyJustPressed(Keys.X) || Gdx.input.isKeyJustPressed(Keys.ESCAPE);
+            // Use shared input conventions so battle dialogue accepts the same keys consistently.
+            // For mouse clicks, only advance if NOT clicking on a UI element.
+            boolean keyboardInteraction = InputConventions.isInteractJustPressed();
+            boolean cancelPressed = InputConventions.isCancelJustPressed();
             boolean mouseClickedOutsideUI = Gdx.input.justTouched() && !isClickOnUIElement();
             
             if (keyboardInteraction || cancelPressed || mouseClickedOutsideUI) {
@@ -366,11 +366,28 @@ public class BattleOverlay implements Disposable {
             return;
         }
 
+        if (postInventoryInputBlockFrames > 0) {
+            postInventoryInputBlockFrames--;
+            return;
+        }
+
+        // Keep HUD navigation responsive regardless of whose turn it is.
+        // This lets players pre-select skills/party targets before command phase.
+        if (isBattleSkillSelectLeftPressed()) {
+            battleHud.moveSelectedSkill(-1);
+            return;
+        } else if (isBattleSkillSelectRightPressed()) {
+            battleHud.moveSelectedSkill(1);
+            return;
+        } else if (InputConventions.isMenuUpJustPressed()) {
+            battleHud.moveSelectionUp();
+            return;
+        } else if (InputConventions.isMenuDownJustPressed()) {
+            battleHud.moveSelectionDown();
+            return;
+        }
+
         if (battle.canAcceptPlayerAction()) {
-            if (postInventoryInputBlockFrames > 0) {
-                postInventoryInputBlockFrames--;
-                return;
-            }
             // Keyboard input for battle actions
             if (Gdx.input.isKeyJustPressed(Keys.NUM_1)) {
                 if (battleHud.isSkillSlotEnabled(0)) {
@@ -392,31 +409,21 @@ public class BattleOverlay implements Disposable {
                     battleHud.setSelectedSkillIndex(3, true);
                     battleHud.triggerItem();
                 }
-            } else if (Gdx.input.isKeyJustPressed(Keys.ENTER)) {
+            } else if (Gdx.input.isKeyJustPressed(Keys.ENTER) || Gdx.input.isKeyJustPressed(Keys.NUMPAD_ENTER)) {
                 // Confirm Clawkin switch
                 if (battleHud.canSwitchToHighlighted()) {
                     showSwitchConfirmation();
                 }
-            } else if (isBattleSkillSelectLeftPressed()) {
-                battleHud.moveSelectedSkill(-1);
-            } else if (isBattleSkillSelectRightPressed()) {
-                battleHud.moveSelectedSkill(1);
             } else if (isBattleSkillConfirmPressed()) {
                 showSkillConfirmation(battleService);
             } else if (Gdx.input.isKeyJustPressed(Keys.E)) {
                 // Toggle inventory
                 toggleInventory();
-            } else if (Gdx.input.isKeyJustPressed(Keys.X)) {
+            } else if (InputConventions.isCancelJustPressed()) {
                 // Show run confirmation prompt
                 if (battleHud.isWildBattle()) {
                     showRunConfirmation();
                 }
-            } else if (Gdx.input.isKeyJustPressed(Keys.UP)) {
-                // Navigate Clawkin selection up
-                battleHud.moveSelectionUp();
-            } else if (Gdx.input.isKeyJustPressed(Keys.DOWN)) {
-                // Navigate Clawkin selection down
-                battleHud.moveSelectionDown();
             }
             return;
         }
@@ -722,7 +729,7 @@ public class BattleOverlay implements Disposable {
                     battleActionSfxHandler.playEscapeAction();
                 }
                 openDialogue(null, machine.getLastLog(), machine.getLastLogSpans(), DialogueFlowPhase.PLAYER_RESULT);
-            } else if (Gdx.input.isKeyJustPressed(Keys.X) || Gdx.input.isKeyJustPressed(Keys.ESCAPE)) {
+            } else if (InputConventions.isCancelJustPressed()) {
                 // Cancelled - return to battle
                 resetDialogueFlow();
             }
@@ -739,7 +746,7 @@ public class BattleOverlay implements Disposable {
                 if (dialogueFlowPhase == DialogueFlowPhase.SWITCH_CONFIRMATION) {
                     resetDialogueFlow();
                 }
-            } else if (Gdx.input.isKeyJustPressed(Keys.X) || Gdx.input.isKeyJustPressed(Keys.ESCAPE)) {
+            } else if (InputConventions.isCancelJustPressed()) {
                 // Cancelled - return to battle
                 resetDialogueFlow();
             }
@@ -1543,15 +1550,15 @@ public class BattleOverlay implements Disposable {
     }
 
     private static boolean isBattleSkillConfirmPressed() {
-        return Gdx.input.isKeyJustPressed(Keys.Z) || Gdx.input.isKeyJustPressed(Keys.SPACE);
+        return InputConventions.isInteractJustPressed();
     }
 
     private static boolean isBattleSkillSelectLeftPressed() {
-        return Gdx.input.isKeyJustPressed(Keys.LEFT) || Gdx.input.isKeyJustPressed(Keys.DPAD_LEFT);
+        return InputConventions.isMenuLeftJustPressed();
     }
 
     private static boolean isBattleSkillSelectRightPressed() {
-        return Gdx.input.isKeyJustPressed(Keys.RIGHT) || Gdx.input.isKeyJustPressed(Keys.DPAD_RIGHT);
+        return InputConventions.isMenuRightJustPressed();
     }
     
     /**
