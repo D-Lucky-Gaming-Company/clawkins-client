@@ -478,7 +478,8 @@ public class GameScreen extends ScreenAdapter {
 
         // Inventory system initialization - Fixed virtual UI resolution
         this.inventoryStage = new Stage(new FitViewport(VIRTUAL_UI_WIDTH, VIRTUAL_UI_HEIGHT));
-        this.hudStage = new Stage(new FitViewport(VIRTUAL_UI_WIDTH, VIRTUAL_UI_HEIGHT));
+        // HUD stage uses 16:9 aspect ratio to match the game world viewport (avoids misaligned black bars)
+        this.hudStage = new Stage(new FitViewport(960f, 540f));
         this.cheatConsoleStage = new Stage(new FitViewport(VIRTUAL_UI_WIDTH, VIRTUAL_UI_HEIGHT));
         this.shapeRenderer = new ShapeRenderer();
         this.uiFont = new BitmapFont();
@@ -500,7 +501,7 @@ public class GameScreen extends ScreenAdapter {
         Table hudRoot = new Table();
         hudRoot.setFillParent(true);
         hudRoot.top().left();
-        hudRoot.add(hudWallet);
+        hudRoot.add(hudWallet).pad(10f);
         this.hudStage.addActor(hudRoot);
         
         // Leaderboard HUD - top-right corner
