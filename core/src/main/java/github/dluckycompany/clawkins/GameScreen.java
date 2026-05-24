@@ -53,6 +53,7 @@ import github.dluckycompany.clawkins.battle.BattleTransition;
 import github.dluckycompany.clawkins.battle.BattleUnit;
 import github.dluckycompany.clawkins.battle.PlayerBattleState;
 import github.dluckycompany.clawkins.character.Clawkin;
+import github.dluckycompany.clawkins.character.ExpManager;
 import github.dluckycompany.clawkins.character.LevelSystem;
 import github.dluckycompany.clawkins.component.Interactible;
 import github.dluckycompany.clawkins.component.MapTransitionZone;
@@ -3096,20 +3097,39 @@ public class GameScreen extends ScreenAdapter {
     }
 
     /**
-     * Awards battle victory XP when the post-battle reward dialogue opens.
-     * Boss encounters may use a larger amount via {@link #BOSS_XP_REWARDS_BY_ENCOUNTER_ID}.
-     *
-     * @param encounterId encounter id from battle context, or {@code null} for wild / generic fights
-     * @return XP actually added
+     * Resolves victory XP from encounter id and defeated enemy level (does not mutate progress).
      */
-    public int applyVictoryExperienceReward(String encounterId) {
-        int xp = DEFAULT_BATTLE_XP_REWARD;
+    public static int calculateVictoryExperienceReward(
+            String encounterId,
+            int enemyLevel,
+            int enemyMaxHp,
+            boolean isWildBattle) {
         if (encounterId != null) {
             Integer bossXp = BOSS_XP_REWARDS_BY_ENCOUNTER_ID.get(encounterId);
             if (bossXp != null) {
-                xp = bossXp;
+                return Math.max(0, bossXp);
             }
         }
+        return ExpManager.calculateExpReward(enemyLevel, enemyMaxHp, isWildBattle);
+    }
+
+    /**
+     * Awards battle victory XP when the post-battle reward dialogue opens.
+     * Boss encounters may use a larger amount via {@link #BOSS_XP_REWARDS_BY_ENCOUNTER_ID}.
+     * All other fights scale from the defeated enemy's level via {@link LevelSystem#calculateExpReward(int, boolean)}.
+     *
+     * @param encounterId encounter id from battle context, or {@code null} for wild / generic fights
+     * @param enemyLevel authored or rolled enemy level from battle context
+     * @param enemyMaxHp enemy max HP (used to estimate level when {@code enemyLevel} is missing)
+     * @param isWildBattle {@code true} for random / wild clawkin fights, {@code false} for trainers
+     * @return XP actually added
+     */
+    public int applyVictoryExperienceReward(
+            String encounterId,
+            int enemyLevel,
+            int enemyMaxHp,
+            boolean isWildBattle) {
+        int xp = calculateVictoryExperienceReward(encounterId, enemyLevel, enemyMaxHp, isWildBattle);
         playerProgress.addExperiencePoints(xp);
         refreshProgressSnapshots();
         return xp;

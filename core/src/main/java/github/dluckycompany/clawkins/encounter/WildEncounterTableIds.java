@@ -28,6 +28,14 @@ public final class WildEncounterTableIds {
         return hasDifficultyToken(t);
     }
 
+    /** True for random rolls and map enemies that use procedural wild stats (not fixed trainers). */
+    public static boolean isWildEncounter(String encounterId, String encounterTableId) {
+        if (encounterId != null && encounterId.startsWith("random_")) {
+            return true;
+        }
+        return usesWildClawkinStats(encounterTableId);
+    }
+
     public static EncounterDifficultyTier tierForWildTable(String encounterTableId) {
         String t = normalize(encounterTableId);
         if (t.startsWith("hard_enemy") || t.contains("hard")) {

@@ -36,6 +36,7 @@ import github.dluckycompany.clawkins.asset.AssetService;
 import github.dluckycompany.clawkins.character.Clawkin;
 import github.dluckycompany.clawkins.character.LevelSystem;
 import github.dluckycompany.clawkins.character.SkillUnlockSystem;
+import github.dluckycompany.clawkins.encounter.WildEncounterTableIds;
 import github.dluckycompany.clawkins.component.Interactible;
 import github.dluckycompany.clawkins.input.InputConventions;
 import github.dluckycompany.clawkins.progress.PlayerProgress;
@@ -124,7 +125,7 @@ public class BattleOverlay implements Disposable {
     private String pendingVictoryMilestoneText = "";
     private int pendingVictoryMilestoneThreshold = -1;
     private boolean pendingVictoryMilestoneGainedSkill = false;
-    /** Prevents double-applying {@link GameScreen#DEFAULT_BATTLE_XP_REWARD} if victory dialogue is reopened. */
+    /** Prevents double-applying victory XP if the reward dialogue is reopened. */
     private boolean victoryXpGrantedThisSession = false;
     private static final int[] LEVEL_MILESTONE_THRESHOLDS = {10, 15, 20};
     /**
@@ -347,6 +348,13 @@ public class BattleOverlay implements Disposable {
 
         BattleStateMachine battle = battleService.getBattleStateMachine();
         syncHudHpFromBattleState(battle);
+
+        if (!dialogueVisible
+                && battle.canExecuteEnemyAction()
+                && battle.getCurrentRound() == 0) {
+            resolveEnemyTurnAndOpenDialogue(battleService);
+            return;
+        }
 
         if (dialogueVisible) {
             if (dialogueFlowPhase == DialogueFlowPhase.SKILL_CONFIRMATION || dialogueFlowPhase == DialogueFlowPhase.SKILL_STATS) {
@@ -755,11 +763,7 @@ public class BattleOverlay implements Disposable {
 
         if (dialogueFlowPhase == DialogueFlowPhase.PLAYER_RESULT) {
             if (machine.canExecuteEnemyAction()) {
-                battleService.resolveEnemyTurn();
-                if (battleActionSfxHandler != null) {
-                    battleActionSfxHandler.playForEnemyActionResult(machine.getLastLogSpans(), machine.getLastLog());
-                }
-                openDialogue(null, machine.getLastLog(), machine.getLastLogSpans(), DialogueFlowPhase.ENEMY_RESULT);
+                resolveEnemyTurnAndOpenDialogue(battleService);
                 return;
             }
             if (tryOpenVictoryDialogue(battleService, machine)) {
@@ -862,9 +866,21 @@ public class BattleOverlay implements Disposable {
         int xpBeforeReward = progress != null ? progress.getExperiencePoints() : 0;
         BattleContext context = machine.getContext();
         String encounterId = context != null ? context.getEncounterId() : null;
-        int xpAwarded = GameScreen.DEFAULT_BATTLE_XP_REWARD;
+        int enemyLevel = LevelSystem.MIN_LEVEL;
+        int enemyMaxHp = 0;
+        boolean isWildBattle = true;
+        if (context != null) {
+            enemyLevel = context.getEnemyLevel();
+            isWildBattle = WildEncounterTableIds.isWildEncounter(encounterId, context.getEncounterTableId());
+            if (!context.getEnemies().isEmpty()) {
+                enemyMaxHp = context.getEnemies().get(0).getMaxHp();
+            }
+        }
+        int xpAwarded = GameScreen.calculateVictoryExperienceReward(
+                encounterId, enemyLevel, enemyMaxHp, isWildBattle);
         if (gameScreen != null && progress != null && !victoryXpGrantedThisSession) {
-            xpAwarded = gameScreen.applyVictoryExperienceReward(encounterId);
+            xpAwarded = gameScreen.applyVictoryExperienceReward(
+                    encounterId, enemyLevel, enemyMaxHp, isWildBattle);
             victoryXpGrantedThisSession = true;
         }
         int currentXp = progress != null ? progress.getExperiencePoints() : xpBeforeReward;
@@ -883,10 +899,6 @@ public class BattleOverlay implements Disposable {
             pendingVictoryMilestoneThreshold = -1;
             pendingVictoryMilestoneGainedSkill = false;
             pendingVictoryMilestoneText = "";
-        }
-        int enemyLevel = LevelSystem.MIN_LEVEL;
-        if (context != null) {
-            enemyLevel = context.getEnemyLevel();
         }
         pendingVictoryCoinReward = resolveVictoryCoinReward(context, enemyLevel);
         if (playerBattleState != null && playerBattleState.getWallet() != null) {
@@ -1471,12 +1483,24 @@ public class BattleOverlay implements Disposable {
         
         // Switching Clawkin ends the player's turn - trigger enemy action
         if (machine != null && machine.canExecuteEnemyAction()) {
-            battleService.resolveEnemyTurn();
-            if (battleActionSfxHandler != null) {
-                battleActionSfxHandler.playForEnemyActionResult(machine.getLastLogSpans(), machine.getLastLog());
-            }
-            openDialogue(null, machine.getLastLog(), machine.getLastLogSpans(), DialogueFlowPhase.ENEMY_RESULT);
+            resolveEnemyTurnAndOpenDialogue(battleService);
         }
+    }
+
+    private void resolveEnemyTurnAndOpenDialogue(BattleService battleService) {
+        if (battleService == null) {
+            return;
+        }
+        BattleStateMachine machine = battleService.getBattleStateMachine();
+        if (machine == null || !machine.canExecuteEnemyAction()) {
+            return;
+        }
+        battleService.resolveEnemyTurn();
+        if (battleActionSfxHandler != null) {
+            battleActionSfxHandler.playForEnemyActionResult(machine.getLastLogSpans(), machine.getLastLog());
+        }
+        openDialogue(null, machine.getLastLog(), machine.getLastLogSpans(), DialogueFlowPhase.ENEMY_RESULT);
+        syncHudHpFromBattleState(machine);
     }
 
     /**
