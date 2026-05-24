@@ -2723,6 +2723,7 @@ public class GameScreen extends ScreenAdapter {
 
         state.setMoney(playerBattleState.getWallet().getMoney());
         state.setActiveClawkinIndex(playerBattleState.getActiveClawkinIndex());
+        state.setGameTimerSeconds(gameTimerSeconds);
 
         for (Clawkin clawkin : playerBattleState.getParty()) {
             if (clawkin == null) {
@@ -2870,6 +2871,10 @@ public class GameScreen extends ScreenAdapter {
         hudWallet.updateDisplay();
         this.lastAreaNameForSfx = resolveAreaName(targetAsset);
         this.lastAreaDisplayKey = buildAreaDisplayKey(targetAsset);
+        
+        // Restore game timer from save state and resume counting
+        this.gameTimerSeconds = saveState.getGameTimerSeconds();
+        this.gameTimerRunning = true;
         
         Gdx.app.log("GameScreen", "=== SAVE STATE APPLIED ===");
         return true;
