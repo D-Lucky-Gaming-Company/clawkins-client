@@ -32,6 +32,7 @@ import com.badlogic.gdx.math.Matrix4;
 import com.badlogic.gdx.math.Rectangle;
 import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.scenes.scene2d.Stage;
+import com.badlogic.gdx.scenes.scene2d.ui.Label;
 import com.badlogic.gdx.scenes.scene2d.ui.Table;
 import com.badlogic.gdx.utils.Disposable;
 import com.badlogic.gdx.utils.viewport.FitViewport;
@@ -294,6 +295,7 @@ public class GameScreen extends ScreenAdapter {
     // Leaderboard system
     private github.dluckycompany.clawkins.leaderboard.LeaderboardManager leaderboardManager;
     private github.dluckycompany.clawkins.leaderboard.LeaderboardHud leaderboardHud;
+    private Label gameTimerLabel;
     private float gameTimerSeconds = 0f;
     private boolean gameTimerRunning = false;
     
@@ -513,6 +515,15 @@ public class GameScreen extends ScreenAdapter {
         leaderboardRoot.top().right();
         leaderboardRoot.add(leaderboardHud).pad(10f);
         this.hudStage.addActor(leaderboardRoot);
+        
+        // Game timer HUD - bottom-left corner
+        Label.LabelStyle timerStyle = new Label.LabelStyle(uiFont, Color.WHITE);
+        this.gameTimerLabel = new Label("Time\n00:00:00", timerStyle);
+        Table timerRoot = new Table();
+        timerRoot.setFillParent(true);
+        timerRoot.bottom().left();
+        timerRoot.add(gameTimerLabel).pad(10f);
+        this.hudStage.addActor(timerRoot);
         
         this.bertJrPropTargetPosition = new Vector2();
         this.bertJrPropWalkingIn = false;
@@ -1167,6 +1178,11 @@ public class GameScreen extends ScreenAdapter {
         // Update game timer for leaderboard (uses uncapped uiDelta for accuracy)
         if (gameTimerRunning) {
             gameTimerSeconds += uiDelta;
+        }
+        // Update timer display
+        if (gameTimerLabel != null) {
+            long millis = (long) (gameTimerSeconds * 1000L);
+            gameTimerLabel.setText("Time\n" + github.dluckycompany.clawkins.leaderboard.LeaderboardManager.formatMillis(millis));
         }
         
         updateBossFightPromptInput();
