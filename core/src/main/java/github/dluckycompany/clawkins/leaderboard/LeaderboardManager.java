@@ -10,7 +10,7 @@ import java.util.List;
 /**
  * Manages the leaderboard: loading, saving, sorting, and updating entries.
  * Persists data to a .txt file using LibGDX file handling.
- * Keeps only the top 5 fastest completion times (duplicate names allowed).
+ * Stores every completion time; {@link #getEntries()} returns only the top 5 for display.
  */
 public class LeaderboardManager {
 
@@ -77,11 +77,11 @@ public class LeaderboardManager {
                 entries.add(new LeaderboardEntry(name, millis));
             }
         }
-        sortAndTrim();
+        sortEntries();
     }
 
     /**
-     * Saves the current leaderboard to file.
+     * Saves all leaderboard records to file.
      */
     public void save() {
         StringBuilder sb = new StringBuilder();
@@ -99,7 +99,7 @@ public class LeaderboardManager {
     }
 
     /**
-     * Submits a new completion time. Each run is stored separately; only the top 5 fastest remain.
+     * Submits a new completion time. Every run is kept on disk; only the top 5 are shown in the UI.
      *
      * @param playerName       the player's name
      * @param completionMillis the completion time in milliseconds
@@ -112,26 +112,36 @@ public class LeaderboardManager {
         }
 
         String name = playerName.trim();
-        entries.add(new LeaderboardEntry(name, completionMillis));
-        sortAndTrim();
+        LeaderboardEntry newEntry = new LeaderboardEntry(name, completionMillis);
+        entries.add(newEntry);
+        sortEntries();
         save();
 
-        return entries.stream()
-                .anyMatch(entry -> entry.getName().equals(name) && entry.getTimeMillis() == completionMillis);
+        return isInTopEntries(newEntry);
     }
 
     /**
-     * Returns an unmodifiable view of the current top entries.
+     * Returns an unmodifiable view of the top entries for display.
      */
     public List<LeaderboardEntry> getEntries() {
-        return List.copyOf(entries);
+        return getTopEntries();
     }
 
-    private void sortAndTrim() {
+    private void sortEntries() {
         entries.sort(Comparator.comparingLong(LeaderboardEntry::getTimeMillis));
-        while (entries.size() > MAX_ENTRIES) {
-            entries.remove(entries.size() - 1);
+    }
+
+    private List<LeaderboardEntry> getTopEntries() {
+        if (entries.size() <= MAX_ENTRIES) {
+            return List.copyOf(entries);
         }
+        return List.copyOf(entries.subList(0, MAX_ENTRIES));
+    }
+
+    private boolean isInTopEntries(LeaderboardEntry entry) {
+        return getTopEntries().stream()
+                .anyMatch(top -> top.getName().equals(entry.getName())
+                        && top.getTimeMillis() == entry.getTimeMillis());
     }
 
     private void createDefaults() {
