@@ -17,6 +17,7 @@ public class SaveState {
     private long money;
     private int activeClawkinIndex = -1;
     private long sortEpoch;
+    private float gameTimerSeconds;
 
     private final List<PartyEntry> party = new ArrayList<>();
     private final List<InventoryEntry> inventory = new ArrayList<>();
@@ -120,6 +121,14 @@ public class SaveState {
 
     public void setSortEpoch(long sortEpoch) {
         this.sortEpoch = sortEpoch;
+    }
+
+    public float getGameTimerSeconds() {
+        return gameTimerSeconds;
+    }
+
+    public void setGameTimerSeconds(float gameTimerSeconds) {
+        this.gameTimerSeconds = gameTimerSeconds;
     }
 
     public static class PartyEntry {

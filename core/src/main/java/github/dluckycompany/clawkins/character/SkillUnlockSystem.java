@@ -245,10 +245,10 @@ public class SkillUnlockSystem {
             25,                    // Base damage (25 physical damage)
             "",                    // No scaling - flat damage
             2,                     // Bleed lasts 2 turns
-            4,                     // 4 turn cooldown
+            3,                     // 3 turn cooldown
             "A stubborn bite that refuses to let go, slowly draining the opponent.",
             "Deals 25 Physical Damage. Inflicts Bleed (5% Max HP damage per turn for 2 turns)",
-            "4 turn cooldown"
+            "3 turn cooldown"
         );
     }
     
@@ -259,10 +259,10 @@ public class SkillUnlockSystem {
             60,                    // Base damage (ultimate)
             "attack[self]",        // Scales with attack
             0,                     // No duration (instant)
-            6,                     // 6 turn cooldown
+            4,                     // 4 turn cooldown
             "A calculated, silent strike that punishes weakened enemies with lethal precision.",
             "Deals 60 Physical Damage. Ignores 25% of enemy DEF. If target HP is below 30%, damage is increased by 1.5×",
-            "6 turn cooldown"
+            "4 turn cooldown"
         );
     }
     
@@ -303,10 +303,10 @@ public class SkillUnlockSystem {
             30,                    // Base damage (30 physical damage)
             "",                    // No scaling - flat damage
             2,                     // Evasion buff lasts 2 turns
-            4,                     // 4 turn cooldown
+            3,                     // 3 turn cooldown
             "Pure, unadulterated chaotic energy makes Ginger an erratic, blurring target.",
             "Deals 30 Physical Damage. Increases EVASION (30% dodge chance) for 2 turns.",
-            "4 turn cooldown"
+            "3 turn cooldown"
         );
     }
     
@@ -317,10 +317,10 @@ public class SkillUnlockSystem {
             80,                    // Base damage (ultimate)
             "attack[self]",        // Scales with attack
             0,                     // No duration (instant)
-            6,                     // 6 turn cooldown
+            4,                     // 4 turn cooldown
             "A devastating swipe fueled by molten rage, splashing heat onto all nearby foes.",
             "Deals 80 Physical Damage. Ignores Evasion buffs. 20% chance to inflict Burn (damage over time).",
-            "6 turn cooldown"
+            "4 turn cooldown"
         );
     }
     
@@ -437,7 +437,7 @@ public class SkillUnlockSystem {
             80,                    // Base damage (ultimate)
             "attack[self]",        // Scales with attack
             0,                     // No duration (instant)
-            5,                     // 5 turn cooldown
+            4,                     // 4 turn cooldown
             "Dart channels spectral energy into a devastating, sweeping execution strike.",
             "Deals 80 Physical Damage. If this attack defeats an enemy, Dart immediately gains another turn",
             "5 turn cooldown"

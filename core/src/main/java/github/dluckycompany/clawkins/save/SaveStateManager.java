@@ -215,6 +215,7 @@ public class SaveStateManager {
         writeField(builder, "playerY", Float.toString(state.getPlayerY()));
         writeField(builder, "money", Long.toString(state.getMoney()));
         writeField(builder, "activeClawkinIndex", Integer.toString(state.getActiveClawkinIndex()));
+        writeField(builder, "gameTimerSeconds", Float.toString(state.getGameTimerSeconds()));
 
         List<SaveState.PartyEntry> party = state.getParty();
         writeField(builder, "party.count", Integer.toString(party.size()));
@@ -317,6 +318,7 @@ public class SaveStateManager {
         state.setPlayerY(parseFloat(values.get("playerY"), 0f));
         state.setMoney(parseLong(values.get("money"), 0L));
         state.setActiveClawkinIndex(parseInt(values.get("activeClawkinIndex"), -1));
+        state.setGameTimerSeconds(parseFloat(values.get("gameTimerSeconds"), 0f));
 
         int partyCount = parseInt(values.get("party.count"), 0);
         for (int i = 0; i < partyCount; i++) {
