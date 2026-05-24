@@ -70,6 +70,7 @@ public class MainMenuScreen implements Screen {
 
     private Texture backgroundTexture;
     private Texture menuBackgroundTexture;
+    private Texture menuBgLayerTexture;
 
     // -----------------------------------------------------------------------
     // Callbacks
@@ -177,6 +178,7 @@ public class MainMenuScreen implements Screen {
         if (buttonFont != null) buttonFont.dispose();
         if (backgroundTexture != null) backgroundTexture.dispose();
         if (menuBackgroundTexture != null) menuBackgroundTexture.dispose();
+        if (menuBgLayerTexture != null) menuBgLayerTexture.dispose();
     }
 
     // -----------------------------------------------------------------------
@@ -541,17 +543,19 @@ public class MainMenuScreen implements Screen {
         float w = VIRTUAL_UI_WIDTH;
         float h = VIRTUAL_UI_HEIGHT;
 
-        if (menuBackgroundTexture == null) {
-            menuBackgroundTexture = new Texture(Gdx.files.internal("ui/MenuUI_Background.png"));
+        // Background: menu_bg.png with dark tint as the backdrop
+        if (menuBgLayerTexture == null) {
+            menuBgLayerTexture = new Texture(Gdx.files.internal("ui/menu_ui/menu_bg.png"));
         }
+       //batch.setColor(0.9f, 0.9f, 0.9f, 1f); // Lighter dark tint
+        batch.draw(menuBgLayerTexture, 0, 0, w, h);
 
-        // Keep menu background visible at full opacity.
-        batch.setColor(1f, 1f, 1f, 1f);
+        // Original menu background (logo/title overlay) on top
+        if (menuBackgroundTexture == null) {
+            menuBackgroundTexture = new Texture(Gdx.files.internal("ui/menu_ui/menu_bg.png"));
+        }
+        batch.setColor(1f, 1f, 1f, 0.6f);
         batch.draw(menuBackgroundTexture, 0, 0, w, h);
-
-        // Light tint keeps button text readable without hiding the image.
-        batch.setColor(0.10f, 0.10f, 0.12f, 0.22f);
-        batch.draw(getWhitePixel(), 0, 0, w, h);
 
         // Reset color to white for other batch operations
         batch.setColor(Color.WHITE);

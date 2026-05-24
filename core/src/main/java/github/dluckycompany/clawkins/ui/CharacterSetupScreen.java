@@ -596,7 +596,7 @@ public class CharacterSetupScreen implements Screen {
         float h = VIRTUAL_UI_HEIGHT;
 
         if (menuBackgroundTexture == null) {
-            menuBackgroundTexture = new Texture(Gdx.files.internal("ui/MenuUI_Background.png"));
+            menuBackgroundTexture = new Texture(Gdx.files.internal("ui/menu_ui/menu_bg.png"));
         }
 
         // Keep menu background visible at full opacity.

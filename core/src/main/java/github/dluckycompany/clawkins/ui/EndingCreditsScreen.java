@@ -593,7 +593,7 @@ public class EndingCreditsScreen extends ScreenAdapter {
     private void buildBackground() {
         // Try to reuse the menu background for a warm, consistent feel
         try {
-            bgTexture = new Texture(Gdx.files.internal("ui/MenuUI_Background.png"));
+            bgTexture = new Texture(Gdx.files.internal("ui/menu_ui/MenuUI_Background.png"));
         } catch (Exception e) {
             bgTexture = null; // graceful fallback — plain black background
         }
