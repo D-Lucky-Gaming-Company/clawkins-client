@@ -63,7 +63,7 @@ public class GameMetaState {
     /**
      * Records a finished run. Always persists the latest time and keeps the player's fastest time seen.
      *
-     * @return true when this run beat the player's previous personal best
+     * @return true when this run beat the player's previous completion time
      */
     public boolean recordCompletion(String playerName, long completionMillis) {
         if (playerName == null || playerName.isBlank() || completionMillis <= 0L) {
@@ -72,18 +72,17 @@ public class GameMetaState {
         }
 
         String name = playerName.trim();
+
+        long previousRunMillis = resolvePreviousRunMillis(name);
+        lastRunWasPersonalBest = previousRunMillis < 0L || completionMillis < previousRunMillis;
+
         lastCompletionName = name;
         lastCompletionMillis = completionMillis;
 
         boolean samePlayerAsStoredBest = name.equalsIgnoreCase(bestCompletionName);
-        long previousPersonalBest = samePlayerAsStoredBest ? bestCompletionMillis : -1L;
-        lastRunWasPersonalBest = previousPersonalBest < 0L || completionMillis < previousPersonalBest;
-
-        if (previousPersonalBest < 0L || samePlayerAsStoredBest) {
+        if (!samePlayerAsStoredBest || bestCompletionMillis < 0L || completionMillis < bestCompletionMillis) {
             bestCompletionName = name;
-            if (previousPersonalBest < 0L || completionMillis < bestCompletionMillis) {
-                bestCompletionMillis = completionMillis;
-            }
+            bestCompletionMillis = completionMillis;
         }
 
         gameCompleted = true;
@@ -92,6 +91,20 @@ public class GameMetaState {
                 + LeaderboardManager.formatMillis(completionMillis)
                 + (lastRunWasPersonalBest ? " (new personal best)" : ""));
         return lastRunWasPersonalBest;
+    }
+
+    /**
+     * Baseline for "NEW RECORD": the player's immediately previous completion when the same
+     * name finished last, otherwise their stored all-time best for that name.
+     */
+    private long resolvePreviousRunMillis(String name) {
+        if (name.equalsIgnoreCase(lastCompletionName) && lastCompletionMillis > 0L) {
+            return lastCompletionMillis;
+        }
+        if (name.equalsIgnoreCase(bestCompletionName) && bestCompletionMillis > 0L) {
+            return bestCompletionMillis;
+        }
+        return -1L;
     }
 
     public void load() {
