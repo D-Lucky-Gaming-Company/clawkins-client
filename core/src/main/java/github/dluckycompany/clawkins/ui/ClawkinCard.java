@@ -35,7 +35,7 @@ import github.dluckycompany.clawkins.character.LevelSystem;
  * - HP Bar: Green (#638A52) >50%, Yellow (#C19253) <=50%, Red (#A13D3D) <=20%
  * - Border: 2px black stroke (via RoundedPanelDrawable)
  */
-public class ClawkinCard extends Table {
+public class ClawkinCard extends AbstractClawkinHpTable implements ClawkinCardView {
     
     // ============ Color Palette ============
     private static final Color PORTRAIT_BG = Color.valueOf("#E7DAC7");
@@ -49,7 +49,6 @@ public class ClawkinCard extends Table {
     // Keep portrait textures cached across card instances.
     private static final Map<String, Texture> PORTRAIT_CACHE = new HashMap<>();
     
-    private final Clawkin clawkin;
     private final BitmapFont font;
     private Table hpBarContainer;       // Container for left-aligned HP bar
     private Image hpBarForeground;      // Foreground bar that grows left-to-right
@@ -77,22 +76,23 @@ public class ClawkinCard extends Table {
     }
 
     public ClawkinCard(Clawkin clawkin, BitmapFont font, int sharedTotalExperience) {
-        this.clawkin = clawkin;
+        super(clawkin);
         this.font = font;
         this.sharedTotalExperience = sharedTotalExperience;
-        
-        // Configure table properties
-        this.pad(8);
-        this.defaults().padRight(12).expandY().fillY();
-        
-        // Build layout based on clawkin presence
+        composeLayout();
+    }
+
+    @Override
+    protected void buildLayout() {
+        pad(8);
+        defaults().padRight(12).expandY().fillY();
+
         if (clawkin == null) {
             buildGhostSlot();
         } else {
             buildClawkinSlot();
         }
-        
-        // Add border background
+
         updateBorderStyle();
     }
     
@@ -228,6 +228,7 @@ public class ClawkinCard extends Table {
      * Implements left-to-right directional fill by calculating
      * the exact pixel width based on HP percentage.
      */
+    @Override
     public void updateHp() {
         refreshStats();
     }
@@ -310,6 +311,7 @@ public class ClawkinCard extends Table {
      * 
      * @param selected True to highlight as selected
      */
+    @Override
     public void setSelected(boolean selected) {
         this.isSelected = selected;
         updateBorderStyle();
@@ -343,30 +345,8 @@ public class ClawkinCard extends Table {
     public boolean isActiveFighter() {
         return isActiveFighter;
     }
-    
-    /**
-     * Get the clawkin associated with this card
-     * 
-     * @return The Clawkin instance, or null if this is an empty slot
-     */
-    public Clawkin getClawkin() {
-        return clawkin;
-    }
-    
-    /**
-     * Check if this card represents an empty slot
-     * 
-     * @return True if clawkin is null
-     */
-    public boolean isEmpty() {
-        return clawkin == null;
-    }
-    
-    /**
-     * Check current selection state
-     * 
-     * @return True if this card is currently selected
-     */
+
+    @Override
     public boolean isSelected() {
         return isSelected;
     }

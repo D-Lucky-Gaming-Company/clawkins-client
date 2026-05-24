@@ -11,7 +11,6 @@ import com.badlogic.gdx.scenes.scene2d.ui.Skin;
 import com.badlogic.gdx.scenes.scene2d.ui.Table;
 import com.badlogic.gdx.scenes.scene2d.ui.TextButton;
 import com.badlogic.gdx.scenes.scene2d.utils.ClickListener;
-import com.badlogic.gdx.scenes.scene2d.utils.Drawable;
 
 import github.dluckycompany.clawkins.character.Clawkin;
 
@@ -40,7 +39,7 @@ public class PartySelectionOverlay extends Dialog {
     private final List<Clawkin> party;
     private final Skin skin;
     private final BitmapFont font;
-    private final List<SelectableClawkinCard> selectableCards;
+    private final List<SelectableClawkinEntry> selectableCards;
     
     private TargetCallback targetCallback;
     private Clawkin selectedClawkin;
@@ -134,9 +133,9 @@ public class PartySelectionOverlay extends Dialog {
      * Internal handler for when a Clawkin card is clicked.
      * Updates selection state and executes callback.
      */
-    private void onClawkinSelected(Clawkin clawkin, SelectableClawkinCard card) {
+    private void onClawkinSelected(Clawkin clawkin, SelectableClawkinEntry card) {
         // Clear previous selection
-        for (SelectableClawkinCard c : selectableCards) {
+        for (SelectableClawkinEntry c : selectableCards) {
             c.setSelected(false);
         }
         
@@ -191,69 +190,43 @@ public class PartySelectionOverlay extends Dialog {
      * 3. Maintains selection state (visual feedback)
      * 4. Is automatically managed by Stage input processor
      */
-    public static class SelectableClawkinCard extends Table {
-        private final ClawkinCardUI card;
-        private final Clawkin clawkin;
-        private boolean isSelected = false;
-        private final Drawable selectedBackground;
-        private final Drawable normalBackground;
+    public static class SelectableClawkinCard extends AbstractSelectableClawkinTable {
+        private final BitmapFont font;
+        private ClawkinCardUI card;
 
         public SelectableClawkinCard(Clawkin clawkin, BitmapFont font) {
-            this.clawkin = clawkin;
-            this.card = new ClawkinCardUI(clawkin, font, 200f);
-            
-            // Create selection visual feedback (colored backgrounds)
-            this.selectedBackground = createColorDrawable(new Color(0.3f, 0.5f, 0.8f, 0.8f));
-            this.normalBackground = createColorDrawable(new Color(0.2f, 0.2f, 0.2f, 0.6f));
-            
-            // Build layout
-            this.setBackground(normalBackground);
-            this.pad(PADDING);
-            this.add(card).expand().fill();
-            
-            // Enable input on this table
-            this.setTouchable(com.badlogic.gdx.scenes.scene2d.Touchable.enabled);
-        }
-
-        /**
-         * Set the visual selection state.
-         */
-        public void setSelected(boolean selected) {
-            this.isSelected = selected;
-            if (selected) {
-                setBackground(selectedBackground);
-                System.out.println("[SelectableClawkinCard] " + clawkin.getName() + " is now selected");
-            } else {
-                setBackground(normalBackground);
-            }
-        }
-
-        /**
-         * Check if this card is selected.
-         */
-        public boolean isSelected() {
-            return isSelected;
-        }
-
-        /**
-         * Get the clawkin associated with this card.
-         */
-        public Clawkin getClawkin() {
-            return clawkin;
-        }
-
-        /**
-         * Helper: Create a colored drawable for selection feedback.
-         */
-        private Drawable createColorDrawable(Color color) {
-            com.badlogic.gdx.graphics.Pixmap pixmap = new com.badlogic.gdx.graphics.Pixmap(256, 256, com.badlogic.gdx.graphics.Pixmap.Format.RGBA8888);
-            pixmap.setColor(color);
-            pixmap.fill();
-            com.badlogic.gdx.graphics.Texture texture = new com.badlogic.gdx.graphics.Texture(pixmap);
-            pixmap.dispose();
-            return new com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable(
-                new com.badlogic.gdx.graphics.g2d.TextureRegion(texture)
+            super(
+                clawkin,
+                createSolidDrawable(new Color(0.3f, 0.5f, 0.8f, 0.8f)),
+                createSolidDrawable(new Color(0.2f, 0.2f, 0.2f, 0.6f))
             );
+            this.font = font;
+            composeLayout();
+        }
+
+        @Override
+        protected void buildLayout() {
+            card = (ClawkinCardUI) createInnerCard();
+            mountInnerCard(card);
+        }
+
+        @Override
+        protected ClawkinHpDisplay createInnerCard() {
+            return new ClawkinCardUI(clawkin, font, 200f);
+        }
+
+        @Override
+        protected void mountInnerCard(ClawkinHpDisplay card) {
+            pad(PADDING);
+            add((Table) card).expand().fill();
+            setTouchable(com.badlogic.gdx.scenes.scene2d.Touchable.enabled);
+        }
+
+        @Override
+        protected void onSelectionChanged(boolean selected) {
+            if (selected) {
+                System.out.println("[SelectableClawkinCard] " + clawkin.getName() + " is now selected");
+            }
         }
     }
 }

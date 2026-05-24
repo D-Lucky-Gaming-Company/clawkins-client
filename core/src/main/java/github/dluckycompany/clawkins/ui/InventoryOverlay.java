@@ -46,7 +46,7 @@ public class InventoryOverlay extends Dialog {
     private Label selectedItemDescLabel;
     private Label selectedItemEffectLabel;
     private Label actionLogLabel;  // For HP change feedback
-    private PartyMemberListUI partyUI;
+    private PartyMemberListView partyUI;
     private PartySelectionOverlay partySelectionOverlay;  // Interactive party selection
     private Item selectedItem;
     private Runnable onClose;

@@ -10,6 +10,7 @@ import com.badlogic.gdx.InputMultiplexer;
 import com.badlogic.gdx.InputProcessor;
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
+import com.badlogic.gdx.scenes.scene2d.Actor;
 import com.badlogic.gdx.scenes.scene2d.InputEvent;
 import com.badlogic.gdx.scenes.scene2d.Stage;
 import com.badlogic.gdx.scenes.scene2d.actions.Actions;
@@ -73,7 +74,7 @@ public class TeamViewerScreen implements InputProcessor {
     private final Table footerTable;        // Bottom beige bar
     
     // Card storage
-    private final List<ClawkinCard> cards = new ArrayList<>();
+    private final List<ClawkinCardView> cards = new ArrayList<>();
     private final List<Table> cardWrappers = new ArrayList<>();
     
     // State management
@@ -370,17 +371,18 @@ public class TeamViewerScreen implements InputProcessor {
             
             // Update visual feedback for all cards with animation
             for (int i = 0; i < cards.size(); i++) {
-                ClawkinCard card = cards.get(i);
+                ClawkinCardView cardView = cards.get(i);
                 boolean isNowSelected = (i == currentSelectedIndex);
-                card.setSelected(isNowSelected);
-                
+                cardView.setSelected(isNowSelected);
+
                 // Animation: selected card scales to 1.05, others scale back to 1.0
+                Actor cardActor = (Actor) cardView;
                 if (isNowSelected) {
-                    card.clearActions();
-                    card.addAction(Actions.scaleTo(1.05f, 1.05f, 0.1f));
+                    cardActor.clearActions();
+                    cardActor.addAction(Actions.scaleTo(1.05f, 1.05f, 0.1f));
                 } else {
-                    card.clearActions();
-                    card.addAction(Actions.scaleTo(1.0f, 1.0f, 0.1f));
+                    cardActor.clearActions();
+                    cardActor.addAction(Actions.scaleTo(1.0f, 1.0f, 0.1f));
                 }
             }
             
@@ -395,7 +397,7 @@ public class TeamViewerScreen implements InputProcessor {
     private void updateFooterMessage() {
         if (footerMessageLabel == null) return;
         if (currentSelectedIndex >= 0 && currentSelectedIndex < cards.size()) {
-            ClawkinCard hoveredCard = cards.get(currentSelectedIndex);
+            ClawkinCardView hoveredCard = cards.get(currentSelectedIndex);
             if (!hoveredCard.isEmpty() && hoveredCard.getClawkin() != null) {
                 Clawkin clawkin = hoveredCard.getClawkin();
                 boolean isActiveFighter = (currentSelectedIndex == activeFighterIndex);
@@ -435,7 +437,7 @@ public class TeamViewerScreen implements InputProcessor {
 
     public void setSharedExperience(int totalExp) {
         sharedTotalExperience = Math.max(0, totalExp);
-        for (ClawkinCard card : cards) {
+        for (ClawkinCardView card : cards) {
             if (card != null) {
                 card.setSharedExperience(sharedTotalExperience);
             }
@@ -471,7 +473,7 @@ public class TeamViewerScreen implements InputProcessor {
         if (currentSelectedIndex < 0 || currentSelectedIndex >= cards.size()) {
             return;
         }
-        ClawkinCard card = cards.get(currentSelectedIndex);
+        ClawkinCardView card = cards.get(currentSelectedIndex);
         if (card.isEmpty() || card.getClawkin() == null) {
             return;
         }
@@ -527,7 +529,7 @@ public class TeamViewerScreen implements InputProcessor {
      */
     private void confirmActiveFighter() {
         if (currentSelectedIndex < 0 || currentSelectedIndex >= cards.size()) return;
-        ClawkinCard card = cards.get(currentSelectedIndex);
+        ClawkinCardView card = cards.get(currentSelectedIndex);
         if (card.isEmpty() || card.getClawkin() == null) return;
 
         setActiveFighterIndex(currentSelectedIndex);
@@ -578,7 +580,7 @@ public class TeamViewerScreen implements InputProcessor {
      */
     public void updateSelectedHp() {
         if (currentSelectedIndex >= 0 && currentSelectedIndex < cards.size()) {
-            ClawkinCard card = cards.get(currentSelectedIndex);
+            ClawkinCardView card = cards.get(currentSelectedIndex);
             if (!card.isEmpty()) {
                 card.updateHp();
             }
@@ -657,7 +659,7 @@ public class TeamViewerScreen implements InputProcessor {
      */
     public Clawkin getSelectedClawkin() {
         if (currentSelectedIndex >= 0 && currentSelectedIndex < cards.size()) {
-            ClawkinCard card = cards.get(currentSelectedIndex);
+            ClawkinCardView card = cards.get(currentSelectedIndex);
             return card.isEmpty() ? null : card.getClawkin();
         }
         return null;
@@ -891,19 +893,5 @@ public class TeamViewerScreen implements InputProcessor {
         
         // Clear any pending actions (animations) to prevent lingering effects
         rootTable.clearActions();
-    }
-    
-    /**
-     * Callback interface for card selection events
-     */
-    @FunctionalInterface
-    public interface CardSelectionCallback {
-        /**
-         * Invoked when a card is clicked
-         * 
-         * @param slotIndex The slot index (0-2)
-         * @param clawkin The Clawkin in that slot
-         */
-        void onCardSelected(int slotIndex, Clawkin clawkin);
     }
 }
