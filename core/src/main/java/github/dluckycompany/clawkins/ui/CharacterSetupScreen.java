@@ -599,13 +599,9 @@ public class CharacterSetupScreen implements Screen {
             menuBackgroundTexture = new Texture(Gdx.files.internal("ui/menu_ui/menu_bg.png"));
         }
 
-        // Keep menu background visible at full opacity.
-        batch.setColor(1f, 1f, 1f, 1f);
+        // Draw background with 5% dark tint
+        //batch.setColor(0.90f, 0.90f, 0.90f, 1f);
         batch.draw(menuBackgroundTexture, 0, 0, w, h);
-
-        // Light tint keeps button text readable without hiding the image.
-        batch.setColor(0.10f, 0.10f, 0.12f, 0.22f);
-        batch.draw(getWhitePixel(), 0, 0, w, h);
 
         // Reset color to white for other batch operations
         batch.setColor(Color.WHITE);

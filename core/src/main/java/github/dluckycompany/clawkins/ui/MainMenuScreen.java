@@ -543,19 +543,12 @@ public class MainMenuScreen implements Screen {
         float w = VIRTUAL_UI_WIDTH;
         float h = VIRTUAL_UI_HEIGHT;
 
-        // Background: menu_bg.png with dark tint as the backdrop
+        // Background: menu_bg.png with 5% dark tint
         if (menuBgLayerTexture == null) {
             menuBgLayerTexture = new Texture(Gdx.files.internal("ui/menu_ui/menu_bg.png"));
         }
-       //batch.setColor(0.9f, 0.9f, 0.9f, 1f); // Lighter dark tint
+        //batch.setColor(0.80f, 0.80f, 0.80f, 1f); // 5% dark tint
         batch.draw(menuBgLayerTexture, 0, 0, w, h);
-
-        // Original menu background (logo/title overlay) on top
-        if (menuBackgroundTexture == null) {
-            menuBackgroundTexture = new Texture(Gdx.files.internal("ui/menu_ui/menu_bg.png"));
-        }
-        batch.setColor(1f, 1f, 1f, 0.6f);
-        batch.draw(menuBackgroundTexture, 0, 0, w, h);
 
         // Reset color to white for other batch operations
         batch.setColor(Color.WHITE);
