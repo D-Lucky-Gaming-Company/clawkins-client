@@ -341,6 +341,7 @@ public class TiledObjectConfigurator {
                 entity.add(enemy);
                 entity.add(new Move(0)); // Speed is managed by EnemySystem
                 entity.add(new EncounterTrigger());
+                boolean roamingTrainer = attachFieldTrainerWalkSpriteIfApplicable(tileMapObject, entity);
                 entity.add(new EncounterZone(
                         encounterId,
                         enemyName,
@@ -352,10 +353,10 @@ public class TiledObjectConfigurator {
                         enemyDefense,
                         enemySpeed,
                         enemySkills,
-                        enemyImagePath
+                        enemyImagePath,
+                        roamingTrainer
                 ));
                 Gdx.app.debug(TAG, "Configured as ENEMY: id=" + encounterId + " table=" + encounterTableId);
-                attachFieldTrainerWalkSpriteIfApplicable(tileMapObject, entity);
             }
             case INTERACTIBLE -> {
                 String objectName = getStringProperty(tileMapObject, "ObjectName", "Object");
@@ -453,18 +454,18 @@ public class TiledObjectConfigurator {
      * <p>Walk masters follow {@code trainer1_field.tsx} / {@code trainer2_field.tsx}
      * (resolved from texture file name: {@code trainer1_sheet} vs {@code trainer2_sheet}).
      */
-    private static void attachFieldTrainerWalkSpriteIfApplicable(
+    private static boolean attachFieldTrainerWalkSpriteIfApplicable(
             TiledMapTileMapObject tileMapObject, Entity entity) {
         if (tileMapObject == null || entity == null) {
-            return;
+            return false;
         }
         TiledMapTile tile = tileMapObject.getTile();
         if (tile == null) {
-            return;
+            return false;
         }
         TextureRegion source = tile.getTextureRegion();
         if (source == null || source.getTexture() == null) {
-            return;
+            return false;
         }
         int tw = source.getRegionWidth();
         int th = source.getRegionHeight();
@@ -472,22 +473,23 @@ public class TiledObjectConfigurator {
         int texW = tex.getWidth();
         int texH = tex.getHeight();
         if (tw <= 0 || th <= 0 || texW % tw != 0 || texH % th != 0) {
-            return;
+            return false;
         }
         int columns = texW / tw;
         int rows = texH / th;
         if (columns != FieldTrainerWalkSprite.WALK_FRAMES || rows < 3) {
-            return;
+            return false;
         }
         Graphic graphic = Graphic.MAPPER.get(entity);
         if (graphic == null) {
-            return;
+            return false;
         }
         TextureRegion drawable = new TextureRegion(tex);
         graphic.setRegion(drawable);
         int[] masters = resolveTrainerFieldWalkMasterIds(tex);
         entity.add(new FieldTrainerWalkSprite(
                 drawable, tw, th, columns, masters[0], masters[1], masters[2]));
+        return true;
     }
 
     /**

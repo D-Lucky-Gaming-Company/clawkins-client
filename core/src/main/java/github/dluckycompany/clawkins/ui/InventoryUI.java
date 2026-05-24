@@ -95,6 +95,7 @@ public class InventoryUI {
     private Runnable onBackPressed;
     /** Called after a LevelBoostEffect is successfully applied. Receives the number of levels gained. */
     private java.util.function.Consumer<Integer> onLevelBoosted;
+    private java.util.function.BiConsumer<github.dluckycompany.clawkins.item.Item, Clawkin> onBattleItemUsed;
     
     // Button drawables (loaded from assets/ui/buttons/)
     private TextureRegionDrawable backDrawable;
@@ -912,6 +913,7 @@ public class InventoryUI {
         });
 
         dialog.setOnLevelBoosted(onLevelBoosted);
+        dialog.setOnBattleItemUsed(onBattleItemUsed);
         dialog.setOnClosed(() -> activePartyDialog = null);
         activePartyDialog = dialog;
         dialog.show(stage, null);
@@ -1170,6 +1172,10 @@ public class InventoryUI {
      */
     public void setOnLevelBoosted(java.util.function.Consumer<Integer> callback) {
         this.onLevelBoosted = callback;
+    }
+
+    public void setOnBattleItemUsed(java.util.function.BiConsumer<github.dluckycompany.clawkins.item.Item, Clawkin> callback) {
+        this.onBattleItemUsed = callback;
     }
 
     /**

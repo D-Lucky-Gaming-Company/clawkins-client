@@ -1,6 +1,7 @@
 package github.dluckycompany.clawkins.ui;
 
 import java.util.List;
+import java.util.function.BiConsumer;
 
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input;
@@ -52,6 +53,7 @@ public class PartySelectionDialog extends Dialog {
     private Runnable onItemApplied;
     private Runnable onClosed;
     private java.util.function.Consumer<Integer> onLevelBoosted;
+    private BiConsumer<Item, Clawkin> onBattleItemUsed;
     private Dialog activeStatusDialog;
     private Runnable activeStatusOnClose;
 
@@ -291,6 +293,8 @@ public class PartySelectionDialog extends Dialog {
             // Record previous HP for feedback
             int previousHp = target.getCurrentHp();
             int previousLevel = target.getLevel();
+            int previousAttack = target.getEffectiveAttack();
+            int previousDefense = target.getEffectiveDefense();
 
             // ============ PHASE 2: APPLICATION ============
             // Apply the item's effect to the target
@@ -312,6 +316,8 @@ public class PartySelectionDialog extends Dialog {
             int newLevel = target.getLevel();
             int hpRestored = newHp - previousHp;
             int levelGained = newLevel - previousLevel;
+            int attackGained = target.getEffectiveAttack() - previousAttack;
+            int defenseGained = target.getEffectiveDefense() - previousDefense;
 
             // ============ PHASE 3: CONSUMPTION ============
             // Only decrement inventory if the effect was actually applied
@@ -326,7 +332,6 @@ public class PartySelectionDialog extends Dialog {
             // Log the successful transaction
             String feedback;
             if (levelGained > 0) {
-                // Level boost feedback
                 feedback = String.format(
                     "[Item Use] %s used %s on %s: Level %d → %d (+%d)",
                     "Player",
@@ -336,8 +341,16 @@ public class PartySelectionDialog extends Dialog {
                     newLevel,
                     levelGained
                 );
-            } else {
-                // HP restoration feedback
+            } else if (item.getType() == Item.ItemType.STAT_BOOSTER && (attackGained > 0 || defenseGained > 0)) {
+                feedback = String.format(
+                    "[Item Use] %s used %s on %s: ATK %+d, DEF %+d",
+                    "Player",
+                    item.getName(),
+                    target.getName(),
+                    attackGained,
+                    defenseGained
+                );
+            } else if (hpRestored > 0) {
                 feedback = String.format(
                     "[Item Use] %s used %s on %s: %d → %d HP (+%d)",
                     "Player",
@@ -347,13 +360,27 @@ public class PartySelectionDialog extends Dialog {
                     newHp,
                     hpRestored
                 );
+            } else {
+                feedback = String.format(
+                    "[Item Use] %s used %s on %s",
+                    "Player",
+                    item.getName(),
+                    target.getName()
+                );
             }
             Gdx.app.log("PartySelectionDialog", feedback);
             if (audioService != null) {
-                audioService.playSound(SoundEffect.BATTLE_HEAL);
+                if (item.getType() == Item.ItemType.STAT_BOOSTER) {
+                    audioService.playSound(SoundEffect.UI_SELECT);
+                } else {
+                    audioService.playSound(SoundEffect.BATTLE_HEAL);
+                }
             }
 
             // ============ PHASE 5: STATE RECONCILIATION ============
+            if (battleContext && onBattleItemUsed != null) {
+                onBattleItemUsed.accept(item, target);
+            }
             // Trigger the callback to refresh inventory UI
             // This removes the item from the list and updates display
             if (onItemApplied != null) {
@@ -431,6 +458,10 @@ public class PartySelectionDialog extends Dialog {
      */
     public void setOnLevelBoosted(java.util.function.Consumer<Integer> callback) {
         this.onLevelBoosted = callback;
+    }
+
+    public void setOnBattleItemUsed(BiConsumer<Item, Clawkin> callback) {
+        this.onBattleItemUsed = callback;
     }
 
     public boolean handleNavigationKey(int keycode) {

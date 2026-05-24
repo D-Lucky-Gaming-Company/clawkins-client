@@ -26,6 +26,9 @@ import java.util.List;
 import github.dluckycompany.clawkins.audio.AudioService;
 import github.dluckycompany.clawkins.audio.SoundEffect;
 import github.dluckycompany.clawkins.input.InputConventions;
+import github.dluckycompany.clawkins.leaderboard.LeaderboardHud;
+import github.dluckycompany.clawkins.leaderboard.LeaderboardManager;
+import github.dluckycompany.clawkins.progress.GameMetaState;
 import github.dluckycompany.clawkins.save.SaveStateManager;
 
 /**
@@ -81,6 +84,9 @@ public class MainMenuScreen implements Screen {
     private final Runnable onExit;
     private final SaveStateManager saveStateManager;
     private final AudioService audioService;
+    private final GameMetaState gameMetaState = new GameMetaState();
+    private final LeaderboardManager leaderboardManager = new LeaderboardManager();
+    private LeaderboardHud leaderboardHud;
     
     // Hover debounce tracking
     private TextButton lastHoveredButton;
@@ -121,6 +127,8 @@ public class MainMenuScreen implements Screen {
 
     @Override
     public void show() {
+        gameMetaState.load();
+        leaderboardManager.load();
         buildUI();
         
         // Set input processor to stage when screen is shown
@@ -314,6 +322,23 @@ public class MainMenuScreen implements Screen {
         root.add(buttonTable).center().padTop(240f);
 
         stage.addActor(root);
+
+        if (gameMetaState.hasCompletedGame()) {
+            addLeaderboardOverlay();
+        }
+    }
+
+    private void addLeaderboardOverlay() {
+        if (leaderboardHud == null) {
+            leaderboardHud = new LeaderboardHud(subtitleFont != null ? subtitleFont : buttonFont);
+        }
+        leaderboardHud.refresh(leaderboardManager.getEntries(), gameMetaState.getBestCompletionName());
+
+        Table leaderboardRoot = new Table();
+        leaderboardRoot.setFillParent(true);
+        leaderboardRoot.top().right();
+        leaderboardRoot.add(leaderboardHud).pad(10f);
+        stage.addActor(leaderboardRoot);
     }
 
     /**

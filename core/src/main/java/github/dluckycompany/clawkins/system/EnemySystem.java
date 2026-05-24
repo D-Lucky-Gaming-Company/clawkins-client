@@ -36,6 +36,7 @@ import github.dluckycompany.clawkins.Main;
 import github.dluckycompany.clawkins.audio.AudioEventType;
 import github.dluckycompany.clawkins.audio.AudioService;
 import github.dluckycompany.clawkins.component.Enemy;
+import github.dluckycompany.clawkins.component.FieldTrainerWalkSprite;
 import github.dluckycompany.clawkins.component.Interactible;
 import github.dluckycompany.clawkins.component.Move;
 import github.dluckycompany.clawkins.component.Player;
@@ -200,8 +201,15 @@ public class EnemySystem extends IteratingSystem {
             enemy.setIdleTimer(0f);
             move.setMaxSpeed(enemy.getChasingSpeed());
             if (targetTransform != null) {
-                updateChaseDirection(enemy, move, transform, targetTransform, entity);
-                updateFacingDirectionFromMove(enemy, move.getDirection());
+                if (isRoamingTrainer(entity)) {
+                    updateTrainerChaseDirection(enemy, move, transform, targetTransform, entity);
+                    Vector2 faceTarget = playerEncounterTarget(
+                            enemyHitboxCenterOf(transform), targetTransform);
+                    updateFacingDirection(enemy, faceTarget, enemyHitboxCenterOf(transform));
+                } else {
+                    updateChaseDirection(enemy, move, transform, targetTransform, entity);
+                    updateFacingDirectionFromMove(enemy, move.getDirection());
+                }
             }
             return;
         }
@@ -264,8 +272,18 @@ public class EnemySystem extends IteratingSystem {
 
         if (!move.getDirection().isZero()
                 && !canRoamAlong(enemy, transform, move.getDirection(), enemy.getRoamDecisionDistance(), self)) {
-            chooseRoamDirection(enemy, move, transform, self);
+            if (isRoamingTrainer(self)) {
+                move.getDirection().setZero();
+                move.setMaxSpeed(0f);
+            } else {
+                chooseRoamDirection(enemy, move, transform, self);
+            }
+            return;
         }
+    }
+
+    private static boolean isRoamingTrainer(Entity entity) {
+        return FieldTrainerWalkSprite.MAPPER.get(entity) != null;
     }
 
     private void chooseRoamDirection(Enemy enemy, Move move, Transform transform, Entity self) {
@@ -387,6 +405,33 @@ public class EnemySystem extends IteratingSystem {
         Vector2 desired = tmpDir.nor();
         Vector2 chosen = findBestChaseDirection(desired, enemyTransform, playerTransform, enemy, self);
         move.getDirection().set(chosen);
+    }
+
+    /**
+     * Field trainers keep closing on the player's encounter hitbox even when a short probe
+     * would fail, so {@link EncounterDetectionSystem} can fire instead of stopping one tile away.
+     */
+    private void updateTrainerChaseDirection(
+            Enemy enemy,
+            Move move,
+            Transform enemyTransform,
+            Transform playerTransform,
+            Entity self) {
+        Vector2 enemyCenter = enemyHitboxCenterOf(enemyTransform);
+        Vector2 encounterTarget = playerEncounterTarget(enemyCenter, playerTransform);
+        tmpDir.set(encounterTarget).sub(enemyCenter);
+        if (tmpDir.isZero()) {
+            move.getDirection().setZero();
+            return;
+        }
+
+        Vector2 desired = tmpDir.nor();
+        Vector2 chosen = findBestChaseDirection(desired, enemyTransform, playerTransform, enemy, self);
+        if (!chosen.isZero()) {
+            move.getDirection().set(chosen);
+            return;
+        }
+        move.getDirection().set(desired);
     }
 
     private Vector2 playerEncounterTarget(Vector2 enemyCenter, Transform playerTransform) {
@@ -646,11 +691,16 @@ public class EnemySystem extends IteratingSystem {
             return false;
         }
 
-        // 2. Check sight cone (facing direction vs direction to player)
-        tmpDir.set(playerPos).sub(enemyPos).nor();
-        float dot = enemy.getFacingDirection().dot(tmpDir);
-        if (dot < enemy.getSightConeDotThreshold()) {
-            return false; // Player is not in front of enemy's cone of vision
+        // 2. Check sight cone (facing direction vs direction to player).
+        // Roaming trainers keep pursuit once alerted/chasing so steering does not drop chase.
+        boolean trainerPursuit = isRoamingTrainer(self)
+                && (enemy.getState() == Enemy.State.CHASING || enemy.getState() == Enemy.State.ALERTED);
+        if (!trainerPursuit) {
+            tmpDir.set(playerPos).sub(enemyPos).nor();
+            float dot = enemy.getFacingDirection().dot(tmpDir);
+            if (dot < enemy.getSightConeDotThreshold()) {
+                return false; // Player is not in front of enemy's cone of vision
+            }
         }
 
         // 3. Raycast for collisions

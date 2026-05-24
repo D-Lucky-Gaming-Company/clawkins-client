@@ -71,6 +71,10 @@ public class BattleHud implements Disposable {
     /** Fixed virtual height for 4:3 aspect ratio (retro RPG style) */
     private static final float VIRTUAL_HEIGHT = 720f;
 
+    /** Standout color for enemy level text beside the battle HUD name. */
+    private static final Color ENEMY_LEVEL_LABEL_COLOR = Color.valueOf("#FFD54F");
+    private static final float ENEMY_LEVEL_FONT_SCALE = 1.22f;
+
     // -----------------------------------------------------------------------
     // Fixed UI element sizes (in virtual pixels)
     // -----------------------------------------------------------------------
@@ -227,7 +231,9 @@ public class BattleHud implements Disposable {
     private ProgressBar playerHpBar;
     private Label playerHpLabel;
 
-    private Label bossNameLabel;
+    private Label bossNameTextLabel;
+    private Label bossLevelLabel;
+    private Table bossNameRow;
     private ProgressBar bossHpBar;
     private Label bossHpLabel;
     
@@ -663,13 +669,16 @@ public class BattleHud implements Disposable {
      *
      * @param encounterTableId optional table id from the map; included in the portrait cache key when present
      */
-    public void updateEnemyCombatant(String encounterId, String encounterTableId, String displayName, String portraitPath) {
+    public void updateEnemyCombatant(
+            String encounterId,
+            String encounterTableId,
+            String displayName,
+            String portraitPath,
+            int enemyLevel) {
         String label = displayName != null && !displayName.isBlank()
                 ? displayName
                 : (encounterId != null && !encounterId.isBlank() ? encounterId : "Enemy");
-        if (bossNameLabel != null) {
-            bossNameLabel.setText(label);
-        }
+        updateBossNameDisplay(label, enemyLevel);
 
         String pathKey = (encounterId == null ? "" : encounterId)
                 + "\0" + (encounterTableId == null ? "" : encounterTableId)
@@ -695,6 +704,18 @@ public class BattleHud implements Disposable {
             return;
         }
         restoreBossPlaceholderPortrait();
+    }
+
+    private void updateBossNameDisplay(String name, int enemyLevel) {
+        if (bossNameTextLabel != null) {
+            bossNameTextLabel.setText(name == null || name.isBlank() ? "Enemy" : name);
+        }
+        if (bossLevelLabel != null) {
+            int clamped = Math.max(
+                    LevelSystem.MIN_LEVEL,
+                    Math.min(enemyLevel, LevelSystem.MAX_LEVEL));
+            bossLevelLabel.setText("Lv. " + clamped);
+        }
     }
 
     private static String clawkinVisualKey(Clawkin c) {
@@ -1260,7 +1281,13 @@ public class BattleHud implements Disposable {
         playerHpBar.setValue(playerCurrentHp / playerMaxHp);
         playerHpLabel = new Label(String.format("%.0f / %.0f", playerCurrentHp, playerMaxHp), labelStyle);
 
-        bossNameLabel = new Label("Boss", labelStyle);
+        bossNameTextLabel = new Label("Boss", labelStyle);
+        LabelStyle enemyLevelStyle = new LabelStyle(font, ENEMY_LEVEL_LABEL_COLOR);
+        bossLevelLabel = new Label("Lv. 1", enemyLevelStyle);
+        bossLevelLabel.setFontScale(ENEMY_LEVEL_FONT_SCALE);
+        bossNameRow = new Table();
+        bossNameRow.add(bossNameTextLabel).right();
+        bossNameRow.add(bossLevelLabel).right().padLeft(6f);
         bossHpBar = new ProgressBar(0f, 1f, 0.01f, false, bossHpStyle);
         bossHpBar.setValue(bossCurrentHp / bossMaxHp);
         bossHpLabel = new Label(String.format("%.0f / %.0f", bossCurrentHp, bossMaxHp), labelStyle);
@@ -1393,7 +1420,7 @@ public class BattleHud implements Disposable {
         playerExpTable.add(playerExpLabel).left().padTop(2f);
 
         bossHpTable.clearChildren();
-        bossHpTable.add(bossNameLabel).right().padBottom(2f);
+        bossHpTable.add(bossNameRow).right().padBottom(2f);
         bossHpTable.row();
         bossHpTable.add(bossHpBar).width(HP_BAR_WIDTH).height(HP_BAR_HEIGHT).right();
         bossHpTable.row();

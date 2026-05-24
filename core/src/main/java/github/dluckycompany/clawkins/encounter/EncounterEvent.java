@@ -20,6 +20,8 @@ public class EncounterEvent {
     private final String enemyName;
     /** Optional portrait path relative to assets/internal (same convention as Clawkin.image_clawkin). */
     private final String enemyImagePath;
+    /** True for roaming field trainers ({@link github.dluckycompany.clawkins.component.FieldTrainerWalkSprite}). */
+    private final boolean roamingTrainer;
 
     public EncounterEvent(
             EncounterEventType type,
@@ -33,6 +35,35 @@ public class EncounterEvent {
             List<BattleSkill> enemySkills,
             String enemyName,
             String enemyImagePath) {
+        this(
+                type,
+                encounterId,
+                encounterTableId,
+                enemyLevel,
+                enemyHp,
+                enemyAttack,
+                enemyDefense,
+                enemySpeed,
+                enemySkills,
+                enemyName,
+                enemyImagePath,
+                false
+        );
+    }
+
+    public EncounterEvent(
+            EncounterEventType type,
+            String encounterId,
+            String encounterTableId,
+            int enemyLevel,
+            int enemyHp,
+            int enemyAttack,
+            int enemyDefense,
+            int enemySpeed,
+            List<BattleSkill> enemySkills,
+            String enemyName,
+            String enemyImagePath,
+            boolean roamingTrainer) {
         this.type = type;
         this.encounterId = encounterId;
         this.encounterTableId = encounterTableId;
@@ -44,6 +75,7 @@ public class EncounterEvent {
         this.enemySkills = new ArrayList<>(enemySkills == null ? List.of() : enemySkills);
         this.enemyName = enemyName == null ? "" : enemyName;
         this.enemyImagePath = enemyImagePath == null ? "" : enemyImagePath.trim();
+        this.roamingTrainer = roamingTrainer;
     }
 
     public EncounterEvent(
@@ -102,5 +134,9 @@ public class EncounterEvent {
 
     public String getEnemyImagePath() {
         return enemyImagePath;
+    }
+
+    public boolean isRoamingTrainer() {
+        return roamingTrainer;
     }
 }

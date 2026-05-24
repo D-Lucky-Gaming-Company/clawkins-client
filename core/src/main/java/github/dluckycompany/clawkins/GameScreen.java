@@ -371,6 +371,7 @@ public class GameScreen extends ScreenAdapter {
     private boolean bertJrPropReachedTarget;
     private boolean bertJrPreDialogueSequenceActive;
     private boolean bertJrFirstEncounterMusicStarted;
+    private boolean dukeFirstEncounterMusicStarted;
     /** After {@code cerberus_enc_atmos0}: music + first zoom tier until Cerberus is defeated or map reloads. */
     private boolean cerberusBridgePresentationActive;
     /** After {@code cerberus_enc_atmos1}: additional zoom until Cerberus is defeated or map reloads. */
@@ -510,7 +511,7 @@ public class GameScreen extends ScreenAdapter {
         // Leaderboard HUD - top-right corner
         this.leaderboardManager = new github.dluckycompany.clawkins.leaderboard.LeaderboardManager();
         this.leaderboardHud = new github.dluckycompany.clawkins.leaderboard.LeaderboardHud(uiFont);
-        this.leaderboardHud.refresh(leaderboardManager.getEntries());
+        this.leaderboardHud.refresh(leaderboardManager.getEntries(), resolveCurrentPlayerName());
         Table leaderboardRoot = new Table();
         leaderboardRoot.setFillParent(true);
         leaderboardRoot.top().right();
@@ -531,6 +532,7 @@ public class GameScreen extends ScreenAdapter {
         this.bertJrPropReachedTarget = false;
         this.bertJrPreDialogueSequenceActive = false;
         this.bertJrFirstEncounterMusicStarted = false;
+        this.dukeFirstEncounterMusicStarted = false;
 
         // Tiled map services
         this.tiledService = new TiledService(assetService);
@@ -819,8 +821,13 @@ public class GameScreen extends ScreenAdapter {
             );
         });
 
-        interactionSystem.registerPreDialogueCheck(TRIGGER_BOSS_1_ID, context ->
-                !playerProgress.isEventAccomplished(EVENT_BOSS_1_DEFEATED));
+        interactionSystem.registerPreDialogueCheck(TRIGGER_BOSS_1_ID, context -> {
+            if (context.interactionCount() == 1 && !dukeFirstEncounterMusicStarted) {
+                audioService.playMusic(MusicTrack.BOSS_DUKE_DIA_FIRST_ENCOUNTER, false);
+                dukeFirstEncounterMusicStarted = true;
+            }
+            return !playerProgress.isEventAccomplished(EVENT_BOSS_1_DEFEATED);
+        });
         interactionSystem.registerSpecialInteraction(TRIGGER_BOSS_1_ID, context -> {
             if (battleService.hasBattleSession() || playerProgress.isEventAccomplished(EVENT_BOSS_1_DEFEATED)) {
                 return;
@@ -2684,17 +2691,27 @@ public class GameScreen extends ScreenAdapter {
      * Used by the "end" cheat and after the {@link #END_TRIGGER_OBJECT_ID} fade completes.
      */
     public void triggerEndingCredits() {
-        // Stop game timer and submit to leaderboard
         gameTimerRunning = false;
-        if (gameTimerSeconds > 0 && leaderboardManager != null) {
-            String playerName = resolveCurrentPlayerName();
-            long completionMillis = (long) (gameTimerSeconds * 1000L);
-            leaderboardManager.submit(playerName, completionMillis);
-            if (leaderboardHud != null) {
-                leaderboardHud.refresh(leaderboardManager.getEntries());
+
+        String playerName = resolveCurrentPlayerName();
+        long completionMillis = (long) (gameTimerSeconds * 1000L);
+        github.dluckycompany.clawkins.progress.GameMetaState metaState =
+                new github.dluckycompany.clawkins.progress.GameMetaState();
+
+        if (completionMillis > 0L) {
+            metaState.recordCompletion(playerName, completionMillis);
+            if (leaderboardManager != null) {
+                boolean ranked = leaderboardManager.submit(playerName, completionMillis);
+                if (leaderboardHud != null) {
+                    leaderboardHud.refresh(leaderboardManager.getEntries(), playerName);
+                }
+                Gdx.app.log("GameScreen", "Leaderboard submitted: " + playerName + " - "
+                        + github.dluckycompany.clawkins.leaderboard.LeaderboardManager.formatMillis(completionMillis)
+                        + (ranked ? " (ranked)" : " (not in top " + 5 + ")"));
             }
-            Gdx.app.log("GameScreen", "Leaderboard submitted: " + playerName + " - "
-                    + github.dluckycompany.clawkins.leaderboard.LeaderboardManager.formatMillis(completionMillis));
+        } else {
+            metaState.markGameCompleted();
+            Gdx.app.log("GameScreen", "Completion time not recorded: game timer was 0s");
         }
         
         closeAllMenuUi();
@@ -3104,13 +3121,22 @@ public class GameScreen extends ScreenAdapter {
             int enemyLevel,
             int enemyMaxHp,
             boolean isWildBattle) {
+        return calculateVictoryExperienceReward(encounterId, enemyLevel, enemyMaxHp, isWildBattle, false);
+    }
+
+    public static int calculateVictoryExperienceReward(
+            String encounterId,
+            int enemyLevel,
+            int enemyMaxHp,
+            boolean isWildBattle,
+            boolean roamingTrainer) {
         if (encounterId != null) {
             Integer bossXp = BOSS_XP_REWARDS_BY_ENCOUNTER_ID.get(encounterId);
             if (bossXp != null) {
                 return Math.max(0, bossXp);
             }
         }
-        return ExpManager.calculateExpReward(enemyLevel, enemyMaxHp, isWildBattle);
+        return ExpManager.calculateExpReward(enemyLevel, enemyMaxHp, isWildBattle, roamingTrainer);
     }
 
     /**
@@ -3129,7 +3155,17 @@ public class GameScreen extends ScreenAdapter {
             int enemyLevel,
             int enemyMaxHp,
             boolean isWildBattle) {
-        int xp = calculateVictoryExperienceReward(encounterId, enemyLevel, enemyMaxHp, isWildBattle);
+        return applyVictoryExperienceReward(encounterId, enemyLevel, enemyMaxHp, isWildBattle, false);
+    }
+
+    public int applyVictoryExperienceReward(
+            String encounterId,
+            int enemyLevel,
+            int enemyMaxHp,
+            boolean isWildBattle,
+            boolean roamingTrainer) {
+        int xp = calculateVictoryExperienceReward(
+                encounterId, enemyLevel, enemyMaxHp, isWildBattle, roamingTrainer);
         playerProgress.addExperiencePoints(xp);
         refreshProgressSnapshots();
         return xp;
@@ -4490,6 +4526,8 @@ public class GameScreen extends ScreenAdapter {
         if (!MapAsset.MANSION_GARDEN.name().equals(resolveCurrentMapKey())) {
             return;
         }
+
+        dukeFirstEncounterMusicStarted = playerProgress.getEventStats(EVENT_BOSS_1).getAttemptCount() > 0;
 
         boolean bossDefeated = playerProgress.isEventAccomplished(EVENT_BOSS_1_DEFEATED);
         boolean cutsceneDone = playerProgress.isEventAccomplished(EVENT_BOSS_1_GARDEN_CUTSCENE_DONE);

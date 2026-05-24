@@ -48,7 +48,11 @@ public class BattleService {
     }
 
     private void startBattle(EncounterEvent event) {
-        EncounterEvent resolved = WildClawkinEncounterGenerator.rollIfWildTable(event, resolvePlayerLevelForWildEncounters());
+        EncounterEvent resolved = WildClawkinEncounterGenerator.rollIfWildTable(
+                event,
+                resolvePlayerLevelForWildEncounters(),
+                playerBattleState.getParty()
+        );
         playerBattleState.ensureInitialized(
                 DEFAULT_PLAYER_HP,
                 DEFAULT_PLAYER_ATTACK,
@@ -75,11 +79,14 @@ public class BattleService {
                 resolved.getEnemyLevel(),
                 enemyLabel,
                 resolved.getEnemyImagePath(),
-                allyLabel
+                allyLabel,
+                resolved.isRoamingTrainer()
         );
 
         Clawkin activeClawkin = playerBattleState.getActiveClawkin();
         if (activeClawkin != null) {
+            context.setActiveAllyClawkin(activeClawkin);
+            context.setOnPlayerTurnEnd(this::tickPartyStatBoostTimers);
             Gdx.app.log(
                     TAG,
                     "Battle start active clawkin -> id=" + activeClawkin.getId()
@@ -179,10 +186,13 @@ public class BattleService {
                 new BattleUnit(next.getId(), next.getCurrentHp(), next.getBaseAttack(), next.getBaseDefense(), next.getBaseSpeed()),
                 clawkinHudName(next, null)
         );
+        BattleContext context = battleStateMachine.getContext();
+        if (context != null) {
+            context.setActiveAllyClawkin(next);
+        }
         battleStateMachine.replacePlayerSkills(resolveSkillsForClawkin(next));
         
         // Update SkillManager for the replacement Clawkin
-        BattleContext context = battleStateMachine.getContext();
         if (context != null) {
             SkillManager skillManager = new SkillManager(next.getId(), next.getLevel());
             context.setSkillManager(skillManager);
@@ -285,6 +295,7 @@ public class BattleService {
         // Update SkillManager for the new Clawkin
         BattleContext context = battleStateMachine.getContext();
         if (context != null) {
+            context.setActiveAllyClawkin(next);
             SkillManager skillManager = new SkillManager(next.getId(), next.getLevel());
             context.setSkillManager(skillManager);
             Gdx.app.log(TAG, "SkillManager updated for switch -> clawkin=" + next.getName() + ", level=" + next.getLevel());
@@ -294,6 +305,29 @@ public class BattleService {
         return true;
     }
 
+    /**
+     * Consumes the player's turn after using a battle item (e.g. stat booster).
+     */
+    public void consumeTurnAfterItemUse(String logMessage) {
+        battleStateMachine.consumeTurnAfterItemUse(logMessage);
+    }
+
+    private void tickPartyStatBoostTimers() {
+        for (int i = 0; i < playerBattleState.getPartySize(); i++) {
+            Clawkin clawkin = playerBattleState.getClawkin(i);
+            if (clawkin != null) {
+                clawkin.decrementStatBoostTimers();
+            }
+        }
+    }
+
+    public void syncActiveClawkinToContext() {
+        BattleContext context = battleStateMachine.getContext();
+        if (context != null) {
+            context.setActiveAllyClawkin(playerBattleState.getActiveClawkin());
+        }
+    }
+
     public void closeBattleSession() {
         if (battleStateMachine.hasSession()) {
             playerBattleState.applyBattleResult(battleStateMachine.firstAlly());
@@ -301,6 +335,13 @@ public class BattleService {
                     playerBattleState.getActiveClawkinIndex(),
                     battleStateMachine.firstAlly()
             );
+        }
+
+        for (int i = 0; i < playerBattleState.getPartySize(); i++) {
+            Clawkin clawkin = playerBattleState.getClawkin(i);
+            if (clawkin != null) {
+                clawkin.clearStatBoosts();
+            }
         }
 
         // Preserve the player's SWITCH selection across encounters.

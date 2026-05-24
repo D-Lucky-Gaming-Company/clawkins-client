@@ -180,49 +180,49 @@ public class ItemFactory {
     // STAT BOOSTERS — Attack
     // =========================================================================
 
-    /** Tier 1 ATK: +5 for 3 turns */
+    /** Tier 1 ATK: at least +8 for 4 turns (scales with base attack) */
     public static final Item ATTACK_BOOST = new Item(
         "attack_boost",
         "Attack Boost",
-        "Boosts attack by 5 for 3 turns.",
+        "Boosts attack by at least 8 for 4 turns.",
         Item.ItemType.STAT_BOOSTER,
-        new StatBoostEffect(StatBoostEffect.StatType.ATTACK, 5, 3),
+        new StatBoostEffect(StatBoostEffect.StatType.ATTACK, 8, 4),
         100,
         true,
         "13_bacon"
     );
 
-    /** Tier 2 ATK: +5 for 5 turns */
+    /** Tier 2 ATK: at least +10 for 5 turns */
     public static final Item NACHO_PLATTER = new Item(
         "nacho_platter",
         "Nacho Platter",
-        "Crunchy nachos that boost attack by 5 for 5 turns.",
+        "Crunchy nachos that boost attack by at least 10 for 5 turns.",
         Item.ItemType.STAT_BOOSTER,
-        new StatBoostEffect(StatBoostEffect.StatType.ATTACK, 5, 5),
+        new StatBoostEffect(StatBoostEffect.StatType.ATTACK, 10, 5),
         120,
         true,
         "72_nacho_dish"
     );
 
-    /** Tier 3 ATK: +10 for 4 turns */
+    /** Tier 3 ATK: at least +15 for 5 turns */
     public static final Item POWER_STEAK = new Item(
         "power_steak",
         "Power Steak",
-        "A raw steak that boosts attack by 10 for 4 turns.",
+        "A raw steak that boosts attack by at least 15 for 5 turns.",
         Item.ItemType.STAT_BOOSTER,
-        new StatBoostEffect(StatBoostEffect.StatType.ATTACK, 10, 4),
+        new StatBoostEffect(StatBoostEffect.StatType.ATTACK, 15, 5),
         180,
         true,
         "95_steak"
     );
 
-    /** Tier 4 ATK: +15 for 5 turns */
+    /** Tier 4 ATK: at least +22 for 6 turns */
     public static final Item BATTLE_BURGER = new Item(
         "battle_burger",
         "Battle Burger",
-        "A massive burger that boosts attack by 15 for 5 turns.",
+        "A massive burger that boosts attack by at least 22 for 6 turns.",
         Item.ItemType.STAT_BOOSTER,
-        new StatBoostEffect(StatBoostEffect.StatType.ATTACK, 15, 5),
+        new StatBoostEffect(StatBoostEffect.StatType.ATTACK, 22, 6),
         300,
         true,
         "16_burger_dish"
@@ -232,49 +232,49 @@ public class ItemFactory {
     // STAT BOOSTERS — Defense
     // =========================================================================
 
-    /** Tier 1 DEF: +5 for 3 turns */
+    /** Tier 1 DEF: at least +8 for 4 turns (scales with base defense) */
     public static final Item DEFENSE_BOOST = new Item(
         "defense_boost",
         "Defense Boost",
-        "Boosts defense by 5 for 3 turns.",
+        "Boosts defense by at least 8 for 4 turns.",
         Item.ItemType.STAT_BOOSTER,
-        new StatBoostEffect(StatBoostEffect.StatType.DEFENSE, 5, 3),
+        new StatBoostEffect(StatBoostEffect.StatType.DEFENSE, 8, 4),
         100,
         true,
         "87_ramen"
     );
 
-    /** Tier 2 DEF: +5 for 5 turns */
+    /** Tier 2 DEF: at least +10 for 5 turns */
     public static final Item EGG_SALAD = new Item(
         "egg_salad",
         "Egg Salad",
-        "A nourishing salad that boosts defense by 5 for 5 turns.",
+        "A nourishing salad that boosts defense by at least 10 for 5 turns.",
         Item.ItemType.STAT_BOOSTER,
-        new StatBoostEffect(StatBoostEffect.StatType.DEFENSE, 5, 5),
+        new StatBoostEffect(StatBoostEffect.StatType.DEFENSE, 10, 5),
         120,
         true,
         "41_eggsalad_bowl"
     );
 
-    /** Tier 3 DEF: +10 for 4 turns */
+    /** Tier 3 DEF: at least +15 for 5 turns */
     public static final Item IRON_SALMON = new Item(
         "iron_salmon",
         "Iron Salmon",
-        "A fortifying fish that boosts defense by 10 for 4 turns.",
+        "A fortifying fish that boosts defense by at least 15 for 5 turns.",
         Item.ItemType.STAT_BOOSTER,
-        new StatBoostEffect(StatBoostEffect.StatType.DEFENSE, 10, 4),
+        new StatBoostEffect(StatBoostEffect.StatType.DEFENSE, 15, 5),
         180,
         true,
         "88_salmon"
     );
 
-    /** Tier 4 DEF: +15 for 5 turns */
+    /** Tier 4 DEF: at least +22 for 6 turns */
     public static final Item FORTRESS_CAKE = new Item(
         "fortress_cake",
         "Fortress Cake",
-        "A dense chocolate cake that boosts defense by 15 for 5 turns.",
+        "A dense chocolate cake that boosts defense by at least 22 for 6 turns.",
         Item.ItemType.STAT_BOOSTER,
-        new StatBoostEffect(StatBoostEffect.StatType.DEFENSE, 15, 5),
+        new StatBoostEffect(StatBoostEffect.StatType.DEFENSE, 22, 6),
         300,
         true,
         "31_chocolatecake_dish"
@@ -336,15 +336,15 @@ public class ItemFactory {
     // COMBO items — multiple effects at once
     // =========================================================================
 
-    /** ATK +8 AND DEF +8 for 3 turns */
+    /** ATK +12 AND DEF +12 for 4 turns */
     public static final Item WARRIORS_BENTO = new Item(
         "warriors_bento",
         "Warrior's Bento",
-        "A balanced bento that boosts attack and defense by 8 for 3 turns.",
+        "A balanced bento that boosts attack and defense by at least 12 for 4 turns.",
         Item.ItemType.STAT_BOOSTER,
         new ComboEffect(
-            new StatBoostEffect(StatBoostEffect.StatType.ATTACK, 8, 3),
-            new StatBoostEffect(StatBoostEffect.StatType.DEFENSE, 8, 3)
+            new StatBoostEffect(StatBoostEffect.StatType.ATTACK, 12, 4),
+            new StatBoostEffect(StatBoostEffect.StatType.DEFENSE, 12, 4)
         ),
         250,
         true,
@@ -374,7 +374,7 @@ public class ItemFactory {
         Item.ItemType.STAT_BOOSTER,
         new ComboEffect(
             new HealEffect(80),
-            new StatBoostEffect(StatBoostEffect.StatType.ATTACK, 5, 3)
+            new StatBoostEffect(StatBoostEffect.StatType.ATTACK, 8, 4)
         ),
         200,
         true,

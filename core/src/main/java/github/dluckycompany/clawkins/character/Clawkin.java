@@ -219,7 +219,13 @@ public class Clawkin {
         if (amount <= 0 || durationTurns <= 0) {
             return;
         }
-        statBoosts.put(stat, new StatBoost(amount, durationTurns));
+        StatBoost existing = statBoosts.get(stat);
+        if (existing == null) {
+            statBoosts.put(stat, new StatBoost(amount, durationTurns));
+            return;
+        }
+        existing.amount = Math.max(existing.amount, amount);
+        existing.turnsRemaining = Math.max(existing.turnsRemaining, durationTurns);
     }
 
     public void decrementStatBoostTimers() {
@@ -236,6 +242,10 @@ public class Clawkin {
 
     public boolean hasStatBoost(StatBoostEffect.StatType stat) {
         return statBoosts.containsKey(stat);
+    }
+
+    public void clearStatBoosts() {
+        statBoosts.clear();
     }
 
     // ============ Helper Class for Stat Boosts ============

@@ -96,11 +96,30 @@ public class LevelSystem {
      * @return EXP reward amount
      */
     public static int calculateExpReward(int enemyLevel, boolean isWildBattle) {
+        return calculateExpReward(enemyLevel, isWildBattle, false);
+    }
+
+    /**
+     * Calculates EXP reward for defeating an enemy.
+     *
+     * @param enemyLevel The level of the defeated enemy
+     * @param isWildBattle True if wild/random clawkin encounter
+     * @param roamingTrainer True if a roaming field trainer (harder than wild)
+     * @return EXP reward amount
+     */
+    public static int calculateExpReward(int enemyLevel, boolean isWildBattle, boolean roamingTrainer) {
         int clampedLevel = Math.max(MIN_LEVEL, Math.min(enemyLevel, MAX_LEVEL));
         int expToNextForEnemy = getExpForNextLevel(clampedLevel);
 
-        // Wild fights: about 3 wins per level. Trainer fights are faster.
-        float rewardShare = isWildBattle ? 0.35f : 0.50f;
+        // Wild: ~3 wins per level. Story trainers: ~2 wins. Roaming trainers: ~1.5 wins.
+        float rewardShare;
+        if (roamingTrainer) {
+            rewardShare = 0.65f;
+        } else if (isWildBattle) {
+            rewardShare = 0.35f;
+        } else {
+            rewardShare = 0.50f;
+        }
         int reward = Math.round(expToNextForEnemy * rewardShare);
         return Math.max(12, reward);
     }

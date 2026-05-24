@@ -1,6 +1,7 @@
 package github.dluckycompany.clawkins.encounter;
 
 import github.dluckycompany.clawkins.battle.BattleSkill;
+import github.dluckycompany.clawkins.character.Clawkin;
 import github.dluckycompany.clawkins.character.LevelSystem;
 import github.dluckycompany.clawkins.character.StatGrowth;
 
@@ -67,28 +68,31 @@ public final class WildClawkinEncounterGenerator {
      * If {@code authored} uses a wild table, returns a new event with rolled level/stats/skills;
      * otherwise returns {@code authored} unchanged.
      */
-    public static EncounterEvent rollIfWildTable(EncounterEvent authored, int playerLevel) {
+    public static EncounterEvent rollIfWildTable(EncounterEvent authored, int playerLevel, List<Clawkin> party) {
         if (authored == null || !WildEncounterTableIds.usesWildClawkinStats(authored.getEncounterTableId())) {
             return authored;
         }
         EncounterDifficultyTier tier = WildEncounterTableIds.tierForWildTable(authored.getEncounterTableId());
-        EncounterEvent randomRoll = RANDOM_ENCOUNTER_GENERATOR.composeEncounter(tier, Math.max(1, playerLevel));
+        int safePlayerLevel = Math.max(1, playerLevel);
+        EncounterEvent randomRoll = RANDOM_ENCOUNTER_GENERATOR.composeEncounter(tier, safePlayerLevel);
         ThreadLocalRandom r = ThreadLocalRandom.current();
         StatGrowth growth = WILD_PROFILES[r.nextInt(WILD_PROFILES.length)];
 
-        int enemyLevel = Math.max(
-                LevelSystem.MIN_LEVEL,
-                Math.min(LevelSystem.MAX_LEVEL, randomRoll.getEnemyLevel()));
+        int enemyLevel = WildEnemyBalance.clampEnemyLevelToFairRange(
+                randomRoll.getEnemyLevel(),
+                safePlayerLevel,
+                tier
+        );
 
         int hp = growth.calculateHpAtLevel(enemyLevel);
         int atk = growth.calculateAttackAtLevel(enemyLevel);
         int def = growth.calculateDefenseAtLevel(enemyLevel);
         int spd = growth.calculateSpeedAtLevel(enemyLevel);
 
-        hp = wideNoise(hp, r);
-        atk = wideNoise(atk, r);
-        def = wideNoise(def, r);
-        spd = wideNoise(spd, r);
+        hp = wideNoise(hp, r, enemyLevel, safePlayerLevel);
+        atk = wideNoise(atk, r, enemyLevel, safePlayerLevel);
+        def = wideNoise(def, r, enemyLevel, safePlayerLevel);
+        spd = wideNoise(spd, r, enemyLevel, safePlayerLevel);
 
         int[] core = applyBuildQuirk(hp, atk, def, spd, r.nextInt(10_000), r);
         hp = core[0];
@@ -101,7 +105,17 @@ public final class WildClawkinEncounterGenerator {
         def = Math.max(1, def);
         spd = Math.max(2, spd);
 
-        List<BattleSkill> skills = randomRoll.getEnemySkills();
+        WildEncounterBalanceContext balanceContext = resolveBalanceContext(
+                authored,
+                playerLevel,
+                enemyLevel,
+                party,
+                def,
+                spd
+        );
+        List<BattleSkill> skills = RandomEncounterGenerator.skillsForTier(tier, balanceContext);
+        hp = WildEnemyBalance.capHpForEarlyLevels(hp, balanceContext, r);
+        atk = WildEnemyBalance.capAttackForEarlyLevels(atk, balanceContext);
 
         return new EncounterEvent(
                 authored.getType(),
@@ -114,12 +128,34 @@ public final class WildClawkinEncounterGenerator {
                 spd,
                 skills,
                 randomRoll.getEnemyName(),
-                authored.getEnemyImagePath()
+                authored.getEnemyImagePath(),
+                authored.isRoamingTrainer()
         );
     }
 
-    private static int wideNoise(int stat, ThreadLocalRandom r) {
-        double m = 0.78d + r.nextDouble() * 0.38d;
+    private static WildEncounterBalanceContext resolveBalanceContext(
+            EncounterEvent authored,
+            int playerLevel,
+            int enemyLevel,
+            List<Clawkin> party,
+            int enemyDefense,
+            int enemySpeed
+    ) {
+        if (authored.isRoamingTrainer()) {
+            return WildEncounterBalanceContext.forRoamingTrainer(
+                    playerLevel, enemyLevel, enemyDefense, enemySpeed);
+        }
+        int avgDef = WildEnemyBalance.averagePartyDefense(party, playerLevel);
+        int avgHp = WildEnemyBalance.averagePartyHp(party, playerLevel);
+        return WildEncounterBalanceContext.forWildPartyAverage(
+                playerLevel, enemyLevel, avgDef, avgHp, enemyDefense, enemySpeed);
+    }
+
+    private static int wideNoise(int stat, ThreadLocalRandom r, int enemyLevel, int playerLevel) {
+        boolean overLeveled = enemyLevel > playerLevel + 1;
+        double minMultiplier = overLeveled ? 0.88d : 0.78d;
+        double spread = overLeveled ? 0.18d : 0.38d;
+        double m = minMultiplier + r.nextDouble() * spread;
         return Math.max(1, (int) Math.round(stat * m));
     }
 

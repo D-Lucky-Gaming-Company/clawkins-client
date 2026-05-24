@@ -40,7 +40,11 @@ public final class RandomEncounterGenerator {
         if (def == null) {
             def = RandomEncounterCatalog.fallbackDefinition();
         }
-        int enemyLevel = rollEnemyLevelForTier(tier, playerLevel);
+        int enemyLevel = WildEnemyBalance.clampEnemyLevelToFairRange(
+                rollEnemyLevelForTier(tier, playerLevel),
+                playerLevel,
+                tier
+        );
         float tierScale = RandomEncounterCatalog.statScaleFor(tier);
         float levelScale = levelScaleMultiplier(enemyLevel);
         float totalScale = tierScale * levelScale;
@@ -54,10 +58,15 @@ public final class RandomEncounterGenerator {
         defStat = Math.max(1, defStat);
         spd = Math.max(2, spd);
 
+        WildEncounterBalanceContext balanceContext =
+                WildEncounterBalanceContext.forDefault(playerLevel, enemyLevel, defStat, spd);
+        hp = WildEnemyBalance.capHpForEarlyLevels(hp, balanceContext, ThreadLocalRandom.current());
+        atk = WildEnemyBalance.capAttackForEarlyLevels(atk, balanceContext);
+
         String displayName = def.displayName();
         String encounterId = "random_" + tier.name().toLowerCase() + "_lv" + enemyLevel + "_" + MathUtils.random(1, 999_999);
         String tableId = "random_" + tier.name().toLowerCase();
-        List<BattleSkill> skills = skillsForTier(tier, enemyLevel);
+        List<BattleSkill> skills = skillsForTier(tier, balanceContext);
 
         return new EncounterEvent(
                 EncounterEventType.START_ENCOUNTER,
@@ -89,13 +98,21 @@ public final class RandomEncounterGenerator {
      * Public for {@link WildClawkinEncounterGenerator} and tests: same skill layout as random field encounters.
      */
     public static List<BattleSkill> skillsForTier(EncounterDifficultyTier tier, int enemyLevel) {
+        return skillsForTier(
+                tier,
+                WildEncounterBalanceContext.forDefault(enemyLevel, enemyLevel, 10, 6)
+        );
+    }
+
+    public static List<BattleSkill> skillsForTier(EncounterDifficultyTier tier, WildEncounterBalanceContext context) {
+        int enemyLevel = context.enemyLevel();
         // Primary offense is base + attack[self]; keep bases high enough that similar-level
         // player defense (~25–40) still yields ~5–15 chip after armor pen, not endless 1s.
         int tierB = skillBonus(tier);
-        int s1 = 18 + ThreadLocalRandom.current().nextInt(0, 9) + tierB * 2;
-        int s2Base = 22 + ThreadLocalRandom.current().nextInt(0, 9) + tierB * 3;
-        int s3 = 14 + ThreadLocalRandom.current().nextInt(0, 6) + tierB * 2;
-        int s4 = 20 + ThreadLocalRandom.current().nextInt(0, 9) + tierB * 3;
+        int s1 = scaleSkillBaseForLevel(context, 18 + ThreadLocalRandom.current().nextInt(0, 9) + tierB * 2);
+        int s2Base = scaleSkillBaseForLevel(context, 22 + ThreadLocalRandom.current().nextInt(0, 9) + tierB * 3);
+        int s3 = scaleSkillBaseForLevel(context, 14 + ThreadLocalRandom.current().nextInt(0, 6) + tierB * 2);
+        int s4 = scaleSkillBaseForLevel(context, 20 + ThreadLocalRandom.current().nextInt(0, 9) + tierB * 3);
         BattleSkill slot2 =
                 tier == EncounterDifficultyTier.EASY
                         ? new BattleSkill("Scratch", BattleSkill.EffectType.ATTACK, s2Base, "", 0, 0)
@@ -118,6 +135,10 @@ public final class RandomEncounterGenerator {
             skills.add(new BattleSkill("Ravage", BattleSkill.EffectType.DAMAGE, s4, "attack[self] * 0.65", 0, 2));
         }
         return skills;
+    }
+
+    private static int scaleSkillBaseForLevel(WildEncounterBalanceContext context, int base) {
+        return WildEnemyBalance.scaleSkillBaseForEarlyLevels(context, base);
     }
 
     /** Small additive bump shared with wild clawkin encounters (attack pressure). */
@@ -179,35 +200,33 @@ public final class RandomEncounterGenerator {
         float roll = ThreadLocalRandom.current().nextFloat();
         int anchor = playerLevel + 1;
         if (roll < 0.70f) {
-            return randomBetweenInclusive(Math.max(1, anchor - 1), Math.max(1, anchor + 1));
+            return randomBetweenInclusive(Math.max(1, playerLevel - 1), Math.max(1, playerLevel + 1));
         }
         if (roll < 0.90f) {
-            return randomBetweenInclusive(Math.max(1, anchor - 3), Math.max(1, anchor - 1));
+            return randomBetweenInclusive(Math.max(1, playerLevel - 2), Math.max(1, playerLevel));
         }
-        return randomBetweenInclusive(Math.max(1, anchor + 1), Math.max(1, anchor + 3));
+        return randomBetweenInclusive(Math.max(1, playerLevel + 1), Math.max(1, playerLevel + 2));
     }
 
     private static int randomNormalEnemyLevel(int playerLevel) {
         float roll = ThreadLocalRandom.current().nextFloat();
-        int anchor = playerLevel + 2;
         if (roll < 0.70f) {
-            return randomBetweenInclusive(Math.max(1, anchor - 1), Math.max(1, anchor + 1));
+            return randomBetweenInclusive(Math.max(1, playerLevel), Math.max(1, playerLevel + 2));
         }
         if (roll < 0.90f) {
-            return randomBetweenInclusive(Math.max(1, anchor - 3), Math.max(1, anchor - 1));
+            return randomBetweenInclusive(Math.max(1, playerLevel - 1), Math.max(1, playerLevel + 1));
         }
-        return randomBetweenInclusive(Math.max(1, anchor + 1), Math.max(1, anchor + 3));
+        return randomBetweenInclusive(Math.max(1, playerLevel + 1), Math.max(1, playerLevel + 2));
     }
 
     private static int randomHardEnemyLevel(int playerLevel) {
-        // Hard favors higher levels and keeps 16+ rarer than 11-15.
-        if (ThreadLocalRandom.current().nextFloat() < 0.80f) {
-            int commonMin = Math.max(11, playerLevel - 1);
-            int commonMax = Math.max(commonMin, Math.min(15, playerLevel + 3));
+        if (ThreadLocalRandom.current().nextFloat() < 0.85f) {
+            int commonMin = Math.max(1, playerLevel - 1);
+            int commonMax = Math.max(commonMin, playerLevel + 1);
             return randomBetweenInclusive(commonMin, commonMax);
         }
-        int rareMin = Math.max(16, playerLevel + 1);
-        int rareMax = Math.max(rareMin, Math.min(24, playerLevel + 6));
+        int rareMin = Math.max(1, playerLevel + 1);
+        int rareMax = Math.max(rareMin, playerLevel + 3);
         return randomBetweenInclusive(rareMin, rareMax);
     }
 
@@ -224,7 +243,12 @@ public final class RandomEncounterGenerator {
             // Keep Lv5 enemies around parity with Lv5 Clawkins.
             return 0.90f + (safeLevel - 1) * 0.025f;
         }
-        // Past Lv5, ramp steadily so Lv9 can pressure underleveled teams.
-        return 1.00f + (safeLevel - 5) * 0.045f;
+        if (safeLevel <= 15) {
+            // Gentler mid-game ramp — Lv15 ≈ 1.30x instead of 1.45x.
+            return 1.00f + (safeLevel - 5) * 0.030f;
+        }
+        // Lv16+: taper so high-level catalog defs don't spike past party stats.
+        float at15 = 1.00f + 10 * 0.030f;
+        return at15 + (safeLevel - 15) * 0.012f;
     }
 }

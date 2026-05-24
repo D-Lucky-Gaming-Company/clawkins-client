@@ -65,12 +65,20 @@ public class ExpManager {
      * @return EXP reward amount
      */
     public static int calculateExpReward(int enemyLevel, int enemyMaxHp, boolean isWildBattle) {
-        // If enemy level is unknown, estimate from HP
+        return calculateExpReward(enemyLevel, enemyMaxHp, isWildBattle, false);
+    }
+
+    public static int calculateExpReward(
+            int enemyLevel,
+            int enemyMaxHp,
+            boolean isWildBattle,
+            boolean roamingTrainer
+    ) {
         if (enemyLevel <= 0) {
             enemyLevel = estimateLevelFromHp(enemyMaxHp);
         }
-        
-        return LevelSystem.calculateExpReward(enemyLevel, isWildBattle);
+
+        return LevelSystem.calculateExpReward(enemyLevel, isWildBattle, roamingTrainer);
     }
     
     /**

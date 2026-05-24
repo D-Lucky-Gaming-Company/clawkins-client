@@ -24,6 +24,7 @@ import github.dluckycompany.clawkins.model.PlayerProfile;
 import github.dluckycompany.clawkins.save.SaveStateManager;
 import github.dluckycompany.clawkins.ui.CharacterSetupScreen;
 import github.dluckycompany.clawkins.ui.EndingCreditsScreen;
+import github.dluckycompany.clawkins.ui.LeaderboardScreen;
 import github.dluckycompany.clawkins.ui.MainMenuScreen;
 import github.dluckycompany.clawkins.ui.SaveStateScreen;
 
@@ -117,6 +118,7 @@ public class Main extends Game {
         addScreen(new CharacterSetupScreen(this, batch));
         addScreen(new GameScreen(this, null));  // Initial GameScreen with no profile
         addScreen(new EndingCreditsScreen(this));
+        addScreen(new LeaderboardScreen(this));
         this.saveStateScreen = new SaveStateScreen(batch, saveStateManager, audioService);
         addScreen(saveStateScreen);
 

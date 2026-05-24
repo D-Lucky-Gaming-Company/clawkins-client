@@ -1,5 +1,7 @@
 package github.dluckycompany.clawkins.battle;
 
+import github.dluckycompany.clawkins.character.Clawkin;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -16,8 +18,14 @@ public class BattleContext {
     private final String enemyPortraitPath;
     /** Same label as the player HP bar (clawkin name, id fallback). Updated on clawkin switch. */
     private String allyDisplayName;
+    /** Roaming field trainer ({@link github.dluckycompany.clawkins.component.FieldTrainerWalkSprite}). */
+    private final boolean roamingTrainer;
     /** Manages skill unlock state and validation */
     private SkillManager skillManager;
+    /** Active party clawkin mirrored for item stat boosts during battle. */
+    private Clawkin activeAllyClawkin;
+    /** Called at end of enemy turn (when player buffs tick). */
+    private Runnable onPlayerTurnEnd;
 
     public BattleContext(
             String encounterId,
@@ -30,6 +38,33 @@ public class BattleContext {
             String enemyDisplayName,
             String enemyPortraitPath,
             String allyDisplayName) {
+        this(
+                encounterId,
+                encounterTableId,
+                allies,
+                enemies,
+                playerSkills,
+                enemySkills,
+                enemyLevel,
+                enemyDisplayName,
+                enemyPortraitPath,
+                allyDisplayName,
+                false
+        );
+    }
+
+    public BattleContext(
+            String encounterId,
+            String encounterTableId,
+            List<BattleUnit> allies,
+            List<BattleUnit> enemies,
+            List<BattleSkill> playerSkills,
+            List<BattleSkill> enemySkills,
+            int enemyLevel,
+            String enemyDisplayName,
+            String enemyPortraitPath,
+            String allyDisplayName,
+            boolean roamingTrainer) {
         this.encounterId = encounterId;
         this.encounterTableId = encounterTableId;
         this.allies = new ArrayList<>(allies);
@@ -40,6 +75,7 @@ public class BattleContext {
         this.enemyDisplayName = enemyDisplayName == null ? "" : enemyDisplayName;
         this.enemyPortraitPath = enemyPortraitPath == null ? "" : enemyPortraitPath.trim();
         this.allyDisplayName = allyDisplayName == null ? "" : allyDisplayName;
+        this.roamingTrainer = roamingTrainer;
         this.skillManager = null; // Set externally
     }
 
@@ -102,6 +138,10 @@ public class BattleContext {
     public String getEnemyPortraitPath() {
         return enemyPortraitPath;
     }
+
+    public boolean isRoamingTrainer() {
+        return roamingTrainer;
+    }
     
     /**
      * Gets the skill manager for this battle context.
@@ -119,5 +159,23 @@ public class BattleContext {
      */
     public void setSkillManager(SkillManager skillManager) {
         this.skillManager = skillManager;
+    }
+
+    public Clawkin getActiveAllyClawkin() {
+        return activeAllyClawkin;
+    }
+
+    public void setActiveAllyClawkin(Clawkin activeAllyClawkin) {
+        this.activeAllyClawkin = activeAllyClawkin;
+    }
+
+    public void setOnPlayerTurnEnd(Runnable onPlayerTurnEnd) {
+        this.onPlayerTurnEnd = onPlayerTurnEnd;
+    }
+
+    public void runPlayerTurnEndHooks() {
+        if (onPlayerTurnEnd != null) {
+            onPlayerTurnEnd.run();
+        }
     }
 }

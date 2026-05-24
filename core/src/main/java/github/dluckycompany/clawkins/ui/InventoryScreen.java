@@ -105,6 +105,11 @@ public class InventoryScreen implements Screen {
             }
         });
 
+        if (openedFromBattle && previousGameScreen.getBattleOverlay() != null) {
+            inventoryUI.setOnBattleItemUsed((item, target) ->
+                    previousGameScreen.getBattleOverlay().notifyBattleItemUsed(item, target));
+        }
+
         // Store previous input processor for restoration in hide()
         previousInputProcessor = Gdx.input.getInputProcessor();
         

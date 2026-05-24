@@ -30,7 +30,7 @@ import github.dluckycompany.clawkins.ui.CreditsParser.LineType;
  *   <li>Fade in from black</li>
  *   <li>Credits scroll upward from below the screen</li>
  *   <li>"THE END" card fades in after all credits have passed</li>
- *   <li>Fade out to black, then return to Main Menu</li>
+ *   <li>Leaderboard screen, then Main Menu</li>
  * </ol>
  *
  * <h3>Controls</h3>
@@ -241,7 +241,7 @@ public class EndingCreditsScreen extends ScreenAdapter {
                 if (phaseTimer >= FADE_OUT_DURATION) {
                     overlayAlpha = 1f;
                     phase = Phase.DONE;
-                    returnToMainMenu();
+                    showLeaderboard();
                 }
             }
 
@@ -483,6 +483,12 @@ public class EndingCreditsScreen extends ScreenAdapter {
             theEndAlpha = 0f;
             overlayAlpha = 0f;
         }
+    }
+
+    private void showLeaderboard() {
+        audioService.stopAll();
+        Gdx.input.setInputProcessor(null);
+        game.setScreen(LeaderboardScreen.class);
     }
 
     private void returnToMainMenu() {

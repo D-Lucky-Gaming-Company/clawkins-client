@@ -33,6 +33,13 @@ public class LeaderboardManager {
 
         FileHandle file = Gdx.files.local(LEADERBOARD_FILE);
         if (!file.exists()) {
+            FileHandle bundled = Gdx.files.internal(LEADERBOARD_FILE);
+            if (bundled.exists()) {
+                Gdx.app.log(TAG, "Seeding leaderboard from bundled file.");
+                parseContent(bundled.readString("UTF-8"));
+                save();
+                return;
+            }
             Gdx.app.log(TAG, "Leaderboard file not found, creating defaults.");
             createDefaults();
             save();
@@ -40,26 +47,7 @@ public class LeaderboardManager {
         }
 
         try {
-            String content = file.readString("UTF-8");
-            String[] lines = content.split("\\r?\\n");
-            for (String line : lines) {
-                String trimmed = line.trim();
-                if (trimmed.isEmpty()) {
-                    continue;
-                }
-                String[] parts = trimmed.split(",", 2);
-                if (parts.length != 2) {
-                    Gdx.app.error(TAG, "Skipping malformed line: " + trimmed);
-                    continue;
-                }
-                String name = parts[0].trim();
-                String timeStr = parts[1].trim();
-                long millis = parseTimeToMillis(timeStr);
-                if (millis >= 0 && !name.isEmpty()) {
-                    entries.add(new LeaderboardEntry(name, millis));
-                }
-            }
-            sortAndTrim();
+            parseContent(file.readString("UTF-8"));
             Gdx.app.log(TAG, "Loaded " + entries.size() + " leaderboard entries.");
         } catch (Exception e) {
             Gdx.app.error(TAG, "Failed to load leaderboard, using defaults.", e);
@@ -67,6 +55,42 @@ public class LeaderboardManager {
             createDefaults();
             save();
         }
+    }
+
+    private void parseContent(String content) {
+        entries.clear();
+        String[] lines = content.split("\\r?\\n");
+        for (String line : lines) {
+            String trimmed = line.trim();
+            if (trimmed.isEmpty()) {
+                continue;
+            }
+            String[] parts = trimmed.split(",", 2);
+            if (parts.length != 2) {
+                Gdx.app.error(TAG, "Skipping malformed line: " + trimmed);
+                continue;
+            }
+            String name = parts[0].trim();
+            String timeStr = parts[1].trim();
+            long millis = parseTimeToMillis(timeStr);
+            if (millis >= 0 && !name.isEmpty()) {
+                upsertEntry(name, millis);
+            }
+        }
+        sortAndTrim();
+    }
+
+    private void upsertEntry(String name, long millis) {
+        for (int i = 0; i < entries.size(); i++) {
+            LeaderboardEntry existing = entries.get(i);
+            if (existing.getName().equals(name)) {
+                if (millis < existing.getTimeMillis()) {
+                    entries.set(i, new LeaderboardEntry(name, millis));
+                }
+                return;
+            }
+        }
+        entries.add(new LeaderboardEntry(name, millis));
     }
 
     /**
@@ -96,20 +120,21 @@ public class LeaderboardManager {
      */
     public boolean submit(String playerName, long completionMillis) {
         if (playerName == null || playerName.isBlank() || completionMillis <= 0) {
+            Gdx.app.log(TAG, "Submit rejected: name=" + playerName + ", millis=" + completionMillis);
             return false;
         }
 
-        entries.add(new LeaderboardEntry(playerName.trim(), completionMillis));
+        String name = playerName.trim();
+        upsertEntry(name, completionMillis);
         sortAndTrim();
         save();
 
-        // Check if the submitted entry is still in the list
         for (LeaderboardEntry entry : entries) {
-            if (entry.getName().equals(playerName.trim()) && entry.getTimeMillis() == completionMillis) {
+            if (entry.getName().equals(name) && entry.getTimeMillis() == completionMillis) {
                 return true;
             }
         }
-        return false;
+        return entries.stream().anyMatch(entry -> entry.getName().equals(name));
     }
 
     /**

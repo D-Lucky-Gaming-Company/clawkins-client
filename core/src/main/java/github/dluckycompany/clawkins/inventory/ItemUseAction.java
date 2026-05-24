@@ -65,19 +65,22 @@ public class ItemUseAction {
 
         // Apply the item effect to target
         int hpBefore = selectedTarget.getCurrentHp();
-        item.applyEffectTo(selectedTarget);
+        boolean effectApplied = item.applyEffectTo(selectedTarget);
         int hpAfter = selectedTarget.getCurrentHp();
 
-        // Log only if HP actually changed
-        if (hpAfter != hpBefore) {
-            System.out.println("[ItemUseAction] Item used successfully on " + selectedTarget.getName() + 
-                             ": HP " + hpBefore + " → " + hpAfter);
-            completed = true;
-            return true;
+        if (!effectApplied) {
+            System.out.println("[ItemUseAction] Item had no effect on " + selectedTarget.getName());
+            return false;
         }
 
-        System.out.println("[ItemUseAction] Item had no effect on " + selectedTarget.getName());
-        return false;
+        if (hpAfter != hpBefore) {
+            System.out.println("[ItemUseAction] Item used successfully on " + selectedTarget.getName() +
+                             ": HP " + hpBefore + " → " + hpAfter);
+        } else {
+            System.out.println("[ItemUseAction] Item used successfully on " + selectedTarget.getName());
+        }
+        completed = true;
+        return true;
     }
 
     /**

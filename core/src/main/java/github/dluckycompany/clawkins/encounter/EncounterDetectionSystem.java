@@ -83,7 +83,8 @@ public class EncounterDetectionSystem extends EntitySystem {
                 zone.getEnemySpeed(),
             zone.getEnemySkills(),
                 zone.getEnemyName(),
-                zone.getEnemyImagePath()));
+                zone.getEnemyImagePath(),
+                zone.isRoamingTrainer()));
         overlappingTrigger = currentOverlap;
 
         if (zone.isOneShot() && getEngine() != null) {

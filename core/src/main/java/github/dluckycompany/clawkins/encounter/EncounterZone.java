@@ -26,6 +26,8 @@ public class EncounterZone implements Component {
     private final List<BattleSkill> enemySkills;
     /** Optional battle HUD portrait path (assets-relative). */
     private final String enemyImagePath;
+    /** Roaming field trainer ({@link github.dluckycompany.clawkins.component.FieldTrainerWalkSprite}). */
+    private final boolean roamingTrainer;
 
     public EncounterZone(
             String encounterId,
@@ -39,6 +41,35 @@ public class EncounterZone implements Component {
             int enemySpeed,
             List<BattleSkill> enemySkills,
             String enemyImagePath) {
+        this(
+                encounterId,
+                enemyName,
+                encounterTableId,
+                oneShot,
+                enemyLevel,
+                enemyHp,
+                enemyAttack,
+                enemyDefense,
+                enemySpeed,
+                enemySkills,
+                enemyImagePath,
+                false
+        );
+    }
+
+    public EncounterZone(
+            String encounterId,
+            String enemyName,
+            String encounterTableId,
+            boolean oneShot,
+            int enemyLevel,
+            int enemyHp,
+            int enemyAttack,
+            int enemyDefense,
+            int enemySpeed,
+            List<BattleSkill> enemySkills,
+            String enemyImagePath,
+            boolean roamingTrainer) {
         this.encounterId = encounterId;
         this.enemyName = enemyName;
         this.encounterTableId = encounterTableId;
@@ -50,6 +81,7 @@ public class EncounterZone implements Component {
         this.enemySpeed = enemySpeed;
         this.enemySkills = new ArrayList<>(enemySkills == null ? List.of() : enemySkills);
         this.enemyImagePath = enemyImagePath == null ? "" : enemyImagePath.trim();
+        this.roamingTrainer = roamingTrainer;
     }
 
     public String getEncounterId() {
@@ -94,5 +126,9 @@ public class EncounterZone implements Component {
 
     public String getEnemyImagePath() {
         return enemyImagePath;
+    }
+
+    public boolean isRoamingTrainer() {
+        return roamingTrainer;
     }
 }

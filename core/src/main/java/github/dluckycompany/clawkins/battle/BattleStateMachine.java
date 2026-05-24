@@ -16,10 +16,15 @@ public class BattleStateMachine {
      * Max fraction of defender DEF ignored by the attacker's speed (armor penetration cap).
      */
     private static final double ARMOR_PENETRATION_P_MAX = 0.25d;
-    /**
-     * Scale constant for penetration curve: {@code p = min(p_max, S / (S + K))}.
-     */
     private static final double ARMOR_PENETRATION_K = 50d;
+    /**
+     * Minimum fraction of raw offense that always gets through high defense (chip floor).
+     */
+    private static final double DAMAGE_CHIP_FLOOR_RATIO = 0.20d;
+    private static final int ENEMY_HEAL_COOLDOWN_MIN = 2;
+    private static final int ENEMY_HEAL_COOLDOWN_MAX = 5;
+    private static final int ENEMY_DEFENSE_COOLDOWN_MIN = 1;
+    private static final int ENEMY_DEFENSE_COOLDOWN_MAX = 3;
 
     private enum EnemyAiTier {
         MINOR,
@@ -337,6 +342,7 @@ public class BattleStateMachine {
                         .appendPlain(".");
                 setLastLog(lb.text(), lb.spans());
                 Gdx.app.log(TAG, "Enemy heal applied -> amount=" + heal + ", hpNow=" + enemy.getHp() + "/" + enemy.getMaxHp());
+                applyEnemySkillCooldown(enemy, enemySkill, player);
             } else if (enemySkill != null && enemySkill.getEffectType() == BattleSkill.EffectType.ATTACK) {
                 if (enemySkill.getEffectDurationTurns() > 0) {
                     int boost = Math.max(1, resolveMagnitude(enemy, player, enemySkill, "attack[self]") / 4);
@@ -379,6 +385,7 @@ public class BattleStateMachine {
                         .appendPlain(".");
                 setLastLog(lb.text(), lb.spans());
                 Gdx.app.log(TAG, "Enemy defense buff applied -> boost=" + boost + ", turns=" + turns + ", defenseNow=" + enemy.getDefense());
+                applyEnemySkillCooldown(enemy, enemySkill, player);
             } else {
                 int offense = resolveMagnitude(enemy, player, enemySkill, "attack[self]");
                 int damage = physicalDamageFromHit(offense, player, enemy);
@@ -409,6 +416,9 @@ public class BattleStateMachine {
 
             player.tickTemporaryBoosts();
             player.tickCooldowns();
+            if (context != null) {
+                context.runPlayerTurnEndHooks();
+            }
             
             // Apply Bleed damage to player
             int bleedDamage = player.tickBleed();
@@ -489,6 +499,16 @@ public class BattleStateMachine {
      * Consumes the player's turn after manually switching clawkins.
      * This moves battle flow to enemy command phase.
      */
+    public void consumeTurnAfterItemUse(String logMessage) {
+        if (phase != BattlePhase.PLAYER_COMMAND) {
+            return;
+        }
+        if (logMessage != null && !logMessage.isBlank()) {
+            setLastLogPlain(logMessage);
+        }
+        phase = BattlePhase.ENEMY_COMMAND;
+    }
+
     public void consumeTurnAfterSwitch(String allyDisplayName) {
         if (phase != BattlePhase.PLAYER_COMMAND) {
             return;
@@ -668,22 +688,26 @@ public class BattleStateMachine {
         if (enemySkills.isEmpty()) {
             return null;
         }
-        if (enemySkills.size() == 1 || enemy == null || player == null) {
-            return enemySkills.getFirst();
+        List<BattleSkill> availableSkills = filterAvailableEnemySkills(enemy, enemySkills);
+        if (availableSkills.isEmpty()) {
+            return null;
+        }
+        if (availableSkills.size() == 1 || enemy == null || player == null) {
+            return availableSkills.getFirst();
         }
 
         EnemyAiTier tier = resolveEnemyAiTier();
 
         // Lower tiers stay less consistent, higher tiers act intentionally more often.
         if (ThreadLocalRandom.current().nextDouble() > smartDecisionChance(tier)) {
-            return randomEnemySkill();
+            return randomEnemySkill(enemy);
         }
 
-        double[] scores = new double[enemySkills.size()];
+        double[] scores = new double[availableSkills.size()];
         double maxScore = Double.NEGATIVE_INFINITY;
         int bestIndex = 0;
-        for (int i = 0; i < enemySkills.size(); i++) {
-            BattleSkill skill = enemySkills.get(i);
+        for (int i = 0; i < availableSkills.size(); i++) {
+            BattleSkill skill = availableSkills.get(i);
             double score = scoreEnemySkill(skill, enemy, player, tier);
             scores[i] = score;
             if (score > maxScore) {
@@ -693,15 +717,15 @@ public class BattleStateMachine {
         }
 
         if (maxScore <= 0.01d) {
-            return randomEnemySkill();
+            return randomEnemySkill(enemy);
         }
 
         // Keep unpredictability using weighted sampling; boss tiers sample sharper toward the best option.
         if (ThreadLocalRandom.current().nextDouble() < explorationChance(tier)) {
-            return weightedSampleByScore(enemySkills, scores, sharpness(tier));
+            return weightedSampleByScore(availableSkills, scores, sharpness(tier));
         }
 
-        return enemySkills.get(bestIndex);
+        return availableSkills.get(bestIndex);
     }
 
     private BattleSkill weightedSampleByScore(List<BattleSkill> skills, double[] scores, double sharpness) {
@@ -715,7 +739,7 @@ public class BattleStateMachine {
         }
 
         if (sum <= 0d) {
-            return randomEnemySkill();
+            return skills.get(ThreadLocalRandom.current().nextInt(skills.size()));
         }
 
         double roll = ThreadLocalRandom.current().nextDouble(sum);
@@ -731,6 +755,9 @@ public class BattleStateMachine {
 
     private double scoreEnemySkill(BattleSkill skill, BattleUnit enemy, BattleUnit player, EnemyAiTier tier) {
         if (skill == null || enemy == null || player == null) {
+            return 0d;
+        }
+        if (enemy.isSkillOnCooldown(skill.getName())) {
             return 0d;
         }
 
@@ -930,53 +957,165 @@ public class BattleStateMachine {
         };
     }
 
-    private BattleSkill randomEnemySkill() {
+    private BattleSkill randomEnemySkill(BattleUnit enemy) {
         if (context == null) {
             return null;
         }
-        List<BattleSkill> enemySkills = context.getEnemySkills();
-        if (enemySkills.isEmpty()) {
+        List<BattleSkill> availableSkills = filterAvailableEnemySkills(enemy, context.getEnemySkills());
+        if (availableSkills.isEmpty()) {
             return null;
         }
-        int randomIndex = ThreadLocalRandom.current().nextInt(enemySkills.size());
-        return enemySkills.get(randomIndex);
+        int randomIndex = ThreadLocalRandom.current().nextInt(availableSkills.size());
+        return availableSkills.get(randomIndex);
+    }
+
+    private List<BattleSkill> filterAvailableEnemySkills(BattleUnit enemy, List<BattleSkill> enemySkills) {
+        if (enemySkills == null || enemySkills.isEmpty()) {
+            return List.of();
+        }
+        if (enemy == null) {
+            return List.copyOf(enemySkills);
+        }
+        List<BattleSkill> available = new ArrayList<>();
+        for (BattleSkill skill : enemySkills) {
+            if (skill != null && !enemy.isSkillOnCooldown(skill.getName())) {
+                available.add(skill);
+            }
+        }
+        return available;
+    }
+
+    private int rollEnemySkillCooldown(BattleSkill skill, BattleUnit enemy, BattleUnit player) {
+        if (skill == null || enemy == null || player == null) {
+            return 0;
+        }
+        return switch (skill.getEffectType()) {
+            case HEAL -> rollEffectivenessScaledCooldown(
+                    ENEMY_HEAL_COOLDOWN_MIN,
+                    ENEMY_HEAL_COOLDOWN_MAX,
+                    estimateHealSkillEffectiveness(skill, enemy, player));
+            case DEFENSE -> rollEffectivenessScaledCooldown(
+                    ENEMY_DEFENSE_COOLDOWN_MIN,
+                    ENEMY_DEFENSE_COOLDOWN_MAX,
+                    estimateDefenseSkillEffectiveness(skill, enemy, player));
+            default -> skill.getTurnCooldown();
+        };
     }
 
     /**
-     * Whether the ally should act before the enemy on the first turn of battle.
-     * Higher speed wins; ties break on higher attack, then higher defense, then ally (player) first.
+     * Rolls a cooldown in {@code [minTurns, maxTurns]}. Higher effectiveness shifts the roll toward
+     * the upper end while keeping randomness on every use.
      */
-    private static boolean allyActsBeforeEnemy(BattleUnit ally, BattleUnit enemy) {
+    private static int rollEffectivenessScaledCooldown(int minTurns, int maxTurns, double effectiveness) {
+        double potency = Math.max(0d, Math.min(1d, effectiveness));
+        int span = maxTurns - minTurns;
+        if (span <= 0) {
+            return minTurns;
+        }
+        double roll = ThreadLocalRandom.current().nextDouble();
+        double blended = potency * 0.65d + roll * 0.35d;
+        return minTurns + (int) Math.round(blended * span);
+    }
+
+    private double estimateHealSkillEffectiveness(BattleSkill skill, BattleUnit enemy, BattleUnit player) {
+        int heal = estimateEnemyHeal(skill, enemy, player);
+        int maxHp = Math.max(1, enemy.getMaxHp());
+        double healFraction = heal / (double) maxHp;
+        // ~10% max HP heal is weak; ~40%+ is strong.
+        double normalized = (healFraction - 0.10d) / 0.30d;
+        return Math.max(0d, Math.min(1d, normalized));
+    }
+
+    private double estimateDefenseSkillEffectiveness(BattleSkill skill, BattleUnit enemy, BattleUnit player) {
+        int magnitude = resolveMagnitude(enemy, player, skill, "defense[self]");
+        int boost = Math.max(1, magnitude / 4);
+        int duration = Math.max(1, skill.getEffectDurationTurns());
+        int baseDefense = Math.max(1, enemy.getDefense());
+
+        double boostFactor = Math.min(1d, boost / (baseDefense * 0.35d));
+        double durationFactor = Math.min(1d, duration / 4.0d);
+        return Math.max(0d, Math.min(1d, boostFactor * 0.6d + durationFactor * 0.4d));
+    }
+
+    private void applyEnemySkillCooldown(BattleUnit enemy, BattleSkill skill, BattleUnit player) {
+        if (enemy == null || skill == null || player == null) {
+            return;
+        }
+        int cooldown = rollEnemySkillCooldown(skill, enemy, player);
+        if (cooldown > 0) {
+            enemy.setSkillCooldown(skill.getName(), cooldown);
+            Gdx.app.log(TAG, "Enemy skill cooldown applied -> skill=" + skill.getName()
+                    + ", turns=" + cooldown + ", type=" + skill.getEffectType());
+        }
+    }
+
+    private boolean allyActsBeforeEnemy(BattleUnit ally, BattleUnit enemy) {
         if (enemy == null) {
             return true;
         }
         if (ally == null) {
             return false;
         }
-        int c = Integer.compare(enemy.getSpeed(), ally.getSpeed());
+        int c = Integer.compare(enemy.getSpeed(), effectiveUnitSpeed(ally));
         if (c != 0) {
             return c < 0;
         }
-        c = Integer.compare(enemy.getAttack(), ally.getAttack());
+        c = Integer.compare(enemy.getAttack(), effectiveUnitAttack(ally));
         if (c != 0) {
             return c < 0;
         }
-        c = Integer.compare(enemy.getDefense(), ally.getDefense());
+        c = Integer.compare(enemy.getDefense(), effectiveUnitDefense(ally));
         if (c != 0) {
             return c < 0;
         }
         return true;
     }
 
+    private int effectiveUnitAttack(BattleUnit unit) {
+        if (unit == null) {
+            return 1;
+        }
+        return Math.max(1, unit.getAttack() + allyItemStatBoost(unit, BattleUnit.StatType.ATTACK));
+    }
+
+    private int effectiveUnitDefense(BattleUnit unit) {
+        if (unit == null) {
+            return 0;
+        }
+        return Math.max(0, unit.getDefense() + allyItemStatBoost(unit, BattleUnit.StatType.DEFENSE));
+    }
+
+    private int effectiveUnitSpeed(BattleUnit unit) {
+        if (unit == null) {
+            return 1;
+        }
+        return Math.max(1, unit.getSpeed() + allyItemStatBoost(unit, BattleUnit.StatType.SPEED));
+    }
+
+    private int allyItemStatBoost(BattleUnit unit, BattleUnit.StatType statType) {
+        if (unit != firstAlly() || context == null || statType == null) {
+            return 0;
+        }
+        github.dluckycompany.clawkins.character.Clawkin clawkin = context.getActiveAllyClawkin();
+        if (clawkin == null) {
+            return 0;
+        }
+        return switch (statType) {
+            case ATTACK -> Math.max(0, clawkin.getEffectiveAttack() - clawkin.getBaseAttack());
+            case DEFENSE -> Math.max(0, clawkin.getEffectiveDefense() - clawkin.getBaseDefense());
+            case SPEED -> Math.max(0, clawkin.getEffectiveSpeed() - clawkin.getBaseSpeed());
+        };
+    }
+
     /**
      * Defender's defense after the attacker's speed applies capped percent armor penetration:
      * {@code D_eff = floor(D * (1 - min(p_max, S / (S + K))))}.
      */
-    private static int effectiveDefenseVsAttacker(BattleUnit defender, BattleUnit attacker) {
+    private int effectiveDefenseVsAttacker(BattleUnit defender, BattleUnit attacker) {
         if (defender == null) {
             return 0;
         }
-        int raw = defender.getDefense();
+        int raw = defender == firstAlly() ? effectiveUnitDefense(defender) : defender.getDefense();
         if (attacker == null) {
             return Math.max(0, raw);
         }
@@ -985,12 +1124,14 @@ public class BattleStateMachine {
         return Math.max(0, (int) Math.floor(raw * (1.0d - p)));
     }
 
-    private static int physicalDamageFromHit(int offense, BattleUnit defender, BattleUnit attacker) {
+    private int physicalDamageFromHit(int offense, BattleUnit defender, BattleUnit attacker) {
         int def = effectiveDefenseVsAttacker(defender, attacker);
-        return Math.max(1, offense - def);
+        int raw = Math.max(1, offense - def);
+        int chip = Math.max(1, (int) Math.round(offense * DAMAGE_CHIP_FLOOR_RATIO));
+        return Math.max(raw, chip);
     }
 
-    private static int resolveMagnitude(BattleUnit self, BattleUnit enemy, BattleSkill skill, String fallbackScale) {
+    private int resolveMagnitude(BattleUnit self, BattleUnit enemy, BattleSkill skill, String fallbackScale) {
         if (self == null) {
             return 1;
         }
@@ -1091,26 +1232,28 @@ public class BattleStateMachine {
                 + ", powerCompat=" + skill.getPower();
     }
 
-    private static double evaluateScaleExpression(String expression, BattleUnit self, BattleUnit enemy) {
+    private double evaluateScaleExpression(String expression, BattleUnit self, BattleUnit enemy) {
         if (expression == null || expression.isBlank()) {
             return 0d;
         }
 
         try {
-            return new SkillExpressionParser(expression, self, enemy).parse();
+            return new SkillExpressionParser(this, expression, self, enemy).parse();
         } catch (RuntimeException ex) {
             Gdx.app.error(TAG, "Failed to parse skill stat scale expression: '" + expression + "'", ex);
             return 0d;
         }
     }
 
-    private static final class SkillExpressionParser {
+    private final class SkillExpressionParser {
+        private final BattleStateMachine machine;
         private final String src;
         private final BattleUnit self;
         private final BattleUnit enemy;
         private int index;
 
-        SkillExpressionParser(String src, BattleUnit self, BattleUnit enemy) {
+        SkillExpressionParser(BattleStateMachine machine, String src, BattleUnit self, BattleUnit enemy) {
+            this.machine = machine;
             this.src = src;
             this.self = self;
             this.enemy = enemy;
@@ -1230,9 +1373,9 @@ public class BattleStateMachine {
             }
 
             return switch (statName) {
-                case "attack", "atk" -> actor.getAttack();
-                case "defense", "def" -> actor.getDefense();
-                case "speed", "spd" -> actor.getSpeed();
+                case "attack", "atk" -> machine.effectiveUnitAttack(actor);
+                case "defense", "def" -> machine.effectiveUnitDefense(actor);
+                case "speed", "spd" -> machine.effectiveUnitSpeed(actor);
                 case "maxhp", "max_hp", "hp" -> actor.getMaxHp();
                 default -> 0d;
             };

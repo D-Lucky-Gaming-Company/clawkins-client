@@ -150,6 +150,10 @@ public class BattleOverlay implements Disposable {
     private boolean inventoryOpen = false;
     /** Small input guard after returning from inventory to avoid key bleed-through. */
     private int postInventoryInputBlockFrames = 0;
+    /** Battle log message to show after closing inventory for a stat-boost item use. */
+    private String pendingBattleItemTurnMessage = null;
+    /** Prepended to the next enemy-turn battle log line. */
+    private String pendingBattleLogPrefix = null;
 
     // -----------------------------------------------------------------------
     // Construction
@@ -493,8 +497,12 @@ public class BattleOverlay implements Disposable {
         
         // Set wild battle flag (for now, assume all battles are wild)
         // TODO: Determine from BattleContext if this is a trainer battle
-        if (battleHud != null) {
-            battleHud.setWildBattle(true);
+        if (battleHud != null && battleService != null) {
+            BattleContext ctx = battleService.getBattleStateMachine().getContext();
+            boolean roamingTrainer = ctx != null && ctx.isRoamingTrainer();
+            boolean isWildBattle = ctx == null || (!roamingTrainer
+                    && WildEncounterTableIds.isWildEncounter(ctx.getEncounterId(), ctx.getEncounterTableId()));
+            battleHud.setWildBattle(isWildBattle);
         }
         
         if (battleService != null) {
@@ -559,7 +567,8 @@ public class BattleOverlay implements Disposable {
                         ctx.getEncounterId(),
                         ctx.getEncounterTableId(),
                         ctx.getEnemyDisplayName(),
-                        ctx.getEnemyPortraitPath());
+                        ctx.getEnemyPortraitPath(),
+                        ctx.getEnemyLevel());
             }
         }
     }
@@ -869,18 +878,21 @@ public class BattleOverlay implements Disposable {
         int enemyLevel = LevelSystem.MIN_LEVEL;
         int enemyMaxHp = 0;
         boolean isWildBattle = true;
+        boolean roamingTrainer = false;
         if (context != null) {
             enemyLevel = context.getEnemyLevel();
-            isWildBattle = WildEncounterTableIds.isWildEncounter(encounterId, context.getEncounterTableId());
+            roamingTrainer = context.isRoamingTrainer();
+            isWildBattle = !roamingTrainer
+                    && WildEncounterTableIds.isWildEncounter(encounterId, context.getEncounterTableId());
             if (!context.getEnemies().isEmpty()) {
                 enemyMaxHp = context.getEnemies().get(0).getMaxHp();
             }
         }
         int xpAwarded = GameScreen.calculateVictoryExperienceReward(
-                encounterId, enemyLevel, enemyMaxHp, isWildBattle);
+                encounterId, enemyLevel, enemyMaxHp, isWildBattle, roamingTrainer);
         if (gameScreen != null && progress != null && !victoryXpGrantedThisSession) {
             xpAwarded = gameScreen.applyVictoryExperienceReward(
-                    encounterId, enemyLevel, enemyMaxHp, isWildBattle);
+                    encounterId, enemyLevel, enemyMaxHp, isWildBattle, roamingTrainer);
             victoryXpGrantedThisSession = true;
         }
         int currentXp = progress != null ? progress.getExperiencePoints() : xpBeforeReward;
@@ -1499,7 +1511,12 @@ public class BattleOverlay implements Disposable {
         if (battleActionSfxHandler != null) {
             battleActionSfxHandler.playForEnemyActionResult(machine.getLastLogSpans(), machine.getLastLog());
         }
-        openDialogue(null, machine.getLastLog(), machine.getLastLogSpans(), DialogueFlowPhase.ENEMY_RESULT);
+        String logText = machine.getLastLog();
+        if (pendingBattleLogPrefix != null && !pendingBattleLogPrefix.isBlank()) {
+            logText = pendingBattleLogPrefix + "\n" + logText;
+            pendingBattleLogPrefix = null;
+        }
+        openDialogue(null, logText, machine.getLastLogSpans(), DialogueFlowPhase.ENEMY_RESULT);
         syncHudHpFromBattleState(machine);
     }
 
@@ -1509,7 +1526,7 @@ public class BattleOverlay implements Disposable {
      */
     public void resumeFromInventory() {
         if (inBattle && battleHud != null) {
-            syncActiveClawkinHpIntoBattleState();
+            syncActiveClawkinStateIntoBattleState();
             // Restore battle HUD input
             battleHud.show();
             if (battleService != null && battleService.getBattleStateMachine() != null) {
@@ -1518,8 +1535,51 @@ public class BattleOverlay implements Disposable {
             inventoryOpen = false;
             // Block 1-2 frames so the close key used in inventory does not trigger run prompt in battle.
             postInventoryInputBlockFrames = 2;
+
+            if (pendingBattleItemTurnMessage != null && battleService != null) {
+                pendingBattleLogPrefix = pendingBattleItemTurnMessage;
+                pendingBattleItemTurnMessage = null;
+                battleService.consumeTurnAfterItemUse(null);
+                BattleStateMachine machine = battleService.getBattleStateMachine();
+                if (machine != null && machine.canExecuteEnemyAction()) {
+                    resolveEnemyTurnAndOpenDialogue(battleService);
+                } else if (pendingBattleLogPrefix != null) {
+                    openDialogue(null, pendingBattleLogPrefix, List.of(), DialogueFlowPhase.PLAYER_RESULT);
+                    pendingBattleLogPrefix = null;
+                }
+            }
+
             Gdx.app.log("BattleOverlay", "Resumed battle from inventory");
         }
+    }
+
+    /**
+     * Called when an item is used from battle inventory.
+     */
+    public void notifyBattleItemUsed(github.dluckycompany.clawkins.item.Item item, github.dluckycompany.clawkins.character.Clawkin target) {
+        if (!inBattle || battleService == null || item == null || target == null) {
+            return;
+        }
+
+        battleService.syncActiveClawkinToContext();
+
+        if (item.getType() != github.dluckycompany.clawkins.item.Item.ItemType.STAT_BOOSTER) {
+            return;
+        }
+        if (!battleService.getBattleStateMachine().canAcceptPlayerAction()) {
+            return;
+        }
+
+        int attackBoost = target.getEffectiveAttack() - target.getBaseAttack();
+        int defenseBoost = target.getEffectiveDefense() - target.getBaseDefense();
+        StringBuilder message = new StringBuilder(target.getName()).append(" used ").append(item.getName()).append("!");
+        if (attackBoost > 0) {
+            message.append(" Attack UP!");
+        }
+        if (defenseBoost > 0) {
+            message.append(" Defense UP!");
+        }
+        pendingBattleItemTurnMessage = message.toString();
     }
 
     /**
@@ -1527,7 +1587,7 @@ public class BattleOverlay implements Disposable {
      * During battle, BattleStateMachine's active ally is the source of truth per frame,
      * so we must copy active clawkin HP back into the active ally before HUD sync.
      */
-    private void syncActiveClawkinHpIntoBattleState() {
+    private void syncActiveClawkinStateIntoBattleState() {
         if (battleService == null || playerBattleState == null) {
             return;
         }
@@ -1543,6 +1603,7 @@ public class BattleOverlay implements Disposable {
         }
 
         activeAlly.setHp(activeClawkin.getCurrentHp());
+        battleService.syncActiveClawkinToContext();
     }
 
     /**
