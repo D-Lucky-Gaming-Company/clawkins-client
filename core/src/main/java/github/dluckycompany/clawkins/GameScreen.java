@@ -291,6 +291,12 @@ public class GameScreen extends ScreenAdapter {
     private boolean introExpositionComplete = false;
     private boolean tutorialDialogueTriggered = false;
     
+    // Leaderboard system
+    private github.dluckycompany.clawkins.leaderboard.LeaderboardManager leaderboardManager;
+    private github.dluckycompany.clawkins.leaderboard.LeaderboardHud leaderboardHud;
+    private float gameTimerSeconds = 0f;
+    private boolean gameTimerRunning = false;
+    
     // Inventory system - Virtual coordinate system (800x600)
     private final Stage inventoryStage;
     private final Stage hudStage;
@@ -496,6 +502,17 @@ public class GameScreen extends ScreenAdapter {
         hudRoot.top().left();
         hudRoot.add(hudWallet);
         this.hudStage.addActor(hudRoot);
+        
+        // Leaderboard HUD - top-right corner
+        this.leaderboardManager = new github.dluckycompany.clawkins.leaderboard.LeaderboardManager();
+        this.leaderboardHud = new github.dluckycompany.clawkins.leaderboard.LeaderboardHud(uiFont);
+        this.leaderboardHud.refresh(leaderboardManager.getEntries());
+        Table leaderboardRoot = new Table();
+        leaderboardRoot.setFillParent(true);
+        leaderboardRoot.top().right();
+        leaderboardRoot.add(leaderboardHud).pad(10f);
+        this.hudStage.addActor(leaderboardRoot);
+        
         this.bertJrPropTargetPosition = new Vector2();
         this.bertJrPropWalkingIn = false;
         this.bertJrPropReachedTarget = false;
@@ -1145,6 +1162,12 @@ public class GameScreen extends ScreenAdapter {
         
         // Cap delta to avoid spiral-of-death on lag spikes
         delta = Math.min(1 / 30f, delta);
+        
+        // Update game timer for leaderboard (uses uncapped uiDelta for accuracy)
+        if (gameTimerRunning) {
+            gameTimerSeconds += uiDelta;
+        }
+        
         updateBossFightPromptInput();
         updateSaveGamePromptInput();
         updateSaveActionPromptInput();
@@ -1280,6 +1303,22 @@ public class GameScreen extends ScreenAdapter {
         renderAreaTitle(uiDelta);
         renderSaveToast();
         renderFallenPrompt();
+        
+        // Render HUD (leaderboard, wallet) only during main roaming
+        boolean showHud = !isBattleActive
+                && !introExpositionOverlay.isActive()
+                && !teamViewerVisible
+                && !summaryVisible
+                && !merchantShopVisible
+                && !sideMenuOverlay.isSettingsVisible()
+                && !isFallenPromptVisible()
+                && !isBossFightPromptVisible()
+                && !isSaveGamePromptVisible()
+                && !isSaveActionPromptVisible()
+                && !isNurseStationPromptVisible();
+        if (showHud) {
+            renderUIWithViewport(hudStage, uiDelta);
+        }
         
         // Render intro exposition overlay (fullscreen, on top of everything)
         // This renders to physical screen coordinates, not viewport coordinates
@@ -2627,9 +2666,19 @@ public class GameScreen extends ScreenAdapter {
      * Used by the "end" cheat and after the {@link #END_TRIGGER_OBJECT_ID} fade completes.
      */
     public void triggerEndingCredits() {
-        endingCreditsFadeActive = false;
-        endingCreditsFadeElapsed = 0f;
-        endingCreditsFadeCompletionPosted = false;
+        // Stop game timer and submit to leaderboard
+        gameTimerRunning = false;
+        if (gameTimerSeconds > 0 && leaderboardManager != null) {
+            String playerName = resolveCurrentPlayerName();
+            long completionMillis = (long) (gameTimerSeconds * 1000L);
+            leaderboardManager.submit(playerName, completionMillis);
+            if (leaderboardHud != null) {
+                leaderboardHud.refresh(leaderboardManager.getEntries());
+            }
+            Gdx.app.log("GameScreen", "Leaderboard submitted: " + playerName + " - "
+                    + github.dluckycompany.clawkins.leaderboard.LeaderboardManager.formatMillis(completionMillis));
+        }
+        
         closeAllMenuUi();
         inventoryStage.clear();
         audioService.stopAll();
@@ -4523,6 +4572,9 @@ public class GameScreen extends ScreenAdapter {
      */
     private void onIntroExpositionComplete() {
         introExpositionComplete = true;
+        // Start the game timer for leaderboard tracking
+        gameTimerSeconds = 0f;
+        gameTimerRunning = true;
         // Trigger tutorial dialogue on next frame
         Gdx.app.postRunnable(this::triggerTutorialDialogue);
     }
