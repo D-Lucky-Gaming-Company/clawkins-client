@@ -24,6 +24,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import github.dluckycompany.clawkins.audio.AudioService;
+import github.dluckycompany.clawkins.audio.MusicTrack;
 import github.dluckycompany.clawkins.audio.SoundEffect;
 import github.dluckycompany.clawkins.input.InputConventions;
 import github.dluckycompany.clawkins.leaderboard.LeaderboardHud;
@@ -130,6 +131,14 @@ public class MainMenuScreen implements Screen {
         gameMetaState.load();
         leaderboardManager.load();
         buildUI();
+
+        if (audioService != null) {
+            audioService.clearMapMusicOverride();
+            if (!audioService.isMusicPlaying(MusicTrack.MENU)) {
+                audioService.invalidateMusic(MusicTrack.MENU);
+                audioService.playMusic(MusicTrack.MENU, true);
+            }
+        }
         
         // Set input processor to stage when screen is shown
         // This ensures buttons work when returning from other screens

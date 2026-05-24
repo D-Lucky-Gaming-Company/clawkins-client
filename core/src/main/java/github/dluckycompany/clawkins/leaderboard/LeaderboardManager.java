@@ -10,7 +10,7 @@ import java.util.List;
 /**
  * Manages the leaderboard: loading, saving, sorting, and updating entries.
  * Persists data to a .txt file using LibGDX file handling.
- * Keeps only the top 5 fastest completion times.
+ * Keeps only the top 5 fastest completion times (duplicate names allowed).
  */
 public class LeaderboardManager {
 
@@ -74,23 +74,10 @@ public class LeaderboardManager {
             String timeStr = parts[1].trim();
             long millis = parseTimeToMillis(timeStr);
             if (millis >= 0 && !name.isEmpty()) {
-                upsertEntry(name, millis);
+                entries.add(new LeaderboardEntry(name, millis));
             }
         }
         sortAndTrim();
-    }
-
-    private void upsertEntry(String name, long millis) {
-        for (int i = 0; i < entries.size(); i++) {
-            LeaderboardEntry existing = entries.get(i);
-            if (existing.getName().equals(name)) {
-                if (millis < existing.getTimeMillis()) {
-                    entries.set(i, new LeaderboardEntry(name, millis));
-                }
-                return;
-            }
-        }
-        entries.add(new LeaderboardEntry(name, millis));
     }
 
     /**
@@ -112,11 +99,11 @@ public class LeaderboardManager {
     }
 
     /**
-     * Submits a new completion time. If it qualifies for top 5, it's inserted and saved.
+     * Submits a new completion time. Each run is stored separately; only the top 5 fastest remain.
      *
-     * @param playerName     the player's name
+     * @param playerName       the player's name
      * @param completionMillis the completion time in milliseconds
-     * @return true if the entry made it into the top 5
+     * @return true if this exact run made it into the top 5
      */
     public boolean submit(String playerName, long completionMillis) {
         if (playerName == null || playerName.isBlank() || completionMillis <= 0) {
@@ -125,16 +112,12 @@ public class LeaderboardManager {
         }
 
         String name = playerName.trim();
-        upsertEntry(name, completionMillis);
+        entries.add(new LeaderboardEntry(name, completionMillis));
         sortAndTrim();
         save();
 
-        for (LeaderboardEntry entry : entries) {
-            if (entry.getName().equals(name) && entry.getTimeMillis() == completionMillis) {
-                return true;
-            }
-        }
-        return entries.stream().anyMatch(entry -> entry.getName().equals(name));
+        return entries.stream()
+                .anyMatch(entry -> entry.getName().equals(name) && entry.getTimeMillis() == completionMillis);
     }
 
     /**

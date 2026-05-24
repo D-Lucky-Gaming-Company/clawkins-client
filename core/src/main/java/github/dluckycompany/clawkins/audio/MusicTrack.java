@@ -6,6 +6,8 @@ public enum MusicTrack {
     EXPLORATION,
     BATTLE,
     MENU,
+    /** Post-credits leaderboard screen. Maps to audio/music/menu.mp3. */
+    POST_CREDITS,
     VICTORY,
     DEFEAT,
     COTTAGE,

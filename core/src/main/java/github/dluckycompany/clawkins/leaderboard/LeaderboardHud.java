@@ -71,7 +71,7 @@ public class LeaderboardHud extends Table {
         pack();
     }
 
-    static boolean isHighlightedPlayer(String entryName, String highlightPlayerName) {
+    public static boolean isHighlightedPlayer(String entryName, String highlightPlayerName) {
         if (entryName == null || highlightPlayerName == null) {
             return false;
         }

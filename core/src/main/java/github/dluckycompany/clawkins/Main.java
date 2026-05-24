@@ -64,7 +64,8 @@ public class Main extends Game {
         audioService.registerMusic(MusicTrack.EXPLORATION_2, "audio/music/exploration2.mp3");
         audioService.registerMusic(MusicTrack.FLINTLOCK, "audio/music/Flintlock.mp3");
         audioService.registerMusic(MusicTrack.BATTLE, "audio/music/battle.mp3");
-        audioService.registerMusic(MusicTrack.MENU, "audio/music/menu.mp3");
+        audioService.registerMusic(MusicTrack.MENU, "audio/music/mainMenu.mp3");
+        audioService.registerMusic(MusicTrack.POST_CREDITS, "audio/music/menu.mp3");
         audioService.registerMusic(MusicTrack.VICTORY, "audio/music/victory.mp3");
         audioService.registerMusic(MusicTrack.DEFEAT, "audio/music/defeat.mp3");
         audioService.registerMusic(MusicTrack.COTTAGE, "audio/music/cottage.mp3");
@@ -80,6 +81,7 @@ public class Main extends Game {
         audioService.registerMusic(MusicTrack.BOSS_BERTJR_DIA_FIRST_ENCOUNTER, "audio/music/BOSS/boss_bertjr_dia/first_encounter.mp3");
         audioService.registerMusic(MusicTrack.BOSS_DUKE_DIA_FIRST_ENCOUNTER, "audio/music/BOSS/boss_duke_dia/first_encounter.mp3");
         audioService.registerMusic(MusicTrack.CREDITS, "audio/music/ending.mp3");
+        audioService.preloadMusic(MusicTrack.MENU);
         audioService.registerSound(SoundEffect.CONFIRM, "audio/sfx/confirm.wav");
         audioService.registerSound(SoundEffect.CANCEL, "audio/sfx/cancel.wav");
         audioService.registerSound(SoundEffect.HIT, "audio/sfx/hit.wav");

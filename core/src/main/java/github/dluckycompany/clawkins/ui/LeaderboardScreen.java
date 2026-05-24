@@ -84,7 +84,10 @@ public class LeaderboardScreen extends ScreenAdapter {
         buildBackground();
         buildLayout(metaState);
 
-        audioService.playMusic(MusicTrack.MENU, false);
+        audioService.playMusic(MusicTrack.POST_CREDITS, false);
+        if (metaState.isLastRunPersonalBest()) {
+            audioService.playSound(SoundEffect.MILESTONE);
+        }
         Gdx.input.setInputProcessor(stage);
     }
 
@@ -167,6 +170,12 @@ public class LeaderboardScreen extends ScreenAdapter {
         subtitle.setAlignment(Align.center);
         root.add(subtitle).padBottom(24f).row();
 
+        if (metaState != null && metaState.isLastRunPersonalBest()) {
+            Label newRecord = new Label("NEW RECORD!", new Label.LabelStyle(titleFont, Color.valueOf("#9FE870")));
+            newRecord.setAlignment(Align.center);
+            root.add(newRecord).padBottom(20f).row();
+        }
+
         Table entriesTable = new Table();
         entriesTable.defaults().padBottom(10f).left();
 
@@ -237,7 +246,6 @@ public class LeaderboardScreen extends ScreenAdapter {
             return;
         }
         continuing = true;
-        audioService.stopAll();
         Gdx.input.setInputProcessor(null);
         game.setScreen(MainMenuScreen.class);
     }

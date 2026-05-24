@@ -43,6 +43,11 @@ public class AudioService implements Disposable {
         musicPaths.put(track, internalPath);
     }
 
+    /** Loads a music file into the cache so the first playback does not hitch or glitch. */
+    public void preloadMusic(MusicTrack track) {
+        resolveMusic(track);
+    }
+
     public void registerSound(SoundEffect effect, String internalPath) {
         soundPaths.put(effect, internalPath);
     }
@@ -99,6 +104,29 @@ public class AudioService implements Disposable {
         currentMusic = null;
         currentTrack = null;
         mapMusicOverride = null;
+    }
+
+    /**
+     * Drops a cached music instance so the next playback loads a fresh decoder stream.
+     * Helps avoid MP3 resume glitches after {@link #stopAll()}.
+     */
+    public void invalidateMusic(MusicTrack track) {
+        if (track == null) {
+            return;
+        }
+        Music cached = musicCache.remove(track);
+        if (cached != null) {
+            if (cached == currentMusic) {
+                cached.stop();
+                currentMusic = null;
+                currentTrack = null;
+            }
+            cached.dispose();
+        }
+    }
+
+    public boolean isMusicPlaying(MusicTrack track) {
+        return track != null && currentTrack == track && currentMusic != null && currentMusic.isPlaying();
     }
 
     public void setMap(TiledMap tiledMap) {
@@ -172,6 +200,7 @@ public class AudioService implements Disposable {
             currentMusic.setLooping(looping);
             currentMusic.setVolume(effectiveMusicVolume(track));
             if (!currentMusic.isPlaying()) {
+                currentMusic.stop();
                 currentMusic.play();
             }
             return;
@@ -181,8 +210,11 @@ public class AudioService implements Disposable {
         if (nextMusic == null) {
             return;
         }
-        if (currentMusic != null) {
+        if (currentMusic != null && currentMusic != nextMusic) {
             currentMusic.stop();
+        }
+        if (nextMusic.isPlaying()) {
+            nextMusic.stop();
         }
         currentTrack = track;
         currentMusic = nextMusic;

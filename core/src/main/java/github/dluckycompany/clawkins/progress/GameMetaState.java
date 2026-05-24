@@ -18,12 +18,14 @@ public class GameMetaState {
     private static final String KEY_BEST_COMPLETION_NAME = "bestCompletionName";
     private static final String KEY_LAST_COMPLETION_MILLIS = "lastCompletionMillis";
     private static final String KEY_LAST_COMPLETION_NAME = "lastCompletionName";
+    private static final String KEY_LAST_RUN_PERSONAL_BEST = "lastRunWasPersonalBest";
 
     private boolean gameCompleted;
     private long bestCompletionMillis = -1L;
     private String bestCompletionName = "";
     private long lastCompletionMillis = -1L;
     private String lastCompletionName = "";
+    private boolean lastRunWasPersonalBest;
 
     public GameMetaState() {
         load();
@@ -49,32 +51,47 @@ public class GameMetaState {
         return lastCompletionName;
     }
 
+    public boolean isLastRunPersonalBest() {
+        return lastRunWasPersonalBest;
+    }
+
     public void markGameCompleted() {
         gameCompleted = true;
         save();
     }
 
     /**
-     * Records a finished run. Always persists the latest time and keeps the fastest time seen.
+     * Records a finished run. Always persists the latest time and keeps the player's fastest time seen.
+     *
+     * @return true when this run beat the player's previous personal best
      */
-    public void recordCompletion(String playerName, long completionMillis) {
+    public boolean recordCompletion(String playerName, long completionMillis) {
         if (playerName == null || playerName.isBlank() || completionMillis <= 0L) {
-            return;
+            lastRunWasPersonalBest = false;
+            return false;
         }
 
         String name = playerName.trim();
         lastCompletionName = name;
         lastCompletionMillis = completionMillis;
 
-        if (bestCompletionMillis < 0L || completionMillis < bestCompletionMillis) {
+        boolean samePlayerAsStoredBest = name.equalsIgnoreCase(bestCompletionName);
+        long previousPersonalBest = samePlayerAsStoredBest ? bestCompletionMillis : -1L;
+        lastRunWasPersonalBest = previousPersonalBest < 0L || completionMillis < previousPersonalBest;
+
+        if (previousPersonalBest < 0L || samePlayerAsStoredBest) {
             bestCompletionName = name;
-            bestCompletionMillis = completionMillis;
+            if (previousPersonalBest < 0L || completionMillis < bestCompletionMillis) {
+                bestCompletionMillis = completionMillis;
+            }
         }
 
         gameCompleted = true;
         save();
         Gdx.app.log(TAG, "Recorded completion: " + name + " - "
-                + LeaderboardManager.formatMillis(completionMillis));
+                + LeaderboardManager.formatMillis(completionMillis)
+                + (lastRunWasPersonalBest ? " (new personal best)" : ""));
+        return lastRunWasPersonalBest;
     }
 
     public void load() {
@@ -83,6 +100,7 @@ public class GameMetaState {
         bestCompletionName = "";
         lastCompletionMillis = -1L;
         lastCompletionName = "";
+        lastRunWasPersonalBest = false;
 
         FileHandle file = Gdx.files.local(META_FILE);
         if (!file.exists()) {
@@ -108,6 +126,7 @@ public class GameMetaState {
                     case KEY_BEST_COMPLETION_NAME -> bestCompletionName = value == null ? "" : value.trim();
                     case KEY_LAST_COMPLETION_MILLIS -> lastCompletionMillis = parseLong(value, -1L);
                     case KEY_LAST_COMPLETION_NAME -> lastCompletionName = value == null ? "" : value.trim();
+                    case KEY_LAST_RUN_PERSONAL_BEST -> lastRunWasPersonalBest = parseBoolean(value);
                     default -> {
                     }
                 }
@@ -128,6 +147,7 @@ public class GameMetaState {
             if (lastCompletionMillis >= 0L) {
                 sb.append(KEY_LAST_COMPLETION_MILLIS).append('=').append(lastCompletionMillis).append('\n');
                 sb.append(KEY_LAST_COMPLETION_NAME).append('=').append(lastCompletionName).append('\n');
+                sb.append(KEY_LAST_RUN_PERSONAL_BEST).append('=').append(lastRunWasPersonalBest).append('\n');
             }
 
             FileHandle file = Gdx.files.local(META_FILE);
