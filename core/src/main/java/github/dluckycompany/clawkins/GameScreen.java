@@ -1175,9 +1175,9 @@ public class GameScreen extends ScreenAdapter {
         // Cap delta to avoid spiral-of-death on lag spikes
         delta = Math.min(1 / 30f, delta);
         
-        // Update game timer for leaderboard (uses uncapped uiDelta for accuracy)
+        // Update game timer for leaderboard (scales with game speed cheat)
         if (gameTimerRunning) {
-            gameTimerSeconds += uiDelta;
+            gameTimerSeconds += uiDelta * cheatCodeManager.getGameSpeedMultiplier();
         }
         // Update timer display
         if (gameTimerLabel != null) {
